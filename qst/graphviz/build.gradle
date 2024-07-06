@@ -10,7 +10,7 @@ dependencies {
 
     implementation 'guru.nidi:graphviz-java:0.18.1'
 
-    implementation 'info.picocli:picocli:4.6.1'
+    implementation 'info.picocli:picocli:4.7.6'
 
     testImplementation libs.assertj
     testImplementation platform(libs.junit.bom)
