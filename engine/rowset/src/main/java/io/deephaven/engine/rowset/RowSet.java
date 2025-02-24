@@ -1,6 +1,8 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.rowset;
 
-import gnu.trove.list.array.TLongArrayList;
 import io.deephaven.base.log.LogOutputAppendable;
 import io.deephaven.util.SafeCloseable;
 import io.deephaven.util.datastructures.LongAbortableConsumer;
@@ -15,7 +17,15 @@ import java.util.function.LongConsumer;
  */
 public interface RowSet extends RowSequence, LongSizedDataStructure, SafeCloseable, LogOutputAppendable {
 
-    void close();
+    /**
+     * <p>
+     * Free any resources associated with this object.
+     * <p>
+     * Using any {@code RowSet} methods after {@code close()} is an error and may produce exceptions or undefined
+     * results.
+     */
+    @Override
+    default void close() {}
 
     /**
      * Make a new {@link WritableRowSet} with the same row keys as {@code this} that is safe for further mutation. As in
@@ -77,7 +87,7 @@ public interface RowSet extends RowSequence, LongSizedDataStructure, SafeCloseab
 
     /**
      * <p>
-     * Returns a {@link WritableRowSet} with the row positions of <i>row keys</i> in this RowSet.
+     * Returns a {@link WritableRowSet} with the row positions of {@code keys} in this RowSet.
      *
      * <p>
      * This can be thought of as an iterative find() over the values in keys, but <b>all</b> keys <b>must</b> exist
@@ -92,7 +102,7 @@ public interface RowSet extends RowSequence, LongSizedDataStructure, SafeCloseab
 
     /**
      * <p>
-     * Returns the row positions of <i>row keys</i> in the current set as a {@link WritableRowSet}, stopping at
+     * Returns the row positions of {@code keys} in the current set as a {@link WritableRowSet}, stopping at
      * maximumPosition.
      *
      * <p>
@@ -106,15 +116,6 @@ public interface RowSet extends RowSequence, LongSizedDataStructure, SafeCloseab
     WritableRowSet invert(RowSet keys, long maximumPosition);
 
     /**
-     * For the given keys RowSet, under the assertion that none of them are present in the current RowSet, return the
-     * tentative insertion points in the current RowSet with the count for each of them
-     *
-     * @param keys the keys to identify insertion locations
-     * @return two TLongArrayLists; [0] contains the positions, [1] contains the counts.
-     */
-    TLongArrayList[] findMissing(RowSet keys);
-
-    /**
      * Returns a new RowSet representing the intersection of the current RowSet with the input RowSet
      */
     @NotNull
@@ -123,9 +124,7 @@ public interface RowSet extends RowSequence, LongSizedDataStructure, SafeCloseab
     /**
      * Returns true if a RowSet has any overlap.
      */
-    default boolean overlaps(@NotNull RowSet rowSet) {
-        return intersect(rowSet).isNonempty();
-    }
+    boolean overlaps(@NotNull RowSet rowSet);
 
     /**
      * Returns true if this RowSet has any overlap with the provided range.
@@ -167,11 +166,11 @@ public interface RowSet extends RowSequence, LongSizedDataStructure, SafeCloseab
         /**
          * <p>
          * Advance the current iterator position until {@code currentRangeStart()} and {@code currentRangeEnd()} are
-         * both greater than or equal to ‘v’. This may or may not move the iterator to the next range: if ‘v’ is inside
-         * the current range (but to the right of {@code currentRangeStart()}, this will simply advance
-         * {@code currentRangeStart()}. Returns true if the operation was successful. Otherwise, returns false. In this
-         * case the iteration is over and the iterator is exhausted (calls to {@code hasNext()} will return false, any
-         * other operation is undefined).
+         * both greater than or equal to {@code v}. This may or may not move the iterator to the next range: if
+         * {@code v} is inside the current range (but to the right of {@code currentRangeStart()}, this will simply
+         * advance {@code currentRangeStart()}. Returns true if the operation was successful. Otherwise, returns false.
+         * In this case the iteration is over and the iterator is exhausted (calls to {@code hasNext()} will return
+         * false, any other operation is undefined).
          * </p>
          *
          * <p>
@@ -190,12 +189,12 @@ public interface RowSet extends RowSequence, LongSizedDataStructure, SafeCloseab
          *     &#64;code
          *     RangeIterator it = rowSet.getRangeIterator();
          *     if (!it.advance(100)) {
-         *         return; // iteration done… no ranges at 100 or greater
+         *         return; // iteration done... no ranges at 100 or greater
          *     }
          *     assert (it.currentRangeStart() &gt;= 100 &amp;&amp; it.currentRangeEnd() &gt;= 100);
          *     // do something with range
          *     if (!it.advance(500)) {
-         *         return; // iteration done… no ranges at 500 or greater
+         *         return; // iteration done... no ranges at 500 or greater
          *     }
          *     assert (it.currentRangeStart() &gt;= 500 &amp;&amp; it.currentRangeEnd() &gt;= 500);
          *     // do something with range
@@ -286,8 +285,6 @@ public interface RowSet extends RowSequence, LongSizedDataStructure, SafeCloseab
             }
             return true;
         }
-
-        void close();
     }
 
     /**
@@ -323,18 +320,12 @@ public interface RowSet extends RowSequence, LongSizedDataStructure, SafeCloseab
     }
 
     interface SearchIterator extends Iterator {
-        void close();
-
-        boolean hasNext();
-
         long currentValue();
-
-        long nextLong();
 
         /**
          * <p>
-         * Advance the current iterator position until {@code currentValue()} is greater than or equal to ‘v’. The
-         * operation is a no-op (and returns true) if currentValue() is already >= 'v'. Returns true if the operation
+         * Advance the current iterator position until {@code currentValue()} is greater than or equal to `v`. The
+         * operation is a no-op (and returns true) if currentValue() is already &gt;= 'v'. Returns true if the operation
          * was successful. Otherwise, returns false. In this case the iteration is over and the iterator is exhausted;
          * calls to {@code hasNext()} will return false, any other operation is undefined.
          * </p>
@@ -354,13 +345,13 @@ public interface RowSet extends RowSequence, LongSizedDataStructure, SafeCloseab
         /**
          * <p>
          * Advance the current iterator (start) position while the current value maintains comp.compareTargetTo(v, dir)
-         * > 0. If next to the last such value there is a value for which comp.compareTargetTo(v, dir) < 0, or no
-         * further values exist, then that last value satisfying comp,.compareTargetTo(v, dir) > 0 is left as the
+         * &gt; 0. If next to the last such value there is a value for which comp.compareTargetTo(v, dir) &lt; 0, or no
+         * further values exist, then that last value satisfying comp,.compareTargetTo(v, dir) &gt; 0 is left as the
          * current position and returned. If there are any elements for which comp.compareTargetTo(v, dir) == 0, one of
          * such elements, no guarantee which one, is left as the current position and returned. If at call entry the
          * iterator was exhausted, -1 is returned. If at call entry the iterator was just constructed and had never been
          * advanced, it is moved to the first element (which becomes the current value). If the current value v is such
-         * that comp.compareTargetTo(v, dir) < 0, -1 is returned and the current position is not moved.
+         * that comp.compareTargetTo(v, dir) &lt; 0, -1 is returned and the current position is not moved.
          * </p>
          *
          * <p>
@@ -373,8 +364,8 @@ public interface RowSet extends RowSequence, LongSizedDataStructure, SafeCloseab
          * @return -1 if the iterator was exhausted at entry or the target was to the left of the initial position at
          *         the time of the call, in which case the iterator is not changed; the resulting current position
          *         otherwise. In this later case the current position is guaranteed to satisfy comp.compareTargetTo(v,
-         *         dir) >= 0 and if also comp.compareTargetTo(v, dir) > 0, then v is the biggest such value for which
-         *         comp.compareTargetTo(v, dir) > 0.
+         *         dir) &gt;= 0 and if also comp.compareTargetTo(v, dir) &gt; 0, then v is the biggest such value for
+         *         which comp.compareTargetTo(v, dir) &gt; 0.
          */
         long binarySearchValue(TargetComparator comp, int dir);
     }
@@ -428,12 +419,30 @@ public interface RowSet extends RowSequence, LongSizedDataStructure, SafeCloseab
     WritableRowSet subSetByKeyRange(long startKey, long endKey);
 
     /**
-     * Get a subset of this RowSet according to the supplied set of row positions in {@code posRowSet}.
+     * Get a subset of this RowSet according to the supplied sequence of row positions in {@code posRowSequence}.
      *
-     * @param posRowSet The RowSet of position-based ranges to extract.
+     * @param posRowSequence The {@link RowSequence} of positions ranges to get (as in {@link #get(long)})
+     * @param reversed Whether to treat {@code posRowSet} as offsets relative to {@link #size()} rather than {@code 0}
+     * @return A new RowSet, containing the row keys from this RowSet at the row positions in {@code posRowSequence}
+     */
+    WritableRowSet subSetForPositions(RowSequence posRowSequence, boolean reversed);
+
+    /**
+     * Get a subset of this RowSet according to the supplied sequence of row positions in {@code posRowSequence}.
+     *
+     * @param posRowSequence The {@link RowSequence} of position-based ranges to extract.
      * @return A new RowSet, containing values at the locations in the provided RowSet.
      */
-    WritableRowSet subSetForPositions(RowSet posRowSet);
+    WritableRowSet subSetForPositions(RowSequence posRowSequence);
+
+    /**
+     * Get a subset of this RowSet according to the supplied sequence of row positions relative to {@link #size()} in
+     * {@code posRowSequence}.
+     *
+     * @param posRowSequence The {@link RowSequence} of positions ranges to get (as in {@link #get(long)})
+     * @return A new RowSet, containing the row keys from this RowSet at the row positions in {@code posRowSequence}
+     */
+    WritableRowSet subSetForReversePositions(RowSequence posRowSequence);
 
     /**
      * Returns the row key at the given row position.

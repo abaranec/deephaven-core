@@ -1,23 +1,22 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.base.stats;
 
-import io.deephaven.base.Function;
-
 import java.util.ArrayList;
+import java.util.function.BiFunction;
+import java.util.function.LongFunction;
 
 public class Stats {
 
     /** A non-static interface to the Stats component. */
     public interface Maker {
-        <V extends Value> Item<V> makeItem(String groupName, String itemName, Function.Unary<V, Long> valueFactory);
+        <V extends Value> Item<V> makeItem(String groupName, String itemName, LongFunction<V> valueFactory);
 
         Maker DEFAULT = new Maker() {
             @Override
             public <V extends Value> Item<V> makeItem(String groupName, String itemName,
-                    Function.Unary<V, Long> valueFactory) {
+                    LongFunction<V> valueFactory) {
                 return Stats.makeItem(groupName, itemName, valueFactory);
             }
         };
@@ -64,25 +63,25 @@ public class Stats {
 
     /** get or create a new item */
     public static synchronized <V extends Value> Item<V> makeItem(String groupName, String itemName,
-            Function.Unary<V, Long> valueFactory) {
+            LongFunction<V> valueFactory) {
         return makeItem(groupName, itemName, valueFactory, UNKNOWN_DESCRIPTION, timeSource.currentTimeMillis());
     }
 
     /** get or create a new item */
     public static synchronized <V extends Value> Item<V> makeItem(String groupName, String itemName,
-            Function.Unary<V, Long> valueFactory, long now) {
+            LongFunction<V> valueFactory, long now) {
         return makeItem(groupName, itemName, valueFactory, UNKNOWN_DESCRIPTION, now);
     }
 
     /** get or create a new item */
     public static synchronized <V extends Value> Item<V> makeItem(String groupName, String itemName,
-            Function.Unary<V, Long> valueFactory, String description) {
+            LongFunction<V> valueFactory, String description) {
         return makeItem(groupName, itemName, valueFactory, description, timeSource.currentTimeMillis());
     }
 
     /** get or create a new item */
     public static synchronized <V extends Value> Item<V> makeItem(String groupName, String itemName,
-            Function.Unary<V, Long> valueFactory, String description, long now) {
+            LongFunction<V> valueFactory, String description, long now) {
         Group g = makeGroup(groupName, null);
         return g.makeItem(itemName, valueFactory, description, now);
     }
@@ -90,25 +89,25 @@ public class Stats {
 
     /** get or create a new item with a one-argument factory */
     public static synchronized <V extends Value, Arg> Item<V> makeItem(String groupName, String itemName,
-            Function.Binary<V, Long, Arg> valueFactory, Arg arg) {
+            BiFunction<Long, Arg, V> valueFactory, Arg arg) {
         return makeItem(groupName, itemName, valueFactory, UNKNOWN_DESCRIPTION, timeSource.currentTimeMillis(), arg);
     }
 
     /** get or create a new item with a one-argument factory */
     public static synchronized <V extends Value, Arg> Item<V> makeItem(String groupName, String itemName,
-            Function.Binary<V, Long, Arg> valueFactory, long now, Arg arg) {
+            BiFunction<Long, Arg, V> valueFactory, long now, Arg arg) {
         return makeItem(groupName, itemName, valueFactory, UNKNOWN_DESCRIPTION, now, arg);
     }
 
     /** get or create a new item with a one-argument factory */
     public static synchronized <V extends Value, Arg> Item<V> makeItem(String groupName, String itemName,
-            Function.Binary<V, Long, Arg> valueFactory, String description, Arg arg) {
+            BiFunction<Long, Arg, V> valueFactory, String description, Arg arg) {
         return makeItem(groupName, itemName, valueFactory, description, timeSource.currentTimeMillis(), arg);
     }
 
     /** get or create a new item with a one-argument factory */
     public static synchronized <V extends Value, Arg> Item<V> makeItem(String groupName, String itemName,
-            Function.Binary<V, Long, Arg> valueFactory, String description, long now, Arg arg) {
+            BiFunction<Long, Arg, V> valueFactory, String description, long now, Arg arg) {
         Group g = makeGroup(groupName, null);
         return g.makeItem(itemName, valueFactory, description, now, arg);
     }
@@ -162,7 +161,7 @@ public class Stats {
     }
 
     /**
-     * Update the histories of all items in all groups, logging all updated intervals >= logInterval.
+     * Update the histories of all items in all groups, logging all updated intervals &gt;= logInterval.
      */
     public synchronized static void update(ItemUpdateListener listener, long now, long appNow, long logInterval) {
         for (Group g : groups) {

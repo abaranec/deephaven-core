@@ -1,10 +1,15 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.benchmark.engine;
 
 import io.deephaven.base.verify.Assert;
+import io.deephaven.benchmarking.generator.ColumnGenerator;
+import io.deephaven.engine.context.ExecutionContext;
+import io.deephaven.engine.context.TestExecutionContext;
 import io.deephaven.engine.rowset.TrackingWritableRowSet;
 import io.deephaven.engine.table.Table;
 import io.deephaven.engine.table.impl.TableUpdateImpl;
-import io.deephaven.engine.updategraph.UpdateGraphProcessor;
 import io.deephaven.engine.table.ModifiedColumnSet;
 import io.deephaven.engine.table.impl.QueryTable;
 import io.deephaven.engine.table.impl.SortHelpers;
@@ -13,8 +18,8 @@ import io.deephaven.engine.table.impl.select.RollingReleaseFilter;
 import io.deephaven.engine.rowset.RowSetFactory;
 import io.deephaven.engine.rowset.RowSetShiftData;
 import io.deephaven.benchmarking.*;
-import io.deephaven.benchmarking.generator.EnumStringColumnGenerator;
-import org.apache.commons.lang3.mutable.MutableInt;
+import io.deephaven.engine.testutil.ControlledUpdateGraph;
+import io.deephaven.util.mutable.MutableInt;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.infra.BenchmarkParams;
 
@@ -75,12 +80,13 @@ public class SortBenchmark {
         Assert.eqTrue(workingSize % sizePerStep == 0, "Cannot evenly divide working size by step size.");
         workingSizeInSteps = workingSize / sizePerStep;
 
-        UpdateGraphProcessor.DEFAULT.enableUnitTestMode();
+        TestExecutionContext.createForUnitTests().open();
+        ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().enableUnitTestMode();
 
         final int nVals = (int) (enumSize < 1 ? enumSize * tableSize : enumSize);
         System.out.println("String Values: " + nVals);
-        final EnumStringColumnGenerator enumStringyCol =
-                (EnumStringColumnGenerator) BenchmarkTools.stringCol("Thingy", nVals, 6, 6, 0xB00FB00F);
+        final ColumnGenerator<String> enumStringyCol = BenchmarkTools.stringCol(
+                "Thingy", nVals, 6, 6, 0xB00FB00FL);
 
         final BenchmarkTableBuilder builder;
         final int actualSize = BenchmarkTools.sizeWithSparsity(tableSize, sparsity);
@@ -131,10 +137,11 @@ public class SortBenchmark {
 
         mcsWithSortColumn = inputTable.newModifiedColumnSet(sortCol);
         MutableInt ci = new MutableInt();
-        final String[] sortColumns = new String[inputTable.getColumns().length - 1];
-        inputTable.getColumnSourceMap().keySet().forEach(columnName -> {
+        final String[] sortColumns = new String[inputTable.numColumns() - 1];
+
+        inputTable.getDefinition().getColumnNameSet().forEach(columnName -> {
             if (!columnName.equals(sortCol)) {
-                sortColumns[ci.intValue()] = columnName;
+                sortColumns[ci.get()] = columnName;
                 ci.increment();
             }
         });
@@ -150,7 +157,7 @@ public class SortBenchmark {
         rollingInputTable.setRefreshing(true);
         rollingOutputTable = rollingInputTable.sort(sortCol);
 
-        UpdateGraphProcessor.DEFAULT.enableUnitTestMode();
+        ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().enableUnitTestMode();
     }
 
     private long currStep = 0;
@@ -165,7 +172,8 @@ public class SortBenchmark {
         }
         currStep = (currStep + 1) % numSteps;
 
-        UpdateGraphProcessor.DEFAULT.runWithinUnitTestCycle(incrementalReleaseFilter::run);
+        final ControlledUpdateGraph updateGraph = ExecutionContext.getContext().getUpdateGraph().cast();
+        updateGraph.runWithinUnitTestCycle(incrementalReleaseFilter::run);
 
         return incrementalTable;
     }
@@ -173,7 +181,8 @@ public class SortBenchmark {
     @Benchmark
     public Table rollingSort() {
         Assert.eq(rollingSortTable.size(), "result.size()", workingSize, "inputTable.size()");
-        UpdateGraphProcessor.DEFAULT.runWithinUnitTestCycle(rollingReleaseFilter::run);
+        final ControlledUpdateGraph updateGraph = ExecutionContext.getContext().getUpdateGraph().cast();
+        updateGraph.runWithinUnitTestCycle(rollingReleaseFilter::run);
         return rollingSortTable;
     }
 
@@ -197,7 +206,8 @@ public class SortBenchmark {
         update.modifiedColumnSet = mcsWithoutSortColumn;
         update.shifted = RowSetShiftData.EMPTY;
 
-        UpdateGraphProcessor.DEFAULT.runWithinUnitTestCycle(() -> {
+        final ControlledUpdateGraph updateGraph = ExecutionContext.getContext().getUpdateGraph().cast();
+        updateGraph.runWithinUnitTestCycle(() -> {
             rollingInputRowSet.update(update.added(), update.removed());
             rollingInputTable.notifyListeners(update);
         });
@@ -223,7 +233,8 @@ public class SortBenchmark {
         update.modifiedColumnSet = mcsWithSortColumn;
         update.shifted = RowSetShiftData.EMPTY;
 
-        UpdateGraphProcessor.DEFAULT.runWithinUnitTestCycle(() -> {
+        final ControlledUpdateGraph updateGraph = ExecutionContext.getContext().getUpdateGraph().cast();
+        updateGraph.runWithinUnitTestCycle(() -> {
             rollingInputRowSet.update(update.added(), update.removed());
             rollingInputTable.notifyListeners(update);
         });

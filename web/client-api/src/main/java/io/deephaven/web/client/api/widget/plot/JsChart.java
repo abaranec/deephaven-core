@@ -1,10 +1,16 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.web.client.api.widget.plot;
 
+import com.vertispan.tsdefs.annotations.TsTypeRef;
 import elemental2.core.JsArray;
 import elemental2.core.JsObject;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.console_pb.figuredescriptor.ChartDescriptor;
-import io.deephaven.web.client.api.HasEventHandling;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.console_pb.figuredescriptor.ChartDescriptor;
+import io.deephaven.web.client.api.event.HasEventHandling;
+import io.deephaven.web.client.api.widget.plot.enums.JsChartType;
 import jsinterop.annotations.JsIgnore;
+import jsinterop.annotations.JsNullable;
 import jsinterop.annotations.JsProperty;
 import jsinterop.annotations.JsType;
 import jsinterop.base.Js;
@@ -12,8 +18,14 @@ import jsinterop.base.Js;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * Provide the details for a chart.
+ */
 @JsType(name = "Chart", namespace = "dh.plot")
 public class JsChart extends HasEventHandling {
+    /**
+     * a new series was added to this chart as part of a multi-series. The series instance is the detail for this event.
+     */
     public static final String EVENT_SERIES_ADDED = "seriesadded";
 
     private final ChartDescriptor descriptor;
@@ -41,6 +53,16 @@ public class JsChart extends HasEventHandling {
     }
 
     @JsProperty
+    public int getColumn() {
+        return descriptor.getColumn();
+    }
+
+    @JsProperty
+    public int getRow() {
+        return descriptor.getRow();
+    }
+
+    @JsProperty
     public int getColspan() {
         return descriptor.getColspan();
     }
@@ -50,13 +72,24 @@ public class JsChart extends HasEventHandling {
         return descriptor.getRowspan();
     }
 
+    /**
+     * The type of this chart, see <b>ChartType</b> enum for more details.
+     * 
+     * @return int
+     */
     @JsProperty
-    @SuppressWarnings("unusable-by-js")
+    @TsTypeRef(JsChartType.class)
     public int getChartType() {
         return descriptor.getChartType();
     }
 
+    /**
+     * The title of the chart.
+     * 
+     * @return String
+     */
     @JsProperty
+    @JsNullable
     public String getTitle() {
         if (descriptor.hasTitle()) {
             return descriptor.getTitle();
@@ -106,16 +139,31 @@ public class JsChart extends HasEventHandling {
         return multiSeries;
     }
 
+    /**
+     * The series data for display in this chart.
+     * 
+     * @return dh.plot.Series
+     */
     @JsIgnore
     public JsSeries[] getSeries() {
         return series;
     }
 
+    /**
+     * The multi-series data for display in this chart
+     * 
+     * @return dh.plot.MultiSeries
+     */
     @JsIgnore
     public JsMultiSeries[] getMultiSeries() {
         return multiSeries;
     }
 
+    /**
+     * The axes used in this chart.
+     * 
+     * @return dh.plot.Axis
+     */
     @JsProperty
     public JsAxis[] getAxes() {
         return axes;

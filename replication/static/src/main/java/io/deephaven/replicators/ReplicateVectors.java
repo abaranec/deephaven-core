@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.replicators;
 
 import io.deephaven.replication.ReplicatePrimitiveCode;
@@ -16,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 public class ReplicateVectors {
+    private static final String TASK = "replicateVectors";
 
     @SuppressWarnings("AutoBoxing")
     public static void main(String[] args) throws IOException {
@@ -23,31 +23,31 @@ public class ReplicateVectors {
 
         final String charVectorJavaPath = "engine/vector/src/main/java/io/deephaven/vector/CharVector.java";
 
-        ReplicatePrimitiveCode.charToAllButBooleanAndFloats(charVectorJavaPath, serialVersionUIDs);
+        ReplicatePrimitiveCode.charToAllButBooleanAndFloats(TASK, charVectorJavaPath, serialVersionUIDs);
 
-        final String floatPath = ReplicatePrimitiveCode.charToFloat(charVectorJavaPath, serialVersionUIDs);
+        final String floatPath = ReplicatePrimitiveCode.charToFloat(TASK, charVectorJavaPath, serialVersionUIDs);
         final File floatFile = new File(floatPath);
         List<String> floatLines = FileUtils.readLines(floatFile, Charset.defaultCharset());
-        floatLines = ReplicationUtils.simpleFixup(floatLines, "elementEquals",
-                "aArray\\.get\\(ei\\) != bArray\\.get\\(ei\\)",
-                "Float.floatToIntBits(aArray.get(ei)) != Float.floatToIntBits(bArray.get(ei))");
+        floatLines = ReplicationUtils.simpleFixup(floatLines, "ElementEquals",
+                "aIterator\\.nextFloat\\(\\) != bIterator\\.nextFloat\\(\\)",
+                "Float.floatToIntBits(aIterator.nextFloat()) != Float.floatToIntBits(bIterator.nextFloat())");
         FileUtils.writeLines(floatFile, floatLines);
 
-        final String doublePath = ReplicatePrimitiveCode.charToDouble(charVectorJavaPath, serialVersionUIDs);
+        final String doublePath = ReplicatePrimitiveCode.charToDouble(TASK, charVectorJavaPath, serialVersionUIDs);
         final File doubleFile = new File(doublePath);
         List<String> doubleLines = FileUtils.readLines(doubleFile, Charset.defaultCharset());
-        doubleLines = ReplicationUtils.simpleFixup(doubleLines, "elementEquals",
-                "aArray\\.get\\(ei\\) != bArray\\.get\\(ei\\)",
-                "Double.doubleToLongBits(aArray.get(ei)) != Double.doubleToLongBits(bArray.get(ei))");
+        doubleLines = ReplicationUtils.simpleFixup(doubleLines, "ElementEquals",
+                "aIterator\\.nextDouble\\(\\) != bIterator\\.nextDouble\\(\\)",
+                "Double.doubleToLongBits(aIterator.nextDouble()) != Double.doubleToLongBits(bIterator.nextDouble())");
         FileUtils.writeLines(doubleFile, doubleLines);
 
-        ReplicatePrimitiveCode.charToAllButBoolean(
+        ReplicatePrimitiveCode.charToAllButBoolean(TASK,
                 "engine/vector/src/main/java/io/deephaven/vector/CharVectorDirect.java",
                 serialVersionUIDs);
-        ReplicatePrimitiveCode.charToAllButBoolean(
+        ReplicatePrimitiveCode.charToAllButBoolean(TASK,
                 "engine/vector/src/main/java/io/deephaven/vector/CharVectorSlice.java",
                 serialVersionUIDs);
-        ReplicatePrimitiveCode.charToAllButBoolean(
+        ReplicatePrimitiveCode.charToAllButBoolean(TASK,
                 "engine/vector/src/main/java/io/deephaven/vector/CharSubVector.java",
                 serialVersionUIDs);
     }

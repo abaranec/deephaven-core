@@ -1,11 +1,15 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.benchmarking.impl;
 
 import io.deephaven.engine.table.Table;
-import io.deephaven.engine.util.TableTools;
-import io.deephaven.engine.table.impl.QueryTableTestBase;
+import io.deephaven.engine.testutil.QueryTableTestBase;
 import io.deephaven.benchmarking.BenchmarkTable;
 import io.deephaven.benchmarking.BenchmarkTableBuilder;
 import io.deephaven.benchmarking.BenchmarkTools;
+
+import static io.deephaven.engine.testutil.TstUtils.assertTableEquals;
 
 public class TestTableGeneration extends QueryTableTestBase {
 
@@ -35,7 +39,7 @@ public class TestTableGeneration extends QueryTableTestBase {
         // Next make sure it's repeatable
         bt.reset();
 
-        assertEquals("", TableTools.diff(bt.getTable(), historicalTable, 1));
+        assertTableEquals(bt.getTable(), historicalTable);
     }
 
     public void testCreateIntraday() {
@@ -59,7 +63,7 @@ public class TestTableGeneration extends QueryTableTestBase {
         // Next make sure it's repeatable
         bt.reset();
 
-        assertEquals("", TableTools.diff(bt.getTable(), intradayTable, 1));
+        assertTableEquals(bt.getTable(), intradayTable);
     }
 
     public void testCreateSparseInMemory() {

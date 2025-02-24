@@ -1,6 +1,10 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.select;
 
 import io.deephaven.engine.table.*;
+import io.deephaven.engine.table.impl.MatchPair;
 import io.deephaven.engine.table.impl.sources.*;
 import io.deephaven.engine.rowset.TrackingRowSet;
 import org.jetbrains.annotations.NotNull;
@@ -16,14 +20,9 @@ public class NullSelectColumn<T> implements SelectColumn {
     private final String name;
     private final NullValueColumnSource<T> nvcs;
 
-    public NullSelectColumn(final Class<T> type, final Class<T> elementType, final String name) {
+    public NullSelectColumn(final Class<T> type, final Class<?> elementType, final String name) {
         nvcs = NullValueColumnSource.getInstance(type, elementType);
         this.name = name;
-    }
-
-    @Override
-    public List<String> initInputs(final Table table) {
-        return Collections.emptyList();
     }
 
     @Override
@@ -33,13 +32,18 @@ public class NullSelectColumn<T> implements SelectColumn {
     }
 
     @Override
-    public List<String> initDef(final Map<String, ColumnDefinition<?>> columnDefinitionMap) {
+    public List<String> initDef(@NotNull final Map<String, ColumnDefinition<?>> columnDefinitionMap) {
         return Collections.emptyList();
     }
 
     @Override
     public Class<?> getReturnedType() {
         return nvcs.getType();
+    }
+
+    @Override
+    public Class<?> getReturnedComponentType() {
+        return nvcs.getComponentType();
     }
 
     @Override
@@ -76,12 +80,12 @@ public class NullSelectColumn<T> implements SelectColumn {
 
     @Override
     public WritableColumnSource<?> newDestInstance(final long size) {
-        return SparseArrayColumnSource.getSparseMemoryColumnSource(size, nvcs.getType(), nvcs.getComponentType());
+        return nvcs;
     }
 
     @Override
     public WritableColumnSource<?> newFlatDestInstance(final long size) {
-        return InMemoryColumnSource.getImmutableMemoryColumnSource(size, nvcs.getType(), nvcs.getComponentType());
+        return nvcs;
     }
 
     @Override
@@ -90,8 +94,8 @@ public class NullSelectColumn<T> implements SelectColumn {
     }
 
     @Override
-    public boolean disallowRefresh() {
-        return false;
+    public boolean isStateless() {
+        return true;
     }
 
     @Override

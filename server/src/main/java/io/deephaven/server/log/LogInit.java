@@ -1,6 +1,10 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.server.log;
 
 import io.deephaven.base.system.StandardStreamState;
+import io.deephaven.engine.table.impl.util.AsyncClientErrorNotifier;
 import io.deephaven.internal.log.InitSink;
 import io.deephaven.internal.log.LoggerFactory;
 import io.deephaven.io.log.LogSink;
@@ -33,6 +37,9 @@ public class LogInit {
         checkLogSinkIsSingleton();
         standardStreamState.setupRedirection();
         configureLoggerSink();
+        Logger errLog = LoggerFactory.getLogger(AsyncClientErrorNotifier.class);
+        AsyncClientErrorNotifier
+                .setReporter(err -> errLog.error().append("Error in table update: ").append(err).endl());
     }
 
     private void configureLoggerSink() {

@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.qst.table;
 
 import io.deephaven.annotations.LeafStyle;
@@ -120,9 +123,8 @@ public abstract class NewTable extends TableBase implements Iterable<Column<?>> 
     }
 
     @Override
-    public final <V extends TableSpec.Visitor> V walk(V visitor) {
-        visitor.visit(this);
-        return visitor;
+    public final <T> T walk(Visitor<T> visitor) {
+        return visitor.visit(this);
     }
 
     @Check

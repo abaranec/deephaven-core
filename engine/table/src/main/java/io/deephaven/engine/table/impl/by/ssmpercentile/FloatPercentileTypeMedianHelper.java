@@ -1,6 +1,9 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.by.ssmpercentile;
 
-import io.deephaven.engine.table.impl.sources.ArrayBackedColumnSource;
+import io.deephaven.engine.table.WritableColumnSource;
 import io.deephaven.engine.table.impl.sources.FloatArraySource;
 import io.deephaven.engine.table.impl.ssms.FloatSegmentedSortedMultiset;
 import io.deephaven.engine.table.impl.ssms.SegmentedSortedMultiSet;
@@ -11,10 +14,10 @@ public class FloatPercentileTypeMedianHelper extends FloatPercentileTypeHelper {
     private final double percentile;
     private final FloatArraySource resultColumn;
 
-    FloatPercentileTypeMedianHelper(double percentile, ArrayBackedColumnSource resultColumn) {
+    FloatPercentileTypeMedianHelper(double percentile, WritableColumnSource resultColumn) {
         super(percentile, resultColumn);
         this.percentile = percentile;
-        this.resultColumn = (FloatArraySource)resultColumn;
+        this.resultColumn = (FloatArraySource) resultColumn;
     }
 
     @Override
@@ -26,7 +29,7 @@ public class FloatPercentileTypeMedianHelper extends FloatPercentileTypeHelper {
         if (totalSize == 0) {
             return setResult(destination, NULL_FLOAT);
         } else {
-            final long targetLo = (int)((totalSize - 1) * percentile) + 1;
+            final long targetLo = (int) ((totalSize - 1) * percentile) + 1;
             if (loSize < targetLo) {
                 ssmHi.moveFrontToBack(ssmLo, targetLo - loSize);
             } else if (loSize > targetLo) {
@@ -34,10 +37,11 @@ public class FloatPercentileTypeMedianHelper extends FloatPercentileTypeHelper {
             }
 
             if (ssmLo.totalSize() == ssmHi.totalSize()) {
-                final float divisor = (float)2.0;
-                return setResult(destination, (((FloatSegmentedSortedMultiset)ssmLo).getMaxFloat() + ((FloatSegmentedSortedMultiset)ssmHi).getMinFloat()) / divisor);
+                final float divisor = (float) 2.0;
+                return setResult(destination, (((FloatSegmentedSortedMultiset) ssmLo).getMaxFloat()
+                        + ((FloatSegmentedSortedMultiset) ssmHi).getMinFloat()) / divisor);
             } else {
-                return setResult(destination, ((FloatSegmentedSortedMultiset)ssmLo).getMaxFloat());
+                return setResult(destination, ((FloatSegmentedSortedMultiset) ssmLo).getMaxFloat());
             }
         }
     }

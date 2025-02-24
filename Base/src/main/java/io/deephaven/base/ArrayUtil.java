@@ -1,14 +1,22 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.base;
 
 import io.deephaven.base.verify.Require;
 
 import java.util.*;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 public class ArrayUtil {
+
+    /**
+     * The maximum array size is determined by the JVM and in practice is less than Integer.MAX_VALUE. (See note at
+     * {@code jdk.internal.util.ArraysSupport#SOFT_MAX_ARRAY_LENGTH}.)
+     */
+    // We would like to use jdk.internal.util.ArraysSupport.MAX_ARRAY_LENGTH, but it is not exported
+    public static final int MAX_ARRAY_SIZE = Integer.MAX_VALUE - 8;
 
     public static int[] pushArray(int e, int[] a) {
         if (a == null) {
@@ -181,7 +189,7 @@ public class ArrayUtil {
         return false;
     }
 
-    public static <T> T[] addUnless(T[] a, Class<T> c, Predicate.Unary<T> pred, Function.Nullary<T> factory) {
+    public static <T> T[] addUnless(T[] a, Class<T> c, Predicate.Unary<T> pred, Supplier<T> factory) {
         if (a != null) {
             for (int i = 0; i < a.length; ++i) {
                 if (pred.call(a[i])) {
@@ -189,11 +197,10 @@ public class ArrayUtil {
                 }
             }
         }
-        return pushArray(factory.call(), a, c);
+        return pushArray(factory.get(), a, c);
     }
 
-    public static <T, A> T[] addUnless(T[] a, Class<T> c, Predicate.Binary<T, A> pred, Function.Unary<T, A> factory,
-            A arg) {
+    public static <T, A> T[] addUnless(T[] a, Class<T> c, Predicate.Binary<T, A> pred, Function<A, T> factory, A arg) {
         if (a != null) {
             for (int i = 0; i < a.length; ++i) {
                 if (pred.call(a[i], arg)) {
@@ -201,20 +208,20 @@ public class ArrayUtil {
                 }
             }
         }
-        return pushArray(factory.call(arg), a, c);
+        return pushArray(factory.apply(arg), a, c);
     }
 
-    public static <T, A> T[] replaceOrAdd(T[] a, Class<T> c, Predicate.Binary<T, A> pred, Function.Unary<T, A> factory,
+    public static <T, A> T[] replaceOrAdd(T[] a, Class<T> c, Predicate.Binary<T, A> pred, Function<A, T> factory,
             A arg) {
         if (a != null) {
             for (int i = 0; i < a.length; ++i) {
                 if (pred.call(a[i], arg)) {
-                    a[i] = factory.call(arg);
+                    a[i] = factory.apply(arg);
                     return a;
                 }
             }
         }
-        return pushArray(factory.call(arg), a, c);
+        return pushArray(factory.apply(arg), a, c);
     }
 
     public static <T> T[] removeIf(T[] a, Predicate.Unary<T> pred) {
@@ -1463,9 +1470,9 @@ public class ArrayUtil {
         return array;
     }
 
-    public static <T> void init(T[] array, Function.Nullary<T> producer) {
+    public static <T> void init(T[] array, Supplier<T> producer) {
         for (int i = 0; i < array.length; ++i) {
-            array[i] = producer.call();
+            array[i] = producer.get();
         }
     }
 }

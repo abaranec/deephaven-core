@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.api.agg.spec;
 
 import io.deephaven.api.ColumnName;
@@ -26,6 +29,16 @@ public class AggSpecColumnReferences implements AggSpec.Visitor {
     }
 
     @Override
+    public void visit(AggSpecApproximatePercentile approxPct) {
+        out = Collections.emptySet();
+    }
+
+    @Override
+    public void visit(AggSpecAvg avg) {
+        out = Collections.emptySet();
+    }
+
+    @Override
     public void visit(AggSpecCountDistinct countDistinct) {
         out = Collections.emptySet();
     }
@@ -36,22 +49,22 @@ public class AggSpecColumnReferences implements AggSpec.Visitor {
     }
 
     @Override
-    public void visit(AggSpecGroup group) {
-        out = Collections.emptySet();
-    }
-
-    @Override
-    public void visit(AggSpecAvg avg) {
-        out = Collections.emptySet();
-    }
-
-    @Override
     public void visit(AggSpecFirst first) {
         out = Collections.emptySet();
     }
 
     @Override
     public void visit(AggSpecFormula formula) {
+        out = Collections.emptySet();
+    }
+
+    @Override
+    public void visit(AggSpecFreeze freeze) {
+        out = Collections.emptySet();
+    }
+
+    @Override
+    public void visit(AggSpecGroup group) {
         out = Collections.emptySet();
     }
 
@@ -97,6 +110,11 @@ public class AggSpecColumnReferences implements AggSpec.Visitor {
 
     @Override
     public void visit(AggSpecSum sum) {
+        out = Collections.emptySet();
+    }
+
+    @Override
+    public void visit(AggSpecTDigest tDigest) {
         out = Collections.emptySet();
     }
 

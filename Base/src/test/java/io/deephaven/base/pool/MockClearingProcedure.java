@@ -1,21 +1,21 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.base.pool;
 
-import io.deephaven.base.Procedure;
 import io.deephaven.base.testing.RecordingMockObject;
+
+import java.util.function.Consumer;
 
 // --------------------------------------------------------------------
 /**
  * Mock clearing procedure.
  */
-public class MockClearingProcedure<T> extends RecordingMockObject implements Procedure.Unary<T> {
+public class MockClearingProcedure<T> extends RecordingMockObject implements Consumer<T> {
 
     // ----------------------------------------------------------------
-    @Override // from Procedure.Unary
-    public void call(T arg) {
-        recordActivity("call(" + arg + ")");
+    @Override
+    public void accept(T arg) {
+        recordActivity("accept(" + arg + ")");
     }
 }

@@ -5,6 +5,7 @@ import io.deephaven.engine.rowset.chunkattributes.*;
 import java.lang.*;
 import java.util.*;
 import io.deephaven.base.string.cache.CompressedString;
+import io.deephaven.chunk.BooleanChunk;
 import io.deephaven.chunk.ByteChunk;
 import io.deephaven.chunk.CharChunk;
 import io.deephaven.chunk.Chunk;
@@ -14,6 +15,7 @@ import io.deephaven.chunk.IntChunk;
 import io.deephaven.chunk.LongChunk;
 import io.deephaven.chunk.ObjectChunk;
 import io.deephaven.chunk.ShortChunk;
+import io.deephaven.chunk.WritableBooleanChunk;
 import io.deephaven.chunk.WritableByteChunk;
 import io.deephaven.chunk.WritableCharChunk;
 import io.deephaven.chunk.WritableChunk;
@@ -23,6 +25,7 @@ import io.deephaven.chunk.WritableIntChunk;
 import io.deephaven.chunk.WritableLongChunk;
 import io.deephaven.chunk.WritableObjectChunk;
 import io.deephaven.chunk.WritableShortChunk;
+import io.deephaven.engine.context.QueryScopeParam;
 import io.deephaven.engine.rowset.RowSequence;
 import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.engine.rowset.RowSetBuilderRandom;
@@ -33,54 +36,46 @@ import io.deephaven.engine.rowset.TrackingWritableRowSet;
 import io.deephaven.engine.rowset.WritableRowSet;
 import io.deephaven.engine.table.ColumnSource;
 import io.deephaven.engine.table.Context;
-import io.deephaven.engine.table.DataColumn;
 import io.deephaven.engine.table.Table;
 import static io.deephaven.engine.table.impl.select.ConditionFilter.FilterKernel;
-import io.deephaven.engine.table.lang.QueryScopeParam;
-import io.deephaven.time.DateTime;
+import io.deephaven.engine.table.vectors.ColumnVectors;
 import io.deephaven.time.DateTimeUtils;
-import io.deephaven.time.Period;
 import io.deephaven.util.datastructures.LongSizedDataStructure;
 import io.deephaven.util.type.ArrayTypeUtils;
 import io.deephaven.util.type.TypeUtils;
 import io.deephaven.vector.VectorConversions;
 import java.lang.reflect.Array;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.Period;
+import java.time.ZonedDateTime;
 import java.util.concurrent.ConcurrentHashMap;
-import org.joda.time.LocalTime;
 import static io.deephaven.base.string.cache.CompressedString.*;
 import static io.deephaven.engine.table.impl.lang.QueryLanguageFunctionUtils.*;
 import static io.deephaven.engine.table.impl.verify.TableAssertions.*;
 import static io.deephaven.engine.util.ColorUtilImpl.*;
+import static io.deephaven.function.Basic.*;
 import static io.deephaven.function.BinSearch.*;
-import static io.deephaven.function.BooleanPrimitives.*;
-import static io.deephaven.function.ByteNumericPrimitives.*;
-import static io.deephaven.function.BytePrimitives.*;
-import static io.deephaven.function.Casting.*;
-import static io.deephaven.function.CharacterPrimitives.*;
-import static io.deephaven.function.ComparePrimitives.*;
-import static io.deephaven.function.DoubleFpPrimitives.*;
-import static io.deephaven.function.DoubleNumericPrimitives.*;
-import static io.deephaven.function.DoublePrimitives.*;
-import static io.deephaven.function.FloatFpPrimitives.*;
-import static io.deephaven.function.FloatNumericPrimitives.*;
-import static io.deephaven.function.FloatPrimitives.*;
-import static io.deephaven.function.IntegerNumericPrimitives.*;
-import static io.deephaven.function.IntegerPrimitives.*;
-import static io.deephaven.function.LongNumericPrimitives.*;
-import static io.deephaven.function.LongPrimitives.*;
-import static io.deephaven.function.ObjectPrimitives.*;
-import static io.deephaven.function.PrimitiveParseUtil.*;
-import static io.deephaven.function.ShortNumericPrimitives.*;
-import static io.deephaven.function.ShortPrimitives.*;
+import static io.deephaven.function.BinSearchAlgo.*;
+import static io.deephaven.function.Cast.*;
+import static io.deephaven.function.Logic.*;
+import static io.deephaven.function.Numeric.*;
+import static io.deephaven.function.Parse.*;
+import static io.deephaven.function.Random.*;
+import static io.deephaven.function.Sort.*;
 import static io.deephaven.gui.color.Color.*;
+
 import static io.deephaven.time.DateTimeUtils.*;
-import static io.deephaven.time.TimeZone.*;
+import static io.deephaven.time.calendar.Calendars.*;
 import static io.deephaven.time.calendar.StaticCalendarMethods.*;
 import static io.deephaven.util.QueryConstants.*;
 
 public class FormulaSample extends io.deephaven.engine.table.impl.select.Formula {
     public static final io.deephaven.engine.table.impl.select.formula.FormulaFactory __FORMULA_FACTORY = FormulaSample::new;
 
+    private final String __columnName;
     private final io.deephaven.engine.table.ColumnSource<java.lang.Long> II;
     private final io.deephaven.engine.table.ColumnSource<java.lang.Integer> I;
     private final io.deephaven.vector.LongVector II_;
@@ -88,14 +83,16 @@ public class FormulaSample extends io.deephaven.engine.table.impl.select.Formula
     private final Map<Object, Object> __lazyResultCache;
 
 
-    public FormulaSample(final TrackingRowSet rowSet,
+    public FormulaSample(final String __columnName,
+            final TrackingRowSet __rowSet,
             final boolean __lazy,
             final java.util.Map<String, ? extends io.deephaven.engine.table.ColumnSource> __columnsToData,
-            final io.deephaven.engine.table.lang.QueryScopeParam... __params) {
-        super(rowSet);
+            final io.deephaven.engine.context.QueryScopeParam... __params) {
+        super(__rowSet);
+        this.__columnName = __columnName;
         II = __columnsToData.get("II");
         I = __columnsToData.get("I");
-        II_ = new io.deephaven.engine.table.impl.vector.LongVectorColumnWrapper(__columnsToData.get("II"), __rowSet);
+        II_ = new io.deephaven.engine.table.vectors.LongVectorColumnWrapper(__columnsToData.get("II"), __rowSet);
         q = (java.lang.Integer) __params[0].getValue();
         __lazyResultCache = __lazy ? new ConcurrentHashMap<>() : null;
     }
@@ -108,7 +105,7 @@ public class FormulaSample extends io.deephaven.engine.table.impl.select.Formula
         final long __temp0 = II.getLong(k);
         final int __temp1 = I.getInt(k);
         if (__lazyResultCache != null) {
-            final Object __lazyKey = io.deephaven.engine.util.caching.C14nUtil.maybeMakeSmartKey(i, ii, __temp0, __temp1);
+            final Object __lazyKey = io.deephaven.engine.util.caching.C14nUtil.maybeMakeCompoundKey(i, ii, __temp0, __temp1);
             return (long)__lazyResultCache.computeIfAbsent(__lazyKey, __unusedKey -> applyFormulaPerItem(i, ii, __temp0, __temp1));
         }
         return applyFormulaPerItem(i, ii, __temp0, __temp1);
@@ -125,7 +122,7 @@ public class FormulaSample extends io.deephaven.engine.table.impl.select.Formula
         final long __temp0 = II.getPrevLong(k);
         final int __temp1 = I.getPrevInt(k);
         if (__lazyResultCache != null) {
-            final Object __lazyKey = io.deephaven.engine.util.caching.C14nUtil.maybeMakeSmartKey(i, ii, __temp0, __temp1);
+            final Object __lazyKey = io.deephaven.engine.util.caching.C14nUtil.maybeMakeCompoundKey(i, ii, __temp0, __temp1);
             return (long)__lazyResultCache.computeIfAbsent(__lazyKey, __unusedKey -> applyFormulaPerItem(i, ii, __temp0, __temp1));
         }
         return applyFormulaPerItem(i, ii, __temp0, __temp1);
@@ -178,7 +175,7 @@ public class FormulaSample extends io.deephaven.engine.table.impl.select.Formula
                 final int __chunkPos = __chunkPosHolder[0]++;
                 final int i = __context.__iChunk.get(__chunkPos);
                 final long ii = __context.__iiChunk.get(__chunkPos);
-                final Object __lazyKey = io.deephaven.engine.util.caching.C14nUtil.maybeMakeSmartKey(i, ii, __chunk__col__II.get(__chunkPos), __chunk__col__I.get(__chunkPos));
+                final Object __lazyKey = io.deephaven.engine.util.caching.C14nUtil.maybeMakeCompoundKey(i, ii, __chunk__col__II.get(__chunkPos), __chunk__col__I.get(__chunkPos));
                 __typedDestination.set(__chunkPos, (long)__lazyResultCache.computeIfAbsent(__lazyKey, __unusedKey -> applyFormulaPerItem(i, ii, __chunk__col__II.get(__chunkPos), __chunk__col__I.get(__chunkPos))));
             }
             );
@@ -196,9 +193,9 @@ public class FormulaSample extends io.deephaven.engine.table.impl.select.Formula
 
     private long applyFormulaPerItem(int i, long ii, long II, int I) {
         try {
-            return plus(plus(multiply(I, II), multiply(q.intValue(), ii)), II_.get(minus(i, 1)));
+            return plus(plus(multiply(I, II), multiply(q.intValue(), ii)), II_.get(longCast(minus(i, 1))));
         } catch (java.lang.Exception __e) {
-            throw new io.deephaven.engine.table.impl.select.FormulaEvaluationException("In formula: Value = " + "plus(plus(multiply(I, II), multiply(q.intValue(), ii)), II_.get(minus(i, 1)))", __e);
+            throw new io.deephaven.engine.table.impl.select.FormulaEvaluationException("In formula: " + __columnName + " = " + "I * II + q * ii + II_[i - 1]", __e);
         }
     }
 
@@ -229,6 +226,6 @@ public class FormulaSample extends io.deephaven.engine.table.impl.select.Formula
     }
 
     private int __intSize(final long l) {
-        return LongSizedDataStructure.intSize("FormulaColumn ii usage", l);
+        return LongSizedDataStructure.intSize("FormulaColumn i usage", l);
     }
 }

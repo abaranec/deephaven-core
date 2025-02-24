@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.util.metrics;
 
 import io.deephaven.configuration.Configuration;
@@ -156,6 +159,9 @@ public class MetricsManager {
             synchronized (pendingPerThreadCounters) {
                 for (final ArrayType threadCounters : perThreadCounters) {
                     clear(threadCounters, size);
+                }
+                for (final ArrayType pendingCounters : pendingPerThreadCounters) {
+                    clear(pendingCounters, size);
                 }
             }
         }

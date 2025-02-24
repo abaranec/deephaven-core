@@ -1,8 +1,12 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.kafka;
 
 import io.deephaven.engine.table.ColumnDefinition;
 import org.apache.avro.Schema;
 
+import org.apache.avro.util.Utf8;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -39,6 +43,18 @@ public class KafkaToolsTest {
         assertEquals(double.class, colDefs.get(1).getDataType());
     }
 
+    @Test
+    public void testAvroSchemaWithUTF8Strings() {
+        final Schema avroSchema = new Schema.Parser().parse(schemaWithNull);
+        final List<ColumnDefinition<?>> colDefs = new ArrayList<>();
+        KafkaTools.avroSchemaToColumnDefinitions(colDefs, null, avroSchema, KafkaTools.DIRECT_MAPPING, true);
+        assertEquals(2, colDefs.size());
+        assertEquals("Symbol", colDefs.get(0).getName());
+        assertEquals(Utf8.class, colDefs.get(0).getDataType());
+        assertEquals("Price", colDefs.get(1).getName());
+        assertEquals(double.class, colDefs.get(1).getDataType());
+    }
+
     private static final String schemaWithNesting =
             "  { "
                     + "    \"type\": \"record\", "
@@ -65,9 +81,11 @@ public class KafkaToolsTest {
         final List<ColumnDefinition<?>> colDefs = new ArrayList<>();
         KafkaTools.avroSchemaToColumnDefinitions(colDefs, avroSchema);
         assertEquals(2, colDefs.size());
-        assertEquals("NestedField.Symbol", colDefs.get(0).getName());
+        assertEquals("NestedField" + KafkaTools.NESTED_FIELD_COLUMN_NAME_SEPARATOR + "Symbol",
+                colDefs.get(0).getName());
         assertEquals(String.class, colDefs.get(0).getDataType());
-        assertEquals("NestedField.Price", colDefs.get(1).getName());
+        assertEquals("NestedField" + KafkaTools.NESTED_FIELD_COLUMN_NAME_SEPARATOR + "Price",
+                colDefs.get(1).getName());
         assertEquals(double.class, colDefs.get(1).getDataType());
     }
 
@@ -153,23 +171,34 @@ public class KafkaToolsTest {
     public void testAvroSchemaWithMoreNesting() {
         final Schema avroSchema = new Schema.Parser().parse(schemaWithMoreNesting);
         Function<String, String> mapping = (final String fieldName) -> {
-            if ("NestedFields2.NestedFields3.field4".equals(fieldName)) {
+            if (("NestedFields2" +
+                    KafkaTools.NESTED_FIELD_NAME_SEPARATOR +
+                    "NestedFields3" +
+                    KafkaTools.NESTED_FIELD_NAME_SEPARATOR +
+                    "field4").equals(fieldName)) {
                 return "field4";
             }
-            return fieldName;
+            return KafkaTools.DIRECT_MAPPING.apply(fieldName);
         };
         final List<ColumnDefinition<?>> colDefs = new ArrayList<>();
         KafkaTools.avroSchemaToColumnDefinitions(colDefs, avroSchema, mapping);
         final int nCols = 4;
         assertEquals(nCols, colDefs.size());
         int c = 0;
-        assertEquals("NestedFields1.field1", colDefs.get(c).getName());
+        assertEquals("NestedFields1" + KafkaTools.NESTED_FIELD_COLUMN_NAME_SEPARATOR + "field1",
+                colDefs.get(c).getName());
         assertEquals(int.class, colDefs.get(c++).getDataType());
-        assertEquals("NestedFields1.field2", colDefs.get(c).getName());
+        assertEquals("NestedFields1" + KafkaTools.NESTED_FIELD_COLUMN_NAME_SEPARATOR + "field2",
+                colDefs.get(c).getName());
         assertEquals(float.class, colDefs.get(c++).getDataType());
-        assertEquals("NestedFields2.NestedFields3.field3", colDefs.get(c).getName());
+        assertEquals("NestedFields2" + KafkaTools.NESTED_FIELD_COLUMN_NAME_SEPARATOR +
+                "NestedFields3" + KafkaTools.NESTED_FIELD_COLUMN_NAME_SEPARATOR +
+                "field3",
+                colDefs.get(c).getName());
         assertEquals(long.class, colDefs.get(c++).getDataType());
-        assertEquals("field4", colDefs.get(c).getName());
+        assertEquals(
+                "field4",
+                colDefs.get(c).getName());
         assertEquals(double.class, colDefs.get(c++).getDataType());
         assertEquals(nCols, c);
     }

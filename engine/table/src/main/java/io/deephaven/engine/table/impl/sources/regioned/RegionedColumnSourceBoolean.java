@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources.regioned;
 
 import io.deephaven.chunk.attributes.Values;
@@ -5,6 +8,7 @@ import io.deephaven.util.BooleanUtils;
 import io.deephaven.engine.table.impl.ColumnSourceGetDefaults;
 import io.deephaven.chunk.*;
 import io.deephaven.engine.rowset.RowSequence;
+import org.jetbrains.annotations.NotNull;
 
 /**
  * Regioned column source implementation for columns of Booleans.
@@ -14,13 +18,18 @@ final class RegionedColumnSourceBoolean
         implements ColumnSourceGetDefaults.ForBoolean {
 
     public RegionedColumnSourceBoolean() {
-        super(ColumnRegionByte.createNull(PARAMETERS.regionMask), Boolean.class,
-                RegionedColumnSourceByte.NativeType.AsValues::new);
+        this(new RegionedColumnSourceByte.AsValues());
+    }
+
+    public RegionedColumnSourceBoolean(@NotNull final RegionedColumnSourceByte<Values> inner) {
+        super(ColumnRegionByte.createNull(PARAMETERS.regionMask), Boolean.class, inner);
     }
 
     @Override
-    public void convertRegion(WritableChunk<? super Values> destination,
-                              Chunk<? extends Values> source, RowSequence rowSequence) {
+    public void convertRegion(
+            @NotNull final WritableChunk<? super Values> destination,
+            @NotNull final Chunk<? extends Values> source,
+            @NotNull final RowSequence rowSequence) {
         WritableObjectChunk<Boolean, ? super Values> objectChunk = destination.asWritableObjectChunk();
         ByteChunk<? extends Values> byteChunk = source.asByteChunk();
 
@@ -34,8 +43,8 @@ final class RegionedColumnSourceBoolean
     }
 
     @Override
-    public Boolean get(long elementIndex) {
-        return elementIndex == RowSequence.NULL_ROW_KEY ? null :
-                BooleanUtils.byteAsBoolean(lookupRegion(elementIndex).getReferencedRegion().getByte(elementIndex));
+    public Boolean get(long rowKey) {
+        return rowKey == RowSequence.NULL_ROW_KEY ? null
+                : BooleanUtils.byteAsBoolean(getNativeSource().lookupRegion(rowKey).getByte(rowKey));
     }
 }

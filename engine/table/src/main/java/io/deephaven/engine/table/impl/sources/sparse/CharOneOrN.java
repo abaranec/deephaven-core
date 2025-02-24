@@ -1,3 +1,7 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// @formatter:off
 package io.deephaven.engine.table.impl.sources.sparse;
 
 import io.deephaven.util.SoftRecycler;

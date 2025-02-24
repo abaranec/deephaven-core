@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.plot;
 
 /**
@@ -20,11 +19,20 @@ public enum ChartType {
 
     /**
      * Open-high-low-close chart.
+     * <p>
+     * </p>
+     * Deprecated, use XY instead.
      */
+    @Deprecated(since = "0.18", forRemoval = true)
     OHLC,
 
     /**
      * Has one discrete axis.
      */
-    CATEGORY
+    CATEGORY,
+
+    /**
+     * A category axis for hierarchy, and a numeric axis for values.
+     */
+    TREEMAP,
 }

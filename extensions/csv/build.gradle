@@ -1,27 +1,35 @@
 plugins {
     id 'java-library'
+    id 'io.deephaven.project.register'
 }
 
 description 'CSV: Support to read and write engine tables from/to CSV'
 
 dependencies {
     api project(':engine-api')
+    api libs.deephaven.csv
+    runtimeOnly libs.deephaven.csv.fast.double.parser
 
     implementation project(':engine-table')
+    implementation project(':engine-base')
+    implementation libs.trove
 
-    Classpaths.inheritImmutables(project)
+    compileOnly project(':util-immutables')
+    annotationProcessor libs.immutables.value
 
-    Classpaths.inheritJUnitPlatform(project)
-    Classpaths.inheritAssertJ(project)
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.assertj
 
-    testImplementation TestTools.projectDependency(project, 'engine-table'),
-            'junit:junit:4.13.2'
+    testImplementation libs.commons.compress
+    testImplementation libs.commons.io
+    testImplementation project(':engine-test-utils')
+
+    testImplementation libs.junit4
 
     testRuntimeOnly project(':log-to-slf4j'),
             project(path: ':configs'),
             project(path: ':test-configs')
-    Classpaths.inheritSlf4j(project, 'slf4j-simple', 'testRuntimeOnly')
+    testRuntimeOnly libs.slf4j.simple
 }
 
-// testOutOfBand: non-parallel, not a engine test, not isolated
-TestTools.addEngineTest(project, 'OutOfBand', false, false, false)
+TestTools.addEngineOutOfBandTest(project)

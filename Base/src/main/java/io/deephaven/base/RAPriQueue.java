@@ -1,10 +1,10 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.base;
 
 import java.util.Arrays;
+import java.util.function.Function;
 
 /**
  * A "random-access" priority queue.
@@ -190,9 +190,9 @@ public class RAPriQueue<T> {
         return (index < size) ? queue[index + 1] : null;
     }
 
-    public <T2> int dump(T2[] result, int startIndex, Function.Unary<T2, T> f) {
+    public <T2> int dump(T2[] result, int startIndex, Function<T, T2> f) {
         for (int i = 0; i < size; i++) {
-            result[startIndex++] = f.call(queue[i + 1]);
+            result[startIndex++] = f.apply(queue[i + 1]);
         }
         return startIndex;
     }

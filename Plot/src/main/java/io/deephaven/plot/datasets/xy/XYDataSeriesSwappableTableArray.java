@@ -1,22 +1,17 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.plot.datasets.xy;
 
+import io.deephaven.engine.context.ExecutionContext;
 import io.deephaven.plot.AxesImpl;
 import io.deephaven.plot.TableSnapshotSeries;
-import io.deephaven.plot.datasets.ColumnNameConstants;
-import io.deephaven.plot.datasets.data.IndexableDataSwappableTable;
 import io.deephaven.plot.datasets.data.IndexableNumericDataSwappableTable;
 import io.deephaven.plot.errors.PlotInfo;
 import io.deephaven.plot.util.ArgumentValidations;
-import io.deephaven.plot.util.functions.FigureImplFunction;
 import io.deephaven.plot.util.tables.SwappableTable;
 import io.deephaven.engine.table.Table;
-import io.deephaven.engine.table.lang.QueryLibrary;
-import io.deephaven.engine.table.lang.QueryScope;
-import io.deephaven.gui.color.Paint;
+import io.deephaven.engine.context.QueryScope;
 
 import java.util.function.Function;
 
@@ -39,22 +34,6 @@ public class XYDataSeriesSwappableTableArray extends XYDataSeriesArray implement
     }
 
     @Override
-    public <T extends Paint> AbstractXYDataSeries pointColorByY(Function<Double, T> colors) {
-        final String colName = ColumnNameConstants.POINT_COLOR + this.hashCode();
-        chart().figure().registerTableMapFunction(swappableTable.getTableMapHandle(),
-                constructTableMapFromFunction(colors, Paint.class, y, colName));
-        swappableTable.getTableMapHandle().addColumn(colName);
-        chart().figure().registerFigureFunction(new FigureImplFunction(figImpl -> {
-            ((XYDataSeriesSwappableTableArray) figImpl.getFigure().getCharts().getChart(chart().row(), chart().column())
-                    .axes(axes().id()).series(id()))
-                            .colorsSetSpecific(
-                                    new IndexableDataSwappableTable<>(swappableTable, colName, getPlotInfo()));
-            return figImpl;
-        }, this));
-        return this;
-    }
-
-    @Override
     public XYDataSeriesArray copy(AxesImpl axes) {
         return new XYDataSeriesSwappableTableArray(this, axes);
     }
@@ -66,13 +45,13 @@ public class XYDataSeriesSwappableTableArray extends XYDataSeriesArray implement
         this.y = series.y;
     }
 
-    private <S, T> Function<Table, Table> constructTableMapFromFunction(final Function<S, T> function,
+    private <S, T> Function<Table, Table> constructPartitionedTableFromFunction(final Function<S, T> function,
             final Class resultClass, final String onColumn, final String columnName) {
         ArgumentValidations.assertNotNull(function, "function", getPlotInfo());
         final String queryFunction = columnName + "Function";
         return t -> {
             QueryScope.addParam(queryFunction, function);
-            QueryLibrary.importClass(resultClass);
+            ExecutionContext.getContext().getQueryLibrary().importClass(resultClass);
             return t.update(columnName + " = (" + resultClass.getSimpleName() + ") " + queryFunction + ".apply("
                     + onColumn + ")");
         };

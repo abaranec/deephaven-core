@@ -1,12 +1,12 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.util;
 
 import gnu.trove.iterator.TLongLongIterator;
 import io.deephaven.base.verify.Assert;
 import io.deephaven.configuration.Configuration;
+import io.deephaven.engine.context.ExecutionContext;
 import io.deephaven.engine.rowset.RowSequence;
 import io.deephaven.engine.table.ChunkSink;
 import io.deephaven.engine.updategraph.UpdateCommitter;
@@ -15,10 +15,9 @@ import io.deephaven.util.datastructures.hash.HashMapLockFreeK2V2;
 import io.deephaven.util.datastructures.hash.HashMapLockFreeK4V4;
 import io.deephaven.util.datastructures.hash.TNullableLongLongMap;
 import io.deephaven.engine.rowset.chunkattributes.RowKeys;
-import io.deephaven.chunk.attributes.Values;
 import io.deephaven.chunk.Chunk;
 import io.deephaven.chunk.LongChunk;
-import org.apache.commons.lang3.mutable.MutableInt;
+import io.deephaven.util.mutable.MutableInt;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -42,7 +41,7 @@ import org.jetbrains.annotations.NotNull;
  * phase. 5. The Writer has no special responsibility when transitioning the LogicalClock from Idle to Update. 6.
  * However, upon the transition from Update to Idle, the Writer does have an additional responsibility. Namely, the
  * writer must first transition the LogicalClock (from Update generation N to Idle generation N+1), then call our method
- * commitUpdates(). A logical place to do this might be the Terminal ShiftObliviousListener.
+ * commitUpdates(). A logical place to do this might be the Terminal Listener.
  *
  * Rationale that this code implements correct lock-free behavior:
  *
@@ -221,12 +220,22 @@ public class WritableRowRedirectionLockFree implements WritableRowRedirection {
     }
 
     @Override
-    public void removeAll(final RowSequence outerRowKeys) {
+    public void removeAll(final RowSequence rowSequence) {
         if (updateCommitter != null) {
             updateCommitter.maybeActivate();
         }
 
-        outerRowKeys.forAllRowKeys(key -> updates.put(key, BASELINE_KEY_NOT_FOUND));
+        rowSequence.forAllRowKeys(key -> updates.put(key, BASELINE_KEY_NOT_FOUND));
+    }
+
+    @Override
+    public void removeAllUnordered(final LongChunk<RowKeys> outerRowKeys) {
+        if (updateCommitter != null) {
+            updateCommitter.maybeActivate();
+        }
+        for (int ii = 0; ii < outerRowKeys.size(); ++ii) {
+            updates.put(outerRowKeys.get(ii), BASELINE_KEY_NOT_FOUND);
+        }
     }
 
     @Override
@@ -234,7 +243,8 @@ public class WritableRowRedirectionLockFree implements WritableRowRedirection {
         Assert.eqNull(updateCommitter, "updateCommitter");
         Assert.eq(baseline, "baseline", updates, "updates");
         updates = createUpdateMap();
-        updateCommitter = new UpdateCommitter<>(this, WritableRowRedirectionLockFree::commitUpdates);
+        updateCommitter = new UpdateCommitter<>(this, ExecutionContext.getContext().getUpdateGraph(),
+                WritableRowRedirectionLockFree::commitUpdates);
     }
 
     /**
@@ -254,7 +264,8 @@ public class WritableRowRedirectionLockFree implements WritableRowRedirection {
     }
 
     @Override
-    public void fillFromChunk(@NotNull ChunkSink.FillFromContext context,
+    public void fillFromChunk(
+            @NotNull ChunkSink.FillFromContext context,
             @NotNull Chunk<? extends RowKeys> innerRowKeys,
             @NotNull RowSequence outerRowKeys) {
         if (updateCommitter != null) {
@@ -262,11 +273,27 @@ public class WritableRowRedirectionLockFree implements WritableRowRedirection {
         }
 
         final MutableInt offset = new MutableInt();
-        final LongChunk<? extends Values> valuesLongChunk = innerRowKeys.asLongChunk();
-        outerRowKeys.forAllRowKeys(key -> {
-            updates.put(key, valuesLongChunk.get(offset.intValue()));
+        final LongChunk<? extends RowKeys> innerRowKeysTyped = innerRowKeys.asLongChunk();
+        outerRowKeys.forAllRowKeys(outerRowKey -> {
+            updates.put(outerRowKey, innerRowKeysTyped.get(offset.get()));
             offset.increment();
         });
+    }
+
+    @Override
+    public void fillFromChunkUnordered(
+            @NotNull final FillFromContext context,
+            @NotNull final Chunk<? extends RowKeys> innerRowKeys,
+            @NotNull final LongChunk<RowKeys> outerRowKeys) {
+        if (updateCommitter != null) {
+            updateCommitter.maybeActivate();
+        }
+
+        final LongChunk<? extends RowKeys> innerRowKeysTyped = innerRowKeys.asLongChunk();
+        final int size = innerRowKeysTyped.size();
+        for (int ki = 0; ki < size; ++ki) {
+            updates.put(outerRowKeys.get(ki), innerRowKeysTyped.get(ki));
+        }
     }
 
     private static final int hashBucketWidth = Configuration.getInstance()

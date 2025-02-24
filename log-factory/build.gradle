@@ -1,10 +1,9 @@
 plugins {
   id 'java-library'
-}
-
-configurations {
-  compile.extendsFrom fishIo
+  id 'io.deephaven.project.register'
 }
 
 dependencies {
+  api project(':Base')
+  api project(':IO')
 }

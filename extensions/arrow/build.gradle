@@ -1,0 +1,28 @@
+plugins {
+    id 'java-library'
+    id 'io.deephaven.project.register'
+}
+
+description = 'An extension integrating Arrow sources with Deephaven\'s Table Model'
+
+dependencies {
+    api project(':engine-table')
+
+    implementation project(':Configuration')
+    implementation libs.commons.lang3
+
+    implementation libs.arrow.format
+    implementation libs.arrow.vector
+    implementation libs.arrow.compression
+
+    testImplementation TestTools.projectDependency(project, 'engine-table')
+
+    implementation libs.slf4j.api
+    testRuntimeOnly libs.slf4j.simple
+    testRuntimeOnly project(':log-to-slf4j')
+
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.assertj
+}
+
+apply plugin: 'io.deephaven.java-open-nio'

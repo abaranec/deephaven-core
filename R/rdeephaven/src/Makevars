@@ -1,0 +1,64 @@
+# set C++ standard
+CXX_STD = CXX17
+
+#
+# The code below assumes an environment variable DHCPP is defined and
+# points to a pre-existing directory where the deephaven C++ client
+# and its dependent libraries was built, as per the instructions in
+# https://github.com/deephaven/deephaven-core/blob/main/cpp-client/README.md
+#
+DEPENDENCY_DIRS = -L$(DHCPP)/lib
+
+
+#
+# Note the name of the protobuf library changes to -lprotobuf
+# if the C++ client and its dependent libraries are built with
+#   CMAKE_BUILD_TYPE=Release
+# The value -lprotobufd matches the default build type `Debug`
+# The line below tries to automatically guess whether to use
+# `-lprotbufd` or `-lprotobuf` depending on which file is available.
+#
+PROTOBUF_LIB = `[ -f \${DHCPP}/lib/libprotobufd.so ] && echo -lprotobufd || echo -lprotobuf`
+
+DEPENDENCY_LIBS = \
+        $(PROTOBUF_LIB) \
+        -larrow \
+        `PKG_CONFIG_PATH=\${DHCPP}/lib/pkgconfig pkg-config --libs grpc++`
+
+# tells the compiler where to look for additional include directories
+PKG_CXXFLAGS = \
+	-I$(DHCPP)/include \
+	-I/usr/share/R/include \
+	-I/usr/local/lib/R/site-library/Rcpp/include
+
+# Uncomment to enable address sanitizer.  You may want to build
+# the C++ libraries with `cmake -DSANITIZE_ADDRESS=ON ...`.
+# To use address sanitizer you would also need an R build
+# with it compiled-in/enabled.
+#
+# To get such a build you can compile R from sources and
+# when running the `configure` script, have an environment
+# variable set with `CC="gcc -fsanitize=address"`.
+#
+#PKG_CXXFLAGS = -fsanitize=address
+#EXTRA_LDFLAGS = -fsanitize=address
+
+# list of required libraries, including deephaven and associated dependencies
+PKG_LIBS = \
+        $(EXTRA_LD_FLAGS) \
+	-L/usr/lib/R/lib -lR \
+	$(DEPENDENCY_DIRS) \
+	-ldhclient -ldhcore \
+	$(DEPENDENCY_LIBS) \
+
+# all src directory c++ source files
+SOURCES = $(wildcard *.cpp)
+# compiled objects to link
+OBJECTS = $(SOURCES:.cpp=.o)
+
+all: $(SHLIB)
+
+clean:
+	find . -type f -name '*.o' -delete
+	find . -type f -name '*.so' -delete
+	rm RcppExports.cpp

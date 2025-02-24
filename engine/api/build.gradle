@@ -1,36 +1,40 @@
 plugins {
     id 'java-library'
+    id 'io.deephaven.project.register'
 }
 
 description 'Engine API: Engine API module, suitable as a compile-time dependency for most queries'
 
 dependencies {
-    api project(':qst'),
-            project(':engine-chunk'),
-            project(':engine-vector'),
-            project(':engine-time'),
-            project(':engine-updategraph'),
-            project(':engine-rowset')
+    api project(':authentication')
+    api project(':qst')
+    api project(':engine-chunk')
+    api project(':engine-context')
+    api project(':engine-primitive')
+    api project(':engine-vector')
+    api project(':engine-time')
+    api project(':engine-updategraph')
+    api project(':engine-rowset')
 
-    implementation 'com.github.f4b6a3:uuid-creator:3.6.0'
+    implementation project(':DataStructures')
+    implementation libs.trove
 
-    compileOnly 'com.google.code.findbugs:jsr305:3.0.2'
+    compileOnly project(':util-immutables')
+    annotationProcessor libs.immutables.value
 
-    testImplementation 'junit:junit:4.13.2'
-}
+    implementation libs.guava
 
-spotless {
-    java {
-        targetExclude(
-                '**/*Boolean*.java',
-                '**/*Byte*.java',
-                '**/*Char*.java',
-                '**/*Short*.java',
-                '**/*Int*.java',
-                '**/*Long*.java',
-                '**/*Float*.java',
-                '**/*Double*.java',
-                '**/*Object*.java',
-        )
-    }
+    compileOnly libs.google.findbugs.jsr305
+
+    testImplementation project(':engine-test-utils')
+    testImplementation TestTools.projectDependency(project, 'engine-table')
+    testImplementation TestTools.projectDependency(project, 'engine-vector')
+    testImplementation libs.commons.lang3
+
+    testImplementation libs.junit4
+
+    testRuntimeOnly project(':log-to-slf4j')
+    testRuntimeOnly project(':configs')
+    testRuntimeOnly project(':test-configs')
+    testRuntimeOnly libs.slf4j.simple
 }

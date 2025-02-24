@@ -1,16 +1,15 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.base.array;
 
 import io.deephaven.base.Copyable;
-import io.deephaven.base.Function;
 
 import java.io.Externalizable;
 import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
+import java.util.function.Supplier;
 
 /**
  *
@@ -18,14 +17,9 @@ import java.io.ObjectOutput;
 public final class FastArrayExt<T extends Externalizable & Copyable<T>> extends FastArray<T>
         implements Externalizable, Copyable<FastArrayExt<T>> {
 
-    public static <T extends Externalizable & Copyable<T>> Function.Nullary<FastArrayExt<T>> createFactory(
-            final Class<T> clazz, final Function.Nullary<T> itemFactory) {
-        return new Function.Nullary<FastArrayExt<T>>() {
-            @Override
-            public FastArrayExt<T> call() {
-                return new FastArrayExt<T>(clazz, itemFactory);
-            }
-        };
+    public static <T extends Externalizable & Copyable<T>> Supplier<FastArrayExt<T>> createFactory(
+            final Class<T> clazz, final Supplier<T> itemFactory) {
+        return () -> new FastArrayExt<>(clazz, itemFactory);
     }
 
     /**
@@ -41,16 +35,16 @@ public final class FastArrayExt<T extends Externalizable & Copyable<T>> extends 
         super(clazz, initialSize);
     }
 
-    public FastArrayExt(final Class<? extends T> clazz, final Function.Nullary<? extends T> newInstance) {
+    public FastArrayExt(final Class<? extends T> clazz, final Supplier<? extends T> newInstance) {
         super(clazz, newInstance);
     }
 
-    public FastArrayExt(final Class<? extends T> clazz, final Function.Nullary<? extends T> newInstance,
+    public FastArrayExt(final Class<? extends T> clazz, final Supplier<? extends T> newInstance,
             final int initialSize, final boolean preallocate) {
         super(clazz, newInstance, initialSize, preallocate);
     }
 
-    public FastArrayExt(final Function.Nullary<? extends T> newInstance) {
+    public FastArrayExt(final Supplier<? extends T> newInstance) {
         super(newInstance);
     }
 

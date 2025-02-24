@@ -1,24 +1,22 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.util.parametrized;
 
+import io.deephaven.engine.exceptions.UncheckedTableException;
 import io.deephaven.engine.liveness.LivenessArtifact;
-import io.deephaven.engine.liveness.LivenessReferent;
+import io.deephaven.engine.table.PartitionedTable;
 import io.deephaven.engine.table.Table;
-import io.deephaven.engine.table.TableDefinition;
-import io.deephaven.engine.table.TableMap;
 import io.deephaven.engine.util.TableTools;
 import io.deephaven.internal.log.LoggerFactory;
 import io.deephaven.io.logger.Logger;
 import io.deephaven.util.annotations.ScriptApi;
-import org.jetbrains.annotations.NotNull;
 
-import java.lang.ref.WeakReference;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.*;
-import java.util.Map.Entry;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 
 /**
@@ -47,12 +45,9 @@ public class TableSupplier extends LivenessArtifact implements InvocationHandler
             HIJACKED_DELEGATIONS.put(Table.class.getMethod("apply", Function.class),
                     (proxy, method, args) -> ((TableSupplier) Proxy.getInvocationHandler(proxy))
                             .apply((Function) args[0], (Table) proxy));
-            HIJACKED_DELEGATIONS.put(Table.class.getMethod("setAttribute", String.class, Object.class),
-                    (proxy, method, args) -> ((TableSupplier) Proxy.getInvocationHandler(proxy))
-                            .setAttribute((String) args[0], args[1]));
             HIJACKED_DELEGATIONS.put(Table.class.getMethod("getAttribute", String.class), (proxy, method,
                     args) -> ((TableSupplier) Proxy.getInvocationHandler(proxy)).getAttribute((String) args[0]));
-            HIJACKED_DELEGATIONS.put(Table.class.getMethod("getAttributeNames"),
+            HIJACKED_DELEGATIONS.put(Table.class.getMethod("getAttributeKeys"),
                     (proxy, method, args) -> ((TableSupplier) Proxy.getInvocationHandler(proxy)).getAttributeNames());
             HIJACKED_DELEGATIONS.put(Table.class.getMethod("hasAttribute", String.class), (proxy, method,
                     args) -> ((TableSupplier) Proxy.getInvocationHandler(proxy)).hasAttribute((String) args[0]));
@@ -62,6 +57,8 @@ public class TableSupplier extends LivenessArtifact implements InvocationHandler
             throw new RuntimeException(e);
         }
     }
+
+    private static final Map<String, Object> ATTRIBUTES = Map.of(Table.NON_DISPLAY_TABLE, true);
 
     private static final Class[] PROXY_INTERFACES = new Class[] {Table.class};
 
@@ -96,11 +93,6 @@ public class TableSupplier extends LivenessArtifact implements InvocationHandler
      * Once the user is done adding operations, the supplier should be marked as complete
      */
     private final boolean isComplete;
-
-    /**
-     * A map of table attributes. This is necessary for ACL support.
-     */
-    private final Map<String, Object> attributes = new HashMap<>();
 
     /**
      * Use to start the construction of a Table Supplier.
@@ -163,7 +155,6 @@ public class TableSupplier extends LivenessArtifact implements InvocationHandler
         // This is intended to be a copy
         this.tableOperations = new ArrayList<>(tableOperations);
         this.isComplete = isComplete;
-        setAttribute(Table.NON_DISPLAY_TABLE, true);
     }
 
     private Table complete() {
@@ -189,8 +180,8 @@ public class TableSupplier extends LivenessArtifact implements InvocationHandler
             return deferOrExecute(method, args);
         }
 
-        // All TableMap operations should be hijacked
-        if (TableMap.class.isAssignableFrom(method.getReturnType())) {
+        // All PartitionedTable operations should be hijacked
+        if (PartitionedTable.class.isAssignableFrom(method.getReturnType())) {
             throw new IllegalStateException(
                     "TableSupplier partitionBy methods should be hijacked but invoked " + method.getName());
         }
@@ -240,7 +231,7 @@ public class TableSupplier extends LivenessArtifact implements InvocationHandler
     // region Hijacked Operations
 
     /**
-     * Coalesce will apply all of the table operations at any point in the suppliers construction. The supplier need not
+     * Coalesce will apply all the table operations at any point in the supplier's construction. The supplier need not
      * be complete nor does coalesce require a filter operation.
      *
      * @return a coalesced Table from the supplier
@@ -280,12 +271,17 @@ public class TableSupplier extends LivenessArtifact implements InvocationHandler
         return hasColumns(Arrays.asList(columnNames));
     }
 
-    private TableMap partitionBy(boolean dropKeys, String... columnNames) {
-        return new TableMapSupplier(sourceTable.partitionBy(dropKeys, columnNames), tableOperations,
-                Collections.emptyList());
+    private PartitionedTable partitionBy(boolean dropKeys, String... columnNames) {
+        return sourceTable.partitionBy(dropKeys, columnNames).transform((final Table constituent) -> {
+            try {
+                return applyOperations(constituent);
+            } catch (InvocationTargetException | IllegalAccessException e) {
+                throw new UncheckedTableException(e);
+            }
+        });
     }
 
-    private TableMap partitionBy(String... columnNames) {
+    private PartitionedTable partitionBy(String... columnNames) {
         return partitionBy(false, columnNames);
     }
 
@@ -293,28 +289,20 @@ public class TableSupplier extends LivenessArtifact implements InvocationHandler
         return function.apply(table);
     }
 
-    private Void setAttribute(String key, Object object) {
-        // These are the only supported attributes for Table Supplier
-        if (Table.NON_DISPLAY_TABLE.equals(key)) {
-            attributes.put(key, object);
-        }
-        return null;
-    }
-
     private Object getAttribute(String key) {
-        return attributes.get(key);
+        return ATTRIBUTES.get(key);
     }
 
     private Set<String> getAttributeNames() {
-        return attributes.keySet();
+        return ATTRIBUTES.keySet();
     }
 
     private boolean hasAttribute(String name) {
-        return attributes.containsKey(name);
+        return ATTRIBUTES.containsKey(name);
     }
 
     private Map<String, Object> getAttributes() {
-        return Collections.unmodifiableMap(attributes);
+        return ATTRIBUTES;
     }
 
     // endregion Hijacked Operations
@@ -329,160 +317,6 @@ public class TableSupplier extends LivenessArtifact implements InvocationHandler
         Operation(Method method, Object[] args) {
             this.method = method;
             this.args = args;
-        }
-    }
-
-    /**
-     * A TableMapSupplier uses a source TableMap and applies a set of operations in the get method.
-     */
-    private static class TableMapSupplier implements TableMap {
-        // The source table map is from the partitionBy on the source table
-        private final TableMap sourceMap;
-
-        // The list of table operations that were applied to the table supplier
-        private final List<Operation> tableOperations;
-
-        // This list of functions is for table map transformations
-        private final List<TransformTablesFunction> functions;
-
-        TableMapSupplier(TableMap sourceMap, List<Operation> tableOperations, List<TransformTablesFunction> functions) {
-            this.sourceMap = sourceMap;
-            this.tableOperations = new ArrayList<>(tableOperations);
-            this.functions = new ArrayList<>(functions);
-        }
-
-        @Override
-        public Table get(Object key) {
-            try {
-                return applyOperations(key, sourceMap.get(key));
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }
-
-        private Table applyOperations(Object key, Table table)
-                throws IllegalAccessException, InvocationTargetException {
-            // Apply operations from the supplier
-            for (Operation operation : tableOperations) {
-                table = (Table) operation.method.invoke(table, operation.args);
-            }
-
-            // Apply operations from transformations
-            for (TransformTablesFunction function : functions) {
-                table = function.apply(key, table);
-            }
-
-            return table;
-        }
-
-        @Override
-        public Table getWithTransform(Object key, Function<Table, Table> transform) {
-            return transform.apply(get(key));
-        }
-
-        @Override
-        public Object[] getKeySet() {
-            return sourceMap.getKeySet();
-        }
-
-        @Override
-        public Collection<Entry<Object, Table>> entrySet() {
-            return sourceMap.entrySet();
-        }
-
-        @Override
-        public Collection<Table> values() {
-            return sourceMap.values();
-        }
-
-        @Override
-        public int size() {
-            return sourceMap.size();
-        }
-
-        @Override
-        public TableMap populateKeys(Object... keys) {
-            return sourceMap.populateKeys(keys);
-        }
-
-        @Override
-        public void addListener(Listener listener) {
-            sourceMap.addListener(listener);
-        }
-
-        @Override
-        public void removeListener(Listener listener) {
-            sourceMap.removeListener(listener);
-        }
-
-        @Override
-        public void addKeyListener(KeyListener listener) {
-            sourceMap.addKeyListener(listener);
-        }
-
-        @Override
-        public void removeKeyListener(KeyListener listener) {
-            sourceMap.removeKeyListener(listener);
-        }
-
-        @Override
-        public TableMap flatten() {
-            return transformTables(Table::flatten);
-        }
-
-        @Override
-        public <R> R apply(Function<TableMap, R> function) {
-            return function.apply(this);
-        }
-
-        @Override
-        public TableMap transformTablesWithKey(BiFunction<Object, Table, Table> function) {
-            final TableMapSupplier copy = new TableMapSupplier(sourceMap, tableOperations, functions);
-            copy.functions.add(new TransformTablesFunction(function));
-            return copy;
-        }
-
-        @Override
-        public TableMap transformTablesWithKey(TableDefinition returnDefinition,
-                BiFunction<Object, Table, Table> function) {
-            final TableMapSupplier copy = new TableMapSupplier(sourceMap, tableOperations, functions);
-            copy.functions.add(new TransformTablesFunction(returnDefinition, function));
-            return copy;
-        }
-
-        @Override
-        public TableMap transformTablesWithMap(TableMap otherMap, BiFunction<Table, Table, Table> function) {
-            throw new UnsupportedOperationException("TableSupplierMap does not support transformTablesWithMap");
-        }
-
-        @Override
-        public boolean tryManage(@NotNull LivenessReferent referent) {
-            return sourceMap.tryManage(referent);
-        }
-
-        @Override
-        public boolean tryRetainReference() {
-            return sourceMap.tryRetainReference();
-        }
-
-        @Override
-        public void dropReference() {
-            sourceMap.dropReference();
-        }
-
-        @Override
-        public WeakReference<? extends LivenessReferent> getWeakReference() {
-            return sourceMap.getWeakReference();
-        }
-
-        @Override
-        public Table merge() {
-            return sourceMap.merge();
-        }
-
-        @Override
-        public Table asTable(boolean strictKeys, boolean allowCoalesce, boolean sanityCheckJoins) {
-            return sourceMap.asTable(strictKeys, allowCoalesce, sanityCheckJoins);
         }
     }
 }

@@ -1,12 +1,10 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit TestRegionedColumnSourceChar and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit TestRegionedColumnSourceChar and run "./gradlew replicateRegionAndRegionedSourceTests" to regenerate
+//
+// @formatter:off
 package io.deephaven.engine.table.impl.sources.regioned;
 
 import io.deephaven.chunk.attributes.Values;
@@ -17,7 +15,8 @@ import static io.deephaven.util.QueryConstants.NULL_SHORT;
  * Test class for {@link RegionedColumnSourceShort}.
  */
 @SuppressWarnings("JUnit4AnnotatedMethodInJUnit3TestCase")
-public class TestRegionedColumnSourceShort extends TstRegionedColumnSourcePrimitive<Short, Values, ColumnRegionShort<Values>> {
+public class TestRegionedColumnSourceShort extends
+        TstRegionedColumnSourcePrimitive<Short, Values, ColumnRegionShort<Values>, ColumnRegionShort<Values>> {
 
     public TestRegionedColumnSourceShort() {
         super(ColumnRegionShort.class);
@@ -25,14 +24,16 @@ public class TestRegionedColumnSourceShort extends TstRegionedColumnSourcePrimit
 
     @SuppressWarnings("AutoBoxing")
     private void assertLookup(final long elementIndex,
-                              final int expectedRegionIndex,
-                              final short output,
-                              final boolean prev,
-                              final boolean boxed) {
-        checking(new Expectations() {{
-            oneOf(cr[expectedRegionIndex]).getShort(elementIndex);
-            will(returnValue(output));
-        }});
+            final int expectedRegionIndex,
+            final short output,
+            final boolean prev,
+            final boolean boxed) {
+        checking(new Expectations() {
+            {
+                oneOf(cr[expectedRegionIndex]).getShort(elementIndex);
+                will(returnValue(output));
+            }
+        });
         if (boxed) {
             assertEquals(output == NULL_SHORT ? null : output, prev ? SUT.getPrev(elementIndex) : SUT.get(elementIndex));
         } else {

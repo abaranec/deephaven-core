@@ -1,8 +1,14 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.server.table.ops.filter;
 
+import io.deephaven.proto.backplane.grpc.Condition;
 import io.deephaven.proto.backplane.grpc.Literal;
 import org.junit.Test;
 
+import static io.deephaven.server.table.ops.filter.FilterPrinter.print;
+import static io.deephaven.server.table.ops.filter.FilterTestUtils.reference;
 import static org.junit.Assert.*;
 
 public class FilterPrinterTest {
@@ -49,7 +55,7 @@ public class FilterPrinterTest {
 
     private static void assertSameValue(double expected) {
         Literal literal = lit(expected);
-        String str = removeQuotes(FilterPrinter.printNoEscape(literal));
+        String str = FilterPrinter.printNoEscape(literal);
 
         // test magic values that make sense in java, but Double.parseDouble won't accept directly
         if (Double.isNaN(expected)) {
@@ -73,16 +79,9 @@ public class FilterPrinterTest {
     private static void assertSameValue(long expected) {
         assertTrue("Must be in the range that a double value can represent", Math.abs(expected) < (1L << 53));
         Literal literal = lit(expected);
-        String str = removeQuotes(FilterPrinter.printNoEscape(literal));
+        String str = FilterPrinter.printNoEscape(literal);
 
         assertEquals(Long.toString(expected), str);
-    }
-
-    private static String removeQuotes(String quotedStr) {
-        assertTrue(quotedStr.length() >= 2);
-        assertEquals(quotedStr.charAt(0), '"');
-        assertEquals(quotedStr.charAt(quotedStr.length() - 1), '"');
-        return quotedStr.substring(1, quotedStr.length() - 1);
     }
 
     private static void rotateAndAssert(long longBits) {
@@ -102,5 +101,18 @@ public class FilterPrinterTest {
 
     private static Literal lit(double doubleValue) {
         return Literal.newBuilder().setDoubleValue(doubleValue).build();
+    }
+
+    @Test
+    public void testInvoke() {
+        Condition hello = FilterTestUtils.invoke("hello", null);
+        assertEquals("hello()", print(hello));
+        hello = FilterTestUtils.invoke("hello", reference("foo"));
+        assertEquals("foo.hello()", print(hello));
+
+        Condition helloWorld = FilterTestUtils.invoke("helloWorld", null, reference("someColumn"));
+        assertEquals("helloWorld(someColumn)", print(helloWorld));
+        helloWorld = FilterTestUtils.invoke("helloWorld", reference("foo"), reference("someColumn"));
+        assertEquals("foo.helloWorld(someColumn)", print(helloWorld));
     }
 }

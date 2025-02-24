@@ -1,38 +1,36 @@
-configurations {
-    compile.extendsFrom dhPlot
-
-    testCompile.extendsFrom fishIoTest
+plugins {
+    id 'io.deephaven.project.register'
+    id 'java-library'
 }
 
 dependencies {
 
-    compile project(':engine-table'),
-            project(':engine-function'),
-            project(':engine-tuple')
+    api project(':engine-api')
+    implementation project(':Base')
+    implementation project(':engine-table')
+    implementation project(':engine-function')
+    implementation project(':engine-tuple')
+    implementation project(':log-factory')
+    implementation project(':Configuration')
 
-    Classpaths.inheritGroovy(project, 'groovy', 'implementation')
-    Classpaths.inheritGroovy(project, 'groovy-json', 'implementation')
+    api libs.groovy
+    implementation libs.groovy.json
+    compileOnly libs.autoservice
+    annotationProcessor libs.autoservice.compiler
 
-    compileOnly 'javax.inject:javax.inject:1'
+    compileOnly libs.javax.inject
 
-    testCompile TestTools.projectDependency(project, 'Util'),
-                TestTools.projectDependency(project, 'engine-table')
+    implementation libs.guava
+    implementation libs.commons.lang3
 
-    testRuntime project(path: ':configs'), project(path: ':test-configs'), project(':Numerics')
+    testImplementation project(':engine-test-utils')
+    testImplementation TestTools.projectDependency(project, 'engine-time')
+    testImplementation project(path: ':Base', configuration: 'tests')
+
+    testRuntimeOnly project(':configs')
+    testRuntimeOnly project(':test-configs')
+    testRuntimeOnly project(':Numerics')
 
     testRuntimeOnly project(':log-to-slf4j')
-    Classpaths.inheritSlf4j(project, 'slf4j-simple', 'testRuntimeOnly')
-}
-
-spotless {
-    java {
-        targetExclude(
-                'src/main/java/io/deephaven/plot/Axes.java',
-                'src/main/java/io/deephaven/plot/AxesImpl.java',
-                'src/main/java/io/deephaven/plot/Figure.java',
-                'src/main/java/io/deephaven/plot/FigureImpl.java',
-                'src/main/java/io/deephaven/plot/PlottingConvenience.java',
-                'src/main/java/io/deephaven/plot/datasets/multiseries/**'
-        )
-    }
+    testRuntimeOnly libs.slf4j.simple
 }

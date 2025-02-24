@@ -1,69 +1,109 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl;
 
+import com.google.common.collect.Sets;
 import io.deephaven.api.ColumnName;
 import io.deephaven.api.SortColumn;
+import io.deephaven.benchmarking.generator.ColumnGenerator;
 import io.deephaven.engine.table.Table;
-import io.deephaven.engine.updategraph.UpdateGraphProcessor;
+import io.deephaven.engine.table.impl.indexer.DataIndexer;
+import io.deephaven.engine.testutil.TstUtils;
+import io.deephaven.engine.testutil.generator.*;
+import io.deephaven.engine.testutil.junit4.EngineCleanup;
 import io.deephaven.test.types.SerialTest;
 import io.deephaven.benchmarking.BenchmarkTable;
 import io.deephaven.benchmarking.BenchmarkTableBuilder;
 import io.deephaven.benchmarking.BenchmarkTools;
-import io.deephaven.benchmarking.generator.EnumStringColumnGenerator;
 import junit.framework.TestCase;
-import org.junit.After;
-import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
 import java.math.BigInteger;
 import java.util.*;
 
-import static io.deephaven.engine.table.impl.TstUtils.getTable;
-import static io.deephaven.engine.table.impl.TstUtils.initColumnInfos;
+import static io.deephaven.engine.testutil.TstUtils.getTable;
+import static io.deephaven.engine.testutil.TstUtils.initColumnInfos;
 
 @Category(SerialTest.class)
 public class MultiColumnSortTest {
-    @Before
-    public void setUp() {
-        UpdateGraphProcessor.DEFAULT.enableUnitTestMode();
-        UpdateGraphProcessor.DEFAULT.resetForUnitTests(false);
+    private enum IndexType {
+        NONE, FULL, PARTIAL
     }
 
-    @After
-    public void teardown() {
-        UpdateGraphProcessor.DEFAULT.resetForUnitTests(true);
-    }
+    @Rule
+    public EngineCleanup framework = new EngineCleanup();
 
     @Test
     public void testMultiColumnSort() {
         for (int size = 10; size <= 100_000; size *= 10) {
             for (int seed = 0; seed < 1; ++seed) {
                 System.out.println("Seed: " + seed);
-                testMultiColumnSort(seed, size);
+                testMultiColumnSort(seed, size, IndexType.NONE);
             }
         }
     }
 
-    private void testMultiColumnSort(int seed, int size) {
+    @Test
+    public void testMultiColumnSortFullIndex() {
+        for (int size = 10; size <= 100_000; size *= 10) {
+            for (int seed = 0; seed < 1; ++seed) {
+                System.out.println("Seed: " + seed);
+                testMultiColumnSort(seed, size, IndexType.FULL);
+            }
+        }
+    }
+
+    @Test
+    public void testMultiColumnSortPartialIndex() {
+        for (int size = 10; size <= 100_000; size *= 10) {
+            for (int seed = 0; seed < 1; ++seed) {
+                System.out.println("Seed: " + seed);
+                testMultiColumnSort(seed, size, IndexType.PARTIAL);
+            }
+        }
+    }
+
+    private void testMultiColumnSort(int seed, int size, IndexType indexType) {
         final Random random = new Random(seed);
 
         final Table table = getTable(size, random,
                 initColumnInfos(
                         new String[] {"Sym", "intCol", "doubleCol", "floatCol", "longCol", "shortCol", "byteCol",
                                 "charCol", "boolCol", "bigI", "bigD"},
-                        new TstUtils.SetGenerator<>("a", "b", "c", "d", "e", "f", "g"),
-                        new TstUtils.IntGenerator(10, 100),
-                        new TstUtils.SetGenerator<>(10.1, 20.1, 30.1),
-                        new TstUtils.FloatGenerator(100.0f, 2000.f),
-                        new TstUtils.LongGenerator(),
-                        new TstUtils.ShortGenerator(),
-                        new TstUtils.ByteGenerator(),
-                        new TstUtils.CharGenerator('A', 'Z'),
-                        new TstUtils.BooleanGenerator(),
-                        new TstUtils.BigIntegerGenerator(BigInteger.valueOf(100000), BigInteger.valueOf(100100)),
-                        new TstUtils.BigDecimalGenerator(BigInteger.valueOf(100000), BigInteger.valueOf(100100))));
+                        new SetGenerator<>("a", "b", "c", "d", "e", "f", "g"),
+                        new IntGenerator(10, 100),
+                        new SetGenerator<>(10.1, 20.1, 30.1),
+                        new FloatGenerator(100.0f, 2000.f),
+                        new LongGenerator(),
+                        new ShortGenerator(),
+                        new ByteGenerator(),
+                        new CharGenerator('A', 'Z'),
+                        new BooleanGenerator(),
+                        new BigIntegerGenerator(BigInteger.valueOf(100000), BigInteger.valueOf(100100)),
+                        new BigDecimalGenerator(BigInteger.valueOf(100000), BigInteger.valueOf(100100))));
 
-        final List<String> columnNames = new ArrayList<>(table.getColumnSourceMap().keySet());
+        final List<String> columnNames = table.getDefinition().getColumnNames();
+
+        Set<Set<String>> keyColumnPowerSet = Sets.powerSet(new HashSet<>(columnNames));
+
+        if (indexType == IndexType.FULL) {
+            // Create full indexes for every possible column subset.
+            for (Set<String> keyColumnSubset : keyColumnPowerSet) {
+                if (keyColumnSubset.isEmpty() || keyColumnSubset.size() == columnNames.size()) {
+                    // Won't consider the empty or full set.
+                    continue;
+                }
+                DataIndexer.getOrCreateDataIndex(table, keyColumnSubset.toArray(String[]::new));
+            }
+        } else if (indexType == IndexType.PARTIAL) {
+            // Only create single-column indexes
+            for (String keyColumn : columnNames) {
+                DataIndexer.getOrCreateDataIndex(table, keyColumn);
+            }
+        }
 
         doMultiColumnTest(table, SortColumn.asc(ColumnName.of("boolCol")), SortColumn.desc(ColumnName.of("Sym")));
 
@@ -119,10 +159,10 @@ public class MultiColumnSortTest {
         final String[] columns = Arrays.stream(sortColumns).map(SortColumn::column).map(ColumnName::name)
                 .toArray(String[]::new);
 
-        Object[] lastRow = sorted.getRecord(0, columns);
+        Object[] lastRow = TstUtils.getRowData(sorted, 0, columns);
 
         for (int ii = 1; ii < sorted.intSize(); ++ii) {
-            final Object[] rowData = sorted.getRecord(ii, columns);
+            final Object[] rowData = TstUtils.getRowData(sorted, ii, columns);
 
             for (int jj = 0; jj < rowData.length; ++jj) {
                 // make sure lastRow <= rowData
@@ -180,13 +220,13 @@ public class MultiColumnSortTest {
     @Test
     public void benchmarkTest() {
         {
-            final EnumStringColumnGenerator enumStringCol1 =
-                    (EnumStringColumnGenerator) BenchmarkTools.stringCol("Enum1", 10000, 6, 6, 0xB00FB00F);
-            final EnumStringColumnGenerator enumStringCol2 =
-                    (EnumStringColumnGenerator) BenchmarkTools.stringCol("Enum2", 1000, 6, 6, 0xF00DF00D);
+            final ColumnGenerator<String> enumStringCol1 = BenchmarkTools.stringCol(
+                    "Enum1", 10000, 6, 6, 0xB00FB00FL);
+            final ColumnGenerator<String> enumStringCol2 = BenchmarkTools.stringCol(
+                    "Enum2", 1000, 6, 6, 0xF00DF00DL);
 
             final BenchmarkTableBuilder builder;
-            final int actualSize = BenchmarkTools.sizeWithSparsity(25000000, 90);
+            final int actualSize = BenchmarkTools.sizeWithSparsity(10_000_000, 90);
 
             System.out.println("Actual Size: " + actualSize);
 
@@ -220,4 +260,97 @@ public class MultiColumnSortTest {
             checkSort(sorted, SortColumn.asc(ColumnName.of("Enum1")), SortColumn.asc(ColumnName.of("L1")));
         }
     }
+
+    @Test
+    public void benchmarkFullIndexTest() {
+        {
+            final ColumnGenerator<String> enumStringCol1 = BenchmarkTools.stringCol(
+                    "Enum1", 10000, 6, 6, 0xB00FB00FL);
+            final ColumnGenerator<String> enumStringCol2 = BenchmarkTools.stringCol(
+                    "Enum2", 1000, 6, 6, 0xF00DF00DL);
+
+            final BenchmarkTableBuilder builder;
+            final int actualSize = BenchmarkTools.sizeWithSparsity(10_000_000, 90);
+
+            System.out.println("Actual Size: " + actualSize);
+
+            builder = BenchmarkTools.persistentTableBuilder("Carlos", actualSize);
+
+            final BenchmarkTable bmTable = builder
+                    .setSeed(0xDEADBEEF)
+                    .addColumn(BenchmarkTools.stringCol("PartCol", 4, 5, 7, 0xFEEDBEEF))
+                    .addColumn(BenchmarkTools.numberCol("I1", int.class))
+                    .addColumn(BenchmarkTools.numberCol("D1", double.class, -10e6, 10e6))
+                    .addColumn(BenchmarkTools.numberCol("L1", long.class))
+                    .addColumn(enumStringCol1)
+                    .addColumn(enumStringCol2)
+                    .build();
+
+
+            final long startGen = System.currentTimeMillis();
+            System.out.println(new Date(startGen) + " Generating Table.");
+            final Table table = bmTable.getTable();
+            DataIndexer.getOrCreateDataIndex(table, "Enum1", "L1");
+
+            final long endGen = System.currentTimeMillis();
+            System.out.println(new Date(endGen) + " Completed generate in " + (endGen - startGen) + "ms");
+
+            final long startSort = System.currentTimeMillis();
+            System.out.println(new Date(startSort) + " Starting sort.");
+
+            final Table sorted = table.sort("Enum1", "L1");
+
+            final long end = System.currentTimeMillis();
+            System.out.println(new Date(end) + " Completed sort in " + (end - startSort) + "ms");
+
+            checkSort(sorted, SortColumn.asc(ColumnName.of("Enum1")), SortColumn.asc(ColumnName.of("L1")));
+        }
+    }
+
+    @Test
+    public void benchmarkFirstColumnIndexTest() {
+        {
+            final ColumnGenerator<String> enumStringCol1 = BenchmarkTools.stringCol(
+                    "Enum1", 10000, 6, 6, 0xB00FB00FL);
+            final ColumnGenerator<String> enumStringCol2 = BenchmarkTools.stringCol(
+                    "Enum2", 1000, 6, 6, 0xF00DF00DL);
+
+            final BenchmarkTableBuilder builder;
+            final int actualSize = BenchmarkTools.sizeWithSparsity(10_000_000, 90);
+
+            System.out.println("Actual Size: " + actualSize);
+
+            builder = BenchmarkTools.persistentTableBuilder("Carlos", actualSize);
+
+            final BenchmarkTable bmTable = builder
+                    .setSeed(0xDEADBEEF)
+                    .addColumn(BenchmarkTools.stringCol("PartCol", 4, 5, 7, 0xFEEDBEEF))
+                    .addColumn(BenchmarkTools.numberCol("I1", int.class))
+                    .addColumn(BenchmarkTools.numberCol("D1", double.class, -10e6, 10e6))
+                    .addColumn(BenchmarkTools.numberCol("L1", long.class))
+                    .addColumn(enumStringCol1)
+                    .addColumn(enumStringCol2)
+                    .build();
+
+
+            final long startGen = System.currentTimeMillis();
+            System.out.println(new Date(startGen) + " Generating Table.");
+            final Table table = bmTable.getTable();
+            DataIndexer.getOrCreateDataIndex(table, "Enum1");
+
+            final long endGen = System.currentTimeMillis();
+            System.out.println(new Date(endGen) + " Completed generate in " + (endGen - startGen) + "ms");
+
+            final long startSort = System.currentTimeMillis();
+            System.out.println(new Date(startSort) + " Starting sort.");
+
+            final Table sorted = table.sort("Enum1", "L1");
+
+            final long end = System.currentTimeMillis();
+            System.out.println(new Date(end) + " Completed sort in " + (end - startSort) + "ms");
+
+            checkSort(sorted, SortColumn.asc(ColumnName.of("Enum1")), SortColumn.asc(ColumnName.of("L1")));
+        }
+    }
+
 }

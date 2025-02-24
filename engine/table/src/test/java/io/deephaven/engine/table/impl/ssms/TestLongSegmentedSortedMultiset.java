@@ -1,14 +1,21 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit TestCharSegmentedSortedMultiset and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit TestCharSegmentedSortedMultiset and run "./gradlew replicateSegmentedSortedMultisetTests" to regenerate
+//
+// @formatter:off
 package io.deephaven.engine.table.impl.ssms;
 
 import io.deephaven.base.verify.AssertionFailure;
+import io.deephaven.engine.context.ExecutionContext;
 import io.deephaven.engine.table.ShiftObliviousListener;
 import io.deephaven.engine.table.Table;
-import io.deephaven.engine.updategraph.UpdateGraphProcessor;
+import io.deephaven.engine.testutil.ColumnInfo;
+import io.deephaven.engine.testutil.ControlledUpdateGraph;
+import io.deephaven.engine.testutil.GenerateTableUpdates;
+import io.deephaven.engine.testutil.TstUtils;
+import io.deephaven.engine.testutil.testcase.RefreshingTableTestCase;
 import io.deephaven.engine.util.TableTools;
 import io.deephaven.util.compare.LongComparisons;
 import io.deephaven.util.datastructures.LongSizedDataStructure;
@@ -24,8 +31,8 @@ import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.engine.table.impl.util.compact.LongCompactKernel;
 import io.deephaven.test.types.ParallelTest;
 import io.deephaven.util.SafeCloseable;
+import io.deephaven.util.mutable.MutableInt;
 import junit.framework.TestCase;
-import org.apache.commons.lang3.mutable.MutableInt;
 import org.jetbrains.annotations.NotNull;
 import org.junit.experimental.categories.Category;
 
@@ -34,8 +41,8 @@ import java.util.Map;
 import java.util.Random;
 import java.util.TreeMap;
 
-import static io.deephaven.engine.table.impl.TstUtils.getTable;
-import static io.deephaven.engine.table.impl.TstUtils.initColumnInfos;
+import static io.deephaven.engine.testutil.TstUtils.getTable;
+import static io.deephaven.engine.testutil.TstUtils.initColumnInfos;
 import static io.deephaven.util.QueryConstants.NULL_LONG;
 import static org.junit.Assert.assertArrayEquals;
 
@@ -66,9 +73,10 @@ public class TestLongSegmentedSortedMultiset extends RefreshingTableTestCase {
 
     public void testInsertAndRemove() {
         final SsaTestHelpers.TestDescriptor desc = new SsaTestHelpers.TestDescriptor();
+        final int nSeeds = scaleToDesiredTestLength(100);
         for (int tableSize = 10; tableSize <= 1000; tableSize *= 2) {
             for (int nodeSize = 8; nodeSize <= 2048; nodeSize *= 2) {
-                for (int seed = 0; seed < 100; ++seed) {
+                for (int seed = 0; seed < nSeeds; ++seed) {
                     testUpdates(desc.reset(seed, tableSize, nodeSize), true, true, true);
                 }
             }
@@ -77,9 +85,10 @@ public class TestLongSegmentedSortedMultiset extends RefreshingTableTestCase {
 
     public void testMove() {
         final SsaTestHelpers.TestDescriptor desc = new SsaTestHelpers.TestDescriptor();
+        final int nSeeds = scaleToDesiredTestLength(200);
         for (int tableSize = 10; tableSize <= 10000; tableSize *= 2) {
             for (int nodeSize = 8; nodeSize <= 2048; nodeSize *= 2) {
-                for (int seed = 0; seed < 200; ++seed) {
+                for (int seed = 0; seed < nSeeds; ++seed) {
                     testMove(desc.reset(seed, tableSize, nodeSize), true);
                 }
             }
@@ -133,7 +142,7 @@ public class TestLongSegmentedSortedMultiset extends RefreshingTableTestCase {
 
     private void testUpdates(@NotNull final SsaTestHelpers.TestDescriptor desc, boolean allowAddition, boolean allowRemoval, boolean countNull) {
         final Random random = new Random(desc.seed());
-        final TstUtils.ColumnInfo[] columnInfo;
+        final ColumnInfo[] columnInfo;
         final QueryTable table = getTable(desc.tableSize(), random, columnInfo = initColumnInfos(new String[]{"Value"},
                 SsaTestHelpers.getGeneratorForLong()));
 
@@ -172,10 +181,11 @@ public class TestLongSegmentedSortedMultiset extends RefreshingTableTestCase {
                     }
                 }
             };
-            asLong.listenForUpdates(asLongListener);
+            asLong.addUpdateListener(asLongListener);
 
+            final ControlledUpdateGraph updateGraph = ExecutionContext.getContext().getUpdateGraph().cast();
             while (desc.advance(50)) {
-                UpdateGraphProcessor.DEFAULT.runWithinUnitTestCycle(() -> {
+                updateGraph.runWithinUnitTestCycle(() -> {
                     final RowSet[] notify = GenerateTableUpdates.computeTableUpdates(desc.tableSize(), random, table, columnInfo, allowAddition, allowRemoval, false);
                     assertTrue(notify[2].isEmpty());
                     table.notifyListeners(notify[0], notify[1], notify[2]);
@@ -316,8 +326,8 @@ public class TestLongSegmentedSortedMultiset extends RefreshingTableTestCase {
 
                 final MutableInt offset = new MutableInt(0);
                 checkMap.forEach((key, count) -> {
-                    assertEquals((long) key, keys.get(offset.intValue()));
-                    assertEquals((long) count, counts.get(offset.intValue()));
+                    assertEquals((long) key, keys.get(offset.get()));
+                    assertEquals((long) count, counts.get(offset.get()));
                     offset.increment();
                 });
             }

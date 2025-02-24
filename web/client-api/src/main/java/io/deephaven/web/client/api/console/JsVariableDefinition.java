@@ -1,10 +1,23 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.web.client.api.console;
 
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.application_pb.FieldInfo;
+import com.vertispan.tsdefs.annotations.TsInterface;
+import com.vertispan.tsdefs.annotations.TsName;
+import com.vertispan.tsdefs.annotations.TsTypeRef;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.application_pb.FieldInfo;
+import io.deephaven.web.client.api.Tickets;
 import jsinterop.annotations.JsProperty;
-import jsinterop.base.Js;
-import jsinterop.base.JsPropertyMap;
 
+/**
+ * A format to describe a variable available to be read from the server. Application fields are optional, and only
+ * populated when a variable is provided by application mode.
+ * <p>
+ * APIs which take a VariableDefinition must at least be provided an object with a <b>type</b> and <b>id</b> field.
+ */
+@TsInterface
+@TsName(namespace = "dh.ide", name = "VariableDefinition")
 public class JsVariableDefinition {
     private static final String JS_UNAVAILABLE = "js-constructed-not-available";
 
@@ -16,6 +29,7 @@ public class JsVariableDefinition {
     private final String applicationName;
 
     public JsVariableDefinition(String type, String title, String id, String description) {
+        Tickets.validateScopeOrApplicationTicketBase64(id);
         this.type = type;
         this.title = title == null ? JS_UNAVAILABLE : title;
         this.id = id;
@@ -25,15 +39,21 @@ public class JsVariableDefinition {
     }
 
     public JsVariableDefinition(FieldInfo field) {
-        this.type = JsVariableChanges.getVariableTypeFromFieldCase(field.getFieldType().getFieldCase());
-        this.id = field.getTicket().getTicket_asB64();
+        this.type = field.getTypedTicket().getType();
+        this.id = field.getTypedTicket().getTicket().getTicket_asB64();
         this.title = field.getFieldName();
         this.description = field.getFieldDescription();
         this.applicationId = field.getApplicationId();
         this.applicationName = field.getApplicationName();
     }
 
+    /**
+     * The type of the variable, one of <b>dh.VariableType</b>
+     * 
+     * @return dh.VariableType.
+     */
     @JsProperty
+    @TsTypeRef(JsVariableType.class)
     public String getType() {
         return type;
     }
@@ -44,26 +64,53 @@ public class JsVariableDefinition {
         return title;
     }
 
+    /**
+     * The name of the variable, to be used when rendering it to a user
+     * 
+     * @return String
+     */
     @JsProperty
     public String getTitle() {
         return title;
     }
 
+    /**
+     * An opaque identifier for this variable
+     * 
+     * @return String
+     */
     @JsProperty
     public String getId() {
         return id;
     }
 
+    /**
+     * Optional description for the variable's contents, typically used to provide more detail that wouldn't be
+     * reasonable to put in the title
+     * 
+     * @return String
+     */
     @JsProperty
     public String getDescription() {
         return description;
     }
 
+    /**
+     * Optional description for the variable's contents, typically used to provide more detail that wouldn't be
+     * reasonable to put in the title
+     * 
+     * @return String
+     */
     @JsProperty
     public String getApplicationId() {
         return applicationId;
     }
 
+    /**
+     * The name of the application which provided this variable
+     * 
+     * @return String
+     */
     @JsProperty
     public String getApplicationName() {
         return applicationName;

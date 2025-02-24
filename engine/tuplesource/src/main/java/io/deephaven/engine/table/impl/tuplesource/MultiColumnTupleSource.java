@@ -1,6 +1,8 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.tuplesource;
 
-import io.deephaven.datastructures.util.SmartKey;
 import io.deephaven.chunk.attributes.Values;
 import io.deephaven.chunk.*;
 import io.deephaven.engine.rowset.RowSequence;
@@ -12,8 +14,6 @@ import io.deephaven.util.SafeCloseable;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
 
 /**
  * <p>
@@ -21,9 +21,7 @@ import java.util.List;
  */
 final class MultiColumnTupleSource implements TupleSource<ArrayTuple>, DefaultChunkSource.WithPrev<Values> {
 
-    private final ColumnSource[] columnSources;
-
-    private final List<ColumnSource> columnSourceList;
+    private final ColumnSource<?>[] columnSources;
 
     /**
      * Construct a new tuple source backed by the supplied column sources. The column sources array should not be
@@ -31,20 +29,14 @@ final class MultiColumnTupleSource implements TupleSource<ArrayTuple>, DefaultCh
      *
      * @param columnSources The column sources to produce tuples from
      */
-    MultiColumnTupleSource(@NotNull final ColumnSource... columnSources) {
+    MultiColumnTupleSource(@NotNull final ColumnSource<?>... columnSources) {
         this.columnSources = columnSources;
-        columnSourceList = Collections.unmodifiableList(Arrays.asList(columnSources));
     }
 
     @Override
-    public List<ColumnSource> getColumnSources() {
-        return columnSourceList;
-    }
-
-    @Override
-    public final ArrayTuple createTuple(final long rowKey) {
+    public ArrayTuple createTuple(final long rowKey) {
         final int length = columnSources.length;
-        final Object columnValues[] = new Object[length];
+        final Object[] columnValues = new Object[length];
         for (int csi = 0; csi < length; ++csi) {
             columnValues[csi] = columnSources[csi].get(rowKey);
         }
@@ -52,9 +44,9 @@ final class MultiColumnTupleSource implements TupleSource<ArrayTuple>, DefaultCh
     }
 
     @Override
-    public final ArrayTuple createPreviousTuple(final long rowKey) {
+    public ArrayTuple createPreviousTuple(final long rowKey) {
         final int length = columnSources.length;
-        final Object columnValues[] = new Object[length];
+        final Object[] columnValues = new Object[length];
         for (int csi = 0; csi < length; ++csi) {
             columnValues[csi] = columnSources[csi].getPrev(rowKey);
         }
@@ -62,27 +54,27 @@ final class MultiColumnTupleSource implements TupleSource<ArrayTuple>, DefaultCh
     }
 
     @Override
-    public final ArrayTuple createTupleFromValues(@NotNull final Object... values) {
+    public ArrayTuple createTupleFromValues(@NotNull final Object... values) {
         final int length = columnSources.length;
-        final Object valuesCopy[] = new Object[length];
+        final Object[] valuesCopy = new Object[length];
         System.arraycopy(values, 0, valuesCopy, 0, length);
         return new ArrayTuple(valuesCopy);
     }
 
     @Override
-    public final <ELEMENT_TYPE> void exportElement(@NotNull final ArrayTuple tuple, final int elementIndex,
+    public int tupleLength() {
+        return columnSources.length;
+    }
+
+    @Override
+    public <ELEMENT_TYPE> void exportElement(@NotNull final ArrayTuple tuple, final int elementIndex,
             @NotNull final WritableColumnSource<ELEMENT_TYPE> writableSource, final long destinationIndexKey) {
         writableSource.set(destinationIndexKey, tuple.getElement(elementIndex));
     }
 
     @Override
-    public Object exportElement(ArrayTuple tuple, int elementIndex) {
+    public Object exportElement(@NotNull ArrayTuple tuple, int elementIndex) {
         return tuple.getElement(elementIndex);
-    }
-
-    @Override
-    public final SmartKey exportToExternalKey(@NotNull final ArrayTuple tuple) {
-        return new SmartKey(tuple.getElements());
     }
 
     @Override
@@ -114,7 +106,7 @@ final class MultiColumnTupleSource implements TupleSource<ArrayTuple>, DefaultCh
         final int size = rowSequence.intSize();
         destination.setSize(size);
         for (int ii = 0; ii < size; ++ii) {
-            final Object columnValues[] = new Object[length];
+            final Object[] columnValues = new Object[length];
             for (int csi = 0; csi < length; ++csi) {
                 columnValues[csi] = underlyingValues[csi].get(ii);
             }
@@ -132,7 +124,6 @@ final class MultiColumnTupleSource implements TupleSource<ArrayTuple>, DefaultCh
         for (int csi = 0; csi < length; ++csi) {
             final Chunk<? extends Values> underlyingChunk;
             if (usePrev) {
-                // noinspection unchecked
                 underlyingChunk = columnSources[csi].getPrevChunk(fc.underlyingContexts[csi], rowSequence);
             } else {
                 underlyingChunk = columnSources[csi].getChunk(fc.underlyingContexts[csi], rowSequence);
@@ -161,7 +152,7 @@ final class MultiColumnTupleSource implements TupleSource<ArrayTuple>, DefaultCh
         final ChunkSource.GetContext[] underlyingContexts;
         final ChunkBoxer.BoxerKernel[] boxers;
 
-        private FillContext(int chunkCapacity, ColumnSource[] columnSources) {
+        private FillContext(int chunkCapacity, ColumnSource<?>[] columnSources) {
             underlyingContexts = Arrays.stream(columnSources).map(cs -> cs.makeGetContext(chunkCapacity))
                     .toArray(ChunkSource.GetContext[]::new);
             boxers = Arrays.stream(columnSources).map(cs -> ChunkBoxer.getBoxer(cs.getChunkType(), chunkCapacity))
@@ -170,15 +161,15 @@ final class MultiColumnTupleSource implements TupleSource<ArrayTuple>, DefaultCh
 
         @Override
         public void close() {
-            SafeCloseable.closeArray(underlyingContexts);
-            SafeCloseable.closeArray(boxers);
+            SafeCloseable.closeAll(underlyingContexts);
+            SafeCloseable.closeAll(boxers);
         }
     }
 
     private static class GetContext extends FillContext implements ChunkSource.GetContext {
         final WritableObjectChunk<ArrayTuple, Values> values;
 
-        private GetContext(int chunkCapacity, ColumnSource[] columnSources) {
+        private GetContext(int chunkCapacity, ColumnSource<?>[] columnSources) {
             super(chunkCapacity, columnSources);
             values = WritableObjectChunk.makeWritableChunk(chunkCapacity);
         }
@@ -191,12 +182,12 @@ final class MultiColumnTupleSource implements TupleSource<ArrayTuple>, DefaultCh
     }
 
     @Override
-    public GetContext makeGetContext(int chunkCapacity, SharedContext sharedContext) {
+    public ChunkSource.GetContext makeGetContext(int chunkCapacity, SharedContext sharedContext) {
         return new GetContext(chunkCapacity, columnSources);
     }
 
     @Override
-    public FillContext makeFillContext(int chunkCapacity, SharedContext sharedContext) {
+    public ChunkSource.FillContext makeFillContext(int chunkCapacity, SharedContext sharedContext) {
         return new FillContext(chunkCapacity, columnSources);
     }
 }

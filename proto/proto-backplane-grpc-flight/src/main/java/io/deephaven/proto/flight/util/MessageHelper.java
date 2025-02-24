@@ -1,7 +1,9 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.proto.flight.util;
 
 import com.google.flatbuffers.FlatBufferBuilder;
-import com.google.protobuf.ByteStringAccess;
 import org.apache.arrow.flatbuf.Message;
 import org.apache.arrow.flatbuf.MetadataVersion;
 

@@ -1,23 +1,22 @@
-/*
- * Copyright (c) 2016-2018 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.configuration;
 
 import junit.framework.TestCase;
 import org.junit.After;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Test suite for Configuration.
  *
  * Must provide a Configuration.rootFile property in the VM arguments when running from IntelliJ, even though we set
- * that in most of the tests. -ea -DConfiguration.rootFile=resources/lib-tests.prop -Ddevroot=/ -Dworkspace=/
- * -DcacheDir=/cache
+ * that in most of the tests. -ea -DConfiguration.rootFile=resources/lib-tests.prop -Dworkspace=/ -DcacheDir=/cache
  */
 public class TestConfiguration extends TestCase {
-    private final String FILENAME_PROPERTY = Configuration.getInstance().getConfFileProperty();
+    private final String FILENAME_PROPERTY = ConfigDir.ROOT_FILE_PROP;
     private final String oldFileLocation = System.getProperty(FILENAME_PROPERTY);
 
     /**
@@ -27,7 +26,7 @@ public class TestConfiguration extends TestCase {
      */
     @After
     public void tearDown() throws Exception {
-        if (System.getProperty(FILENAME_PROPERTY) != oldFileLocation) {
+        if (!Objects.equals(System.getProperty(FILENAME_PROPERTY), oldFileLocation)) {
             System.setProperty(FILENAME_PROPERTY, oldFileLocation);
             Configuration.getInstance().reloadProperties();
         }
@@ -96,17 +95,6 @@ public class TestConfiguration extends TestCase {
      * Verify that specific operations of Configuration other than named properties work properly
      */
     public void testProperties() {
-        assertNotNull(Configuration.getInstance().getDevRootPath());
-        assertTrue(Configuration.getInstance().getDevRootPath().length() > 0);
-        assertNotNull(Configuration.getInstance().getWorkspacePath());
-        assertTrue(Configuration.getInstance().getWorkspacePath().length() > 0);
-        assertNotNull(Configuration.getInstance().getDevRootPath("cacheDir"));
-        assertTrue(Configuration.getInstance().getDevRootPath("cacheDir").length() > 0);
-        assertTrue(Configuration.getInstance().getDevRootPath("cacheDir").endsWith("cache"));
-        assertNotNull(Configuration.getInstance().getWorkspacePath("cacheDir"));
-        assertTrue(Configuration.getInstance().getWorkspacePath("cacheDir").length() > 0);
-        assertTrue(Configuration.getInstance().getWorkspacePath("cacheDir").endsWith("cache"));
-
         try {
             // noinspection SpellCheckingInspection
             Configuration.getInstance().getProperty("NonExistant"); // Intentional misspelling
@@ -117,7 +105,7 @@ public class TestConfiguration extends TestCase {
 
         try {
             System.setProperty(FILENAME_PROPERTY, "nonexistent");
-            Configuration.TEST_NEW_Configuration();
+            Configuration.newStandaloneConfiguration();
             fail("Expected exception");
         } catch (ConfigurationException expected) {
             // Expected
@@ -204,7 +192,7 @@ public class TestConfiguration extends TestCase {
      * an on-the-fly property
      */
     public void testContext() throws Exception {
-        final String oldProcessName = System.getProperty(ConfigurationContext.PROCESS_NAME_PROPERTY);
+        final String oldProcessName = System.getProperty(DefaultConfigurationContext.PROCESS_NAME_PROPERTY);
         final String testProp = "testproperty";
         try {
             System.setProperty(FILENAME_PROPERTY, "resources/test-context.prop");
@@ -267,7 +255,7 @@ public class TestConfiguration extends TestCase {
     }
 
     public void testContextIgnoreScope() throws Exception {
-        final String oldProcessName = System.getProperty(ConfigurationContext.PROCESS_NAME_PROPERTY);
+        final String oldProcessName = System.getProperty(DefaultConfigurationContext.PROCESS_NAME_PROPERTY);
         final String testProp = "testproperty";
         try {
             System.setProperty(FILENAME_PROPERTY, "resources/test-context.prop");
@@ -336,7 +324,7 @@ public class TestConfiguration extends TestCase {
      */
     private void runTestsOnFinalKeyword(final String filename, final String contextName, final String beforeValue,
             final String finalTestValue, final String includeValue) {
-        final String oldProcessName = System.getProperty(ConfigurationContext.PROCESS_NAME_PROPERTY);
+        final String oldProcessName = System.getProperty(DefaultConfigurationContext.PROCESS_NAME_PROPERTY);
         final String testPropContextIdentifier = "testbatch";
         final String beforeTestProperty = "beforetest";
         final String finalTestProperty = "finaltest";
@@ -370,7 +358,7 @@ public class TestConfiguration extends TestCase {
 
         } finally {
             if (oldProcessName != null)
-                System.setProperty(ConfigurationContext.PROCESS_NAME_PROPERTY, oldProcessName);
+                System.setProperty(DefaultConfigurationContext.PROCESS_NAME_PROPERTY, oldProcessName);
             System.clearProperty(testPropContextIdentifier);
         }
     }
@@ -445,26 +433,35 @@ public class TestConfiguration extends TestCase {
         assertEquals("EFGH", history.get(0).value);
         assertEquals("[]", history.get(0).context);
         final String javaVersion = System.getProperty("java.specification.version");
-        if ("1.8".equals(javaVersion)) {
+        if ("11".equals(javaVersion)) {
             assertEquals(
-                    "<not from configuration file>: io.deephaven.configuration.TestConfiguration.testShowHistory(TestConfiguration.java:440)\n"
-                            +
-                            "sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)\n" +
-                            "sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62)\n",
-                    history.get(0).fileName);
-        } else if ("11".equals(javaVersion)) {
-            assertEquals(
-                    "<not from configuration file>: io.deephaven.configuration.TestConfiguration.testShowHistory(TestConfiguration.java:440)\n"
+                    "<not from configuration file>: io.deephaven.configuration.TestConfiguration.testShowHistory(TestConfiguration.java:428)\n"
                             +
                             "java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)\n" +
                             "java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62)\n",
                     history.get(0).fileName);
         } else if ("17".equals(javaVersion)) {
             assertEquals(
-                    "<not from configuration file>: io.deephaven.configuration.TestConfiguration.testShowHistory(TestConfiguration.java:440)\n"
+                    "<not from configuration file>: io.deephaven.configuration.TestConfiguration.testShowHistory(TestConfiguration.java:428)\n"
                             +
                             "java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)\n" +
                             "java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)\n",
+                    history.get(0).fileName);
+        } else if ("21".equals(javaVersion)) {
+            assertEquals(
+                    "<not from configuration file>: io.deephaven.configuration.TestConfiguration.testShowHistory(TestConfiguration.java:428)\n"
+                            +
+                            "java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)\n"
+                            +
+                            "java.base/java.lang.reflect.Method.invoke(Method.java:580)\n",
+                    history.get(0).fileName);
+        } else if ("23".equals(javaVersion)) {
+            assertEquals(
+                    "<not from configuration file>: io.deephaven.configuration.TestConfiguration.testShowHistory(TestConfiguration.java:428)\n"
+                            +
+                            "java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)\n"
+                            +
+                            "java.base/java.lang.reflect.Method.invoke(Method.java:580)\n",
                     history.get(0).fileName);
         } else {
             fail("Must add specific test for java version " + javaVersion);
@@ -472,5 +469,137 @@ public class TestConfiguration extends TestCase {
         System.out.println("-------------- End show history -----------------");
     }
 
+    public void testNamedConfiguration() {
+        System.setProperty(FILENAME_PROPERTY, "resources/lib-tests.prop");
+        System.setProperty("Configuration.Test1.rootFile", "resources/test1.prop");
+        System.setProperty("Configuration.Test2.rootFile", "resources/test2.prop");
+        System.setProperty("Configuration.Test3.rootFile", "resources/test3.prop");
 
+        Configuration dc = Configuration.getInstance();
+        Configuration c1 = Configuration.getNamed("Test1");
+        Configuration c2 = Configuration.getNamed("Test2");
+        Configuration c3 = Configuration.getNamed("Test3");
+
+        assertEquals("cache", dc.getProperty("cacheDir"));
+        assertNull(c1.getStringWithDefault("cacheDir", null));
+        assertNull(c2.getStringWithDefault("cacheDir", null));
+        assertNull(c3.getStringWithDefault("cacheDir", null));
+
+        assertNull(dc.getStringWithDefault("test1", null));
+        assertEquals("true", c1.getProperty("test1"));
+        assertNull(c2.getStringWithDefault("test1", null));
+        assertNull(c3.getStringWithDefault("test1", null));
+
+        assertNull(dc.getStringWithDefault("test2", null));
+        assertNull(c1.getStringWithDefault("test2", null));
+        assertEquals("true", c2.getProperty("test2"));
+        assertNull(c3.getStringWithDefault("test2", null));
+
+        assertNull(dc.getStringWithDefault("test3", null));
+        // test1 imports test3, so expected.
+        assertEquals("true", c1.getProperty("test3"));
+        assertNull(c2.getStringWithDefault("test3", null));
+        assertEquals("true", c3.getProperty("test3"));
+
+        // We'll try a reset of one of them
+        System.setProperty("Configuration.Test1.rootFile", "resources/test2.prop");
+        Configuration.reset("Test1");
+        dc = Configuration.getInstance();
+        c1 = Configuration.getNamed("Test1");
+        c2 = Configuration.getNamed("Test2");
+        c3 = Configuration.getNamed("Test3");
+
+        assertEquals("cache", dc.getProperty("cacheDir"));
+        assertNull(c1.getStringWithDefault("cacheDir", null));
+        assertNull(c2.getStringWithDefault("cacheDir", null));
+        assertNull(c3.getStringWithDefault("cacheDir", null));
+
+        assertNull(dc.getStringWithDefault("test1", null));
+        assertNull(c1.getStringWithDefault("test1", null));
+        assertNull(c2.getStringWithDefault("test1", null));
+        assertNull(c3.getStringWithDefault("test1", null));
+
+        assertNull(dc.getStringWithDefault("test2", null));
+        assertEquals("true", c1.getProperty("test2"));
+        assertEquals("true", c2.getProperty("test2"));
+        assertNull(c3.getStringWithDefault("test2", null));
+
+        assertNull(dc.getStringWithDefault("test3", null));
+        assertNull(c1.getStringWithDefault("test3", null));
+        assertNull(c2.getStringWithDefault("test3", null));
+        assertEquals("true", c3.getProperty("test3"));
+
+        // Reset all of them
+        System.setProperty(FILENAME_PROPERTY, "resources/test-multiline.prop");
+        System.setProperty("Configuration.Test1.rootFile", "resources/lib-tests.prop");
+        System.setProperty("Configuration.Test2.rootFile", "resources/test3.prop");
+        System.setProperty("Configuration.Test3.rootFile", "resources/test2.prop");
+        Configuration.reset();
+        dc = Configuration.getInstance();
+        c1 = Configuration.getNamed("Test1");
+        c2 = Configuration.getNamed("Test2");
+        c3 = Configuration.getNamed("Test3");
+
+        assertEquals("abcdefghi", dc.getProperty("foo"));
+        assertNull(c1.getStringWithDefault("foo", null));
+        assertNull(c2.getStringWithDefault("foo", null));
+        assertNull(c3.getStringWithDefault("foo", null));
+
+        assertNull(dc.getStringWithDefault("cache", null));
+        assertEquals("cache", c1.getProperty("cacheDir"));
+        assertNull(c2.getStringWithDefault("cache", null));
+        assertNull(c3.getStringWithDefault("cache", null));
+
+        assertNull(dc.getStringWithDefault("test3", null));
+        assertNull(c1.getStringWithDefault("test3", null));
+        assertEquals("true", c2.getProperty("test3"));
+        assertNull(c3.getStringWithDefault("test3", null));
+
+        assertNull(dc.getStringWithDefault("test2", null));
+        assertNull(c1.getStringWithDefault("test2", null));
+        assertNull(c2.getStringWithDefault("test2", null));
+        assertEquals("true", c3.getProperty("test2"));
+    }
+
+    public void testNamedConfigurationSimple() {
+        System.setProperty(FILENAME_PROPERTY, "resources/lib-tests.prop");
+        System.clearProperty("Configuration.Test1.rootFile");
+        System.setProperty("Test1.rootFile", "resources/test1.prop");
+
+        Configuration.reset();
+        Configuration dc = Configuration.getInstance();
+        Configuration c1 = Configuration.getNamed("Test1");
+
+        assertEquals("cache", dc.getProperty("cacheDir"));
+        assertNull(c1.getStringWithDefault("cacheDir", null));
+
+        assertNull(dc.getStringWithDefault("test1", null));
+        assertEquals("true", c1.getProperty("test1"));
+
+        assertNull(dc.getStringWithDefault("test3", null));
+        // test1 imports test3, so expected.
+        assertEquals("true", c1.getProperty("test3"));
+
+        // Make sure we can't try to load a Configuration with a null name, or `Configuration`
+        try {
+            final Configuration c = Configuration.getNamed(null);
+            fail("Should have rejected a null name");
+        } catch (ConfigurationException ignored) {
+
+        }
+
+        try {
+            final Configuration c = Configuration.getNamed("Configuration");
+            fail("Should have rejected the name `Configuration`");
+        } catch (ConfigurationException ignored) {
+
+        }
+
+        try {
+            final Configuration c = Configuration.getNamed("NonExistent");
+            fail("Should have rejected a named config that doesnt exist");
+        } catch (ConfigurationException ignored) {
+
+        }
+    }
 }

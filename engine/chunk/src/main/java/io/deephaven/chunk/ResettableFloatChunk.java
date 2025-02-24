@@ -1,25 +1,39 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit ResettableCharChunk and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit ResettableCharChunk and run "./gradlew replicateSourcesAndChunks" to regenerate
+//
+// @formatter:off
 package io.deephaven.chunk;
 
 import io.deephaven.chunk.attributes.Any;
 import io.deephaven.chunk.util.pools.MultiChunkPool;
 import io.deephaven.util.type.ArrayTypeUtils;
 
+import static io.deephaven.chunk.util.pools.ChunkPoolConstants.POOL_RESETTABLE_CHUNKS;
+
 /**
  * {@link ResettableReadOnlyChunk} implementation for float data.
  */
-public final class ResettableFloatChunk<ATTR_UPPER extends Any> extends FloatChunk implements ResettableReadOnlyChunk<ATTR_UPPER> {
+public class ResettableFloatChunk<ATTR_UPPER extends Any>
+        extends FloatChunk<ATTR_UPPER>
+        implements ResettableReadOnlyChunk<ATTR_UPPER> {
 
     public static <ATTR_BASE extends Any> ResettableFloatChunk<ATTR_BASE> makeResettableChunk() {
-        return MultiChunkPool.forThisThread().getFloatChunkPool().takeResettableFloatChunk();
+        if (POOL_RESETTABLE_CHUNKS) {
+            return MultiChunkPool.forThisThread().takeResettableFloatChunk();
+        }
+        return new ResettableFloatChunk<>();
     }
 
     public static <ATTR_BASE extends Any> ResettableFloatChunk<ATTR_BASE> makeResettableChunkForPool() {
-        return new ResettableFloatChunk<>();
+        return new ResettableFloatChunk<>() {
+            @Override
+            public void close() {
+                MultiChunkPool.forThisThread().giveResettableFloatChunk(this);
+            }
+        };
     }
 
     private ResettableFloatChunk(float[] data, int offset, int capacity) {
@@ -31,50 +45,49 @@ public final class ResettableFloatChunk<ATTR_UPPER extends Any> extends FloatChu
     }
 
     @Override
-    public final ResettableFloatChunk slice(int offset, int capacity) {
+    public ResettableFloatChunk<ATTR_UPPER> slice(int offset, int capacity) {
         ChunkHelpers.checkSliceArgs(size, offset, capacity);
-        return new ResettableFloatChunk(data, this.offset + offset, capacity);
+        return new ResettableFloatChunk<>(data, this.offset + offset, capacity);
     }
 
     @Override
-    public final <ATTR extends ATTR_UPPER> FloatChunk<ATTR> resetFromChunk(Chunk<? extends ATTR> other, int offset, int capacity) {
+    public <ATTR extends ATTR_UPPER> FloatChunk<ATTR> resetFromChunk(Chunk<? extends ATTR> other, int offset,
+            int capacity) {
         return resetFromTypedChunk(other.asFloatChunk(), offset, capacity);
     }
 
     @Override
-    public final <ATTR extends ATTR_UPPER> FloatChunk<ATTR> resetFromArray(Object array, int offset, int capacity) {
-        final float[] typedArray = (float[])array;
+    public <ATTR extends ATTR_UPPER> FloatChunk<ATTR> resetFromArray(Object array, int offset, int capacity) {
+        final float[] typedArray = (float[]) array;
         return resetFromTypedArray(typedArray, offset, capacity);
     }
 
     @Override
-    public final <ATTR extends ATTR_UPPER> FloatChunk<ATTR> resetFromArray(Object array) {
-        final float[] typedArray = (float[])array;
+    public <ATTR extends ATTR_UPPER> FloatChunk<ATTR> resetFromArray(Object array) {
+        final float[] typedArray = (float[]) array;
         return resetFromTypedArray(typedArray, 0, typedArray.length);
     }
 
     @Override
-    public final <ATTR extends ATTR_UPPER> FloatChunk<ATTR> clear() {
+    public <ATTR extends ATTR_UPPER> FloatChunk<ATTR> clear() {
         return resetFromArray(ArrayTypeUtils.EMPTY_FLOAT_ARRAY, 0, 0);
     }
 
-    public final <ATTR extends ATTR_UPPER> FloatChunk<ATTR> resetFromTypedChunk(FloatChunk<? extends ATTR> other, int offset, int capacity) {
+    public <ATTR extends ATTR_UPPER> FloatChunk<ATTR> resetFromTypedChunk(FloatChunk<? extends ATTR> other, int offset,
+            int capacity) {
         ChunkHelpers.checkSliceArgs(other.size, offset, capacity);
         return resetFromTypedArray(other.data, other.offset + offset, capacity);
     }
 
-    public final <ATTR extends ATTR_UPPER> FloatChunk<ATTR> resetFromTypedArray(float[] data, int offset, int capacity) {
+    public <ATTR extends ATTR_UPPER> FloatChunk<ATTR> resetFromTypedArray(float[] data, int offset, int capacity) {
         ChunkHelpers.checkArrayArgs(data.length, offset, capacity);
         this.data = data;
         this.offset = offset;
         this.capacity = capacity;
         this.size = capacity;
-        //noinspection unchecked
-        return this;
+        return FloatChunk.downcast(this);
     }
 
     @Override
-    public final void close() {
-        MultiChunkPool.forThisThread().getFloatChunkPool().giveResettableFloatChunk(this);
-    }
+    public void close() {}
 }

@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.locations;
 
 import io.deephaven.engine.rowset.RowSet;
@@ -34,7 +37,7 @@ public class TableLocationStateHolder implements TableLocationState {
 
     @Override
     public final synchronized RowSet getRowSet() {
-        return rowSet.copy();
+        return rowSet == null ? null : rowSet.copy();
     }
 
     @Override

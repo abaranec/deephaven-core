@@ -1,11 +1,12 @@
 plugins {
   id 'java-library'
-}
-
-configurations {
-  compileOnly.extendsFrom fishIo
+  id 'io.deephaven.project.register'
 }
 
 dependencies {
+  compileOnly project(':Base')
   compileOnly project(':log-factory')
+
+  compileOnly libs.autoservice
+  annotationProcessor libs.autoservice.compiler
 }

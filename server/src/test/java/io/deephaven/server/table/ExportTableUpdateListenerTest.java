@@ -1,24 +1,29 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.server.table;
 
+import io.deephaven.UncheckedDeephavenException;
+import io.deephaven.auth.AuthContext;
 import io.deephaven.base.verify.Assert;
-import io.deephaven.engine.table.impl.TableUpdateImpl;
-import io.deephaven.engine.updategraph.UpdateGraphProcessor;
-import io.deephaven.time.DateTimeUtils;
-import io.deephaven.engine.util.systemicmarking.SystemicObjectTracker;
+import io.deephaven.engine.context.ExecutionContext;
+import io.deephaven.engine.context.TestExecutionContext;
 import io.deephaven.engine.liveness.LivenessScopeStack;
-import io.deephaven.engine.table.ModifiedColumnSet;
-import io.deephaven.engine.table.impl.QueryTable;
-import io.deephaven.engine.table.impl.TstUtils;
 import io.deephaven.engine.rowset.RowSetFactory;
 import io.deephaven.engine.rowset.RowSetShiftData;
+import io.deephaven.engine.table.ModifiedColumnSet;
+import io.deephaven.engine.table.impl.QueryTable;
+import io.deephaven.engine.table.impl.TableUpdateImpl;
+import io.deephaven.engine.testutil.ControlledUpdateGraph;
+import io.deephaven.engine.testutil.TstUtils;
+import io.deephaven.engine.util.systemicmarking.SystemicObjectTracker;
+import io.deephaven.proto.backplane.grpc.ExportedTableUpdateMessage;
 import io.deephaven.proto.backplane.grpc.Ticket;
-import io.deephaven.util.SafeCloseable;
-import io.deephaven.UncheckedDeephavenException;
-import io.deephaven.util.auth.AuthContext;
 import io.deephaven.server.session.SessionService;
 import io.deephaven.server.session.SessionState;
 import io.deephaven.server.util.TestControlledScheduler;
-import io.deephaven.proto.backplane.grpc.ExportedTableUpdateMessage;
+import io.deephaven.time.DateTimeUtils;
+import io.deephaven.util.SafeCloseable;
 import io.grpc.stub.StreamObserver;
 import org.apache.commons.lang3.mutable.MutableObject;
 import org.junit.After;
@@ -29,41 +34,56 @@ import java.util.ArrayDeque;
 import java.util.Queue;
 import java.util.UUID;
 
-import static io.deephaven.engine.table.impl.TstUtils.addToTable;
-import static io.deephaven.engine.table.impl.TstUtils.i;
+import static io.deephaven.engine.testutil.TstUtils.addToTable;
+import static io.deephaven.engine.testutil.TstUtils.i;
 
 public class ExportTableUpdateListenerTest {
 
     private static final AuthContext AUTH_CONTEXT = new AuthContext.SuperUser();
 
-    private static final UpdateGraphProcessor updateGraphProcessor = UpdateGraphProcessor.DEFAULT;
+    private SafeCloseable executionContext;
+    private ControlledUpdateGraph updateGraph;
+
     private TestControlledScheduler scheduler;
     private TestSessionState session;
     private QueuingResponseObserver observer;
+    private SessionService.ErrorTransformer errorTransformer;
 
     @Before
     public void setup() {
-        UpdateGraphProcessor.DEFAULT.enableUnitTestMode();
-        UpdateGraphProcessor.DEFAULT.resetForUnitTests(false);
+        executionContext = TestExecutionContext.createForUnitTests().open();
+        updateGraph = ExecutionContext.getContext().getUpdateGraph().cast();
+        updateGraph.enableUnitTestMode();
+        updateGraph.resetForUnitTests(false);
         SystemicObjectTracker.markThreadSystemic();
 
         scheduler = new TestControlledScheduler();
         session = new TestSessionState();
         observer = new QueuingResponseObserver();
+
+        errorTransformer = new SessionService.ObfuscatingErrorTransformer();
     }
 
     @After
     public void tearDown() {
-        UpdateGraphProcessor.DEFAULT.resetForUnitTests(true);
+        updateGraph.resetForUnitTests(true);
 
         scheduler = null;
         session = null;
         observer = null;
+
+        executionContext.close();
+    }
+
+    private ExportedTableUpdateListener createListener(
+            final SessionState session,
+            final QueuingResponseObserver observer) {
+        return new ExportedTableUpdateListener(session, observer, errorTransformer);
     }
 
     @Test
     public void testLifeCycleStaticTable() {
-        final ExportedTableUpdateListener listener = new ExportedTableUpdateListener(session, observer);
+        final ExportedTableUpdateListener listener = createListener(session, observer);
         try (final SafeCloseable scope = LivenessScopeStack.open()) {
             session.addExportListener(listener);
         }
@@ -88,7 +108,7 @@ public class ExportTableUpdateListenerTest {
         final SessionState.ExportObject<QueryTable> t1 = session.newServerSideExport(src);
 
         // now add the listener
-        final ExportedTableUpdateListener listener = new ExportedTableUpdateListener(session, observer);
+        final ExportedTableUpdateListener listener = createListener(session, observer);
         try (final SafeCloseable scope = LivenessScopeStack.open()) {
             session.addExportListener(listener);
         }
@@ -103,7 +123,7 @@ public class ExportTableUpdateListenerTest {
 
     @Test
     public void testLifeCycleTickingTable() {
-        final ExportedTableUpdateListener listener = new ExportedTableUpdateListener(session, observer);
+        final ExportedTableUpdateListener listener = createListener(session, observer);
         try (final SafeCloseable scope = LivenessScopeStack.open()) {
             session.addExportListener(listener);
         }
@@ -139,7 +159,7 @@ public class ExportTableUpdateListenerTest {
         }
 
         // now add the listener
-        final ExportedTableUpdateListener listener = new ExportedTableUpdateListener(session, observer);
+        final ExportedTableUpdateListener listener = createListener(session, observer);
         try (final SafeCloseable scope = LivenessScopeStack.open()) {
             session.addExportListener(listener);
         }
@@ -165,7 +185,7 @@ public class ExportTableUpdateListenerTest {
         final SessionState.ExportObject<QueryTable> t1 = session.newServerSideExport(src);
 
         // now add the listener
-        final ExportedTableUpdateListener listener = new ExportedTableUpdateListener(session, observer);
+        final ExportedTableUpdateListener listener = createListener(session, observer);
         try (final SafeCloseable scope = LivenessScopeStack.open()) {
             session.addExportListener(listener);
         }
@@ -198,7 +218,7 @@ public class ExportTableUpdateListenerTest {
         }
 
         // now add the listener
-        final ExportedTableUpdateListener listener = new ExportedTableUpdateListener(session, observer);
+        final ExportedTableUpdateListener listener = createListener(session, observer);
         try (final SafeCloseable scope = LivenessScopeStack.open()) {
             session.addExportListener(listener);
         }
@@ -206,7 +226,7 @@ public class ExportTableUpdateListenerTest {
         // validate we receive an initial table size update
         expectSizes(t1.getExportId(), 42);
 
-        updateGraphProcessor.runWithinUnitTestCycle(() -> {
+        updateGraph.runWithinUnitTestCycle(() -> {
             src.notifyListenersOnError(new RuntimeException("awful error occurred!"), null);
         });
 
@@ -215,10 +235,7 @@ public class ExportTableUpdateListenerTest {
         Assert.equals(updateId, "updateId", t1.getExportId(), "t1.getExportId()");
         Assert.eq(msg.getSize(), "msg.getSize()", 42);
         Assert.eqFalse(msg.getUpdateFailureMessage().isEmpty(), "msg.getUpdateFailureMessage().isEmpty()");
-
-        // TODO (core#801): validate that our error is not directly embedded in the update (that would be a security
-        // concern)
-        Assert.eqTrue(msg.getUpdateFailureMessage().contains("awful"), "msg.contains('awful')");
+        Assert.eqFalse(msg.getUpdateFailureMessage().contains("awful"), "msg.contains('awful')");
     }
 
     @Test
@@ -231,7 +248,7 @@ public class ExportTableUpdateListenerTest {
         }
 
         // now add the listener
-        final ExportedTableUpdateListener listener = new ExportedTableUpdateListener(session, observer);
+        final ExportedTableUpdateListener listener = createListener(session, observer);
         try (final SafeCloseable scope = LivenessScopeStack.open()) {
             session.addExportListener(listener);
         }
@@ -265,7 +282,7 @@ public class ExportTableUpdateListenerTest {
         final MutableObject<SessionState.ExportObject<QueryTable>> t1 = new MutableObject<>();
 
         // now add the listener
-        final ExportedTableUpdateListener listener = new ExportedTableUpdateListener(session, observer);
+        final ExportedTableUpdateListener listener = createListener(session, observer);
         try (final SafeCloseable scope = LivenessScopeStack.open()) {
             session.addExportListener(listener);
         }
@@ -274,7 +291,8 @@ public class ExportTableUpdateListenerTest {
         expectNoMessage();
 
         // export mid-tick
-        updateGraphProcessor.runWithinUnitTestCycle(() -> {
+        // Must be off-thread to use concurrent instantiation
+        updateGraph.runWithinUnitTestCycle(() -> {
             final TableUpdateImpl update = new TableUpdateImpl();
             update.added = RowSetFactory.fromRange(src.getRowSet().lastRowKey() + 1, src.getRowSet().lastRowKey() + 42);
             update.removed = i();
@@ -296,15 +314,16 @@ public class ExportTableUpdateListenerTest {
                 throw new UncheckedDeephavenException(ie);
             }
 
+            updateGraph.markSourcesRefreshedForUnitTests();
             src.notifyListeners(update);
-        });
+        }, false);
 
         // we should get both a run and the update in the same flush
         expectSizes(t1.getValue().getExportId(), 42, 84);
     }
 
     private void addRowsToSource(final QueryTable src, final long nRows) {
-        updateGraphProcessor.runWithinUnitTestCycle(() -> {
+        updateGraph.runWithinUnitTestCycle(() -> {
             final TableUpdateImpl update = new TableUpdateImpl();
             update.added =
                     RowSetFactory.fromRange(src.getRowSet().lastRowKey() + 1, src.getRowSet().lastRowKey() + nRows);
@@ -328,17 +347,19 @@ public class ExportTableUpdateListenerTest {
     }
 
     private void expectNoMessage() {
-        updateGraphProcessor.runWithinUnitTestCycle(() -> {
-        }); // flush our terminal notification
+        // flush our terminal notification
+        updateGraph.runWithinUnitTestCycle(() -> {
+        });
         final ExportedTableUpdateMessage batch = observer.msgQueue.poll();
         Assert.eqNull(batch, "batch");
     }
 
     public class TestSessionState extends SessionState {
         public TestSessionState() {
-            super(scheduler, AUTH_CONTEXT);
+            super(scheduler, new SessionService.ObfuscatingErrorTransformer(), TestExecutionContext::createForUnitTests,
+                    AUTH_CONTEXT);
             initializeExpiration(new SessionService.TokenExpiration(UUID.randomUUID(),
-                    DateTimeUtils.nanosToTime(Long.MAX_VALUE), this));
+                    DateTimeUtils.epochMillis(DateTimeUtils.epochNanosToInstant(Long.MAX_VALUE)), this));
         }
     }
 

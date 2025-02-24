@@ -1,20 +1,16 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.util;
 
-import io.deephaven.base.Function;
 import io.deephaven.base.verify.Assert;
-import io.deephaven.datastructures.util.SmartKey;
+import io.deephaven.engine.context.ExecutionContext;
 import io.deephaven.engine.rowset.*;
 import io.deephaven.engine.rowset.RowSetFactory;
 import io.deephaven.engine.table.Table;
-import io.deephaven.engine.updategraph.UpdateGraphProcessor;
 import io.deephaven.engine.table.impl.QueryTable;
 import io.deephaven.engine.table.impl.AbstractColumnSource;
 import io.deephaven.engine.table.ColumnSource;
-import io.deephaven.engine.updategraph.LogicalClock;
 import io.deephaven.engine.table.impl.MutableColumnSourceGetDefaults;
 import gnu.trove.iterator.TObjectLongIterator;
 import gnu.trove.list.array.TLongArrayList;
@@ -24,33 +20,41 @@ import gnu.trove.map.TObjectLongMap;
 import gnu.trove.map.hash.TLongLongHashMap;
 import gnu.trove.map.hash.TLongObjectHashMap;
 import gnu.trove.map.hash.TObjectLongHashMap;
+import io.deephaven.engine.updategraph.UpdateGraph;
+import io.deephaven.tuple.ArrayTuple;
 
+import javax.annotation.OverridingMethodsMustInvokeSuper;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.Supplier;
 
 /**
- * An abstract table that represents a hashset of smart keys. Since we are representing a set, there we are not defining
- * an order to our output. Whatever order the table happens to end up in, is fine.
+ * An abstract table that represents a hash set of array-backed tuples. Since we are representing a set, there we are
+ * not defining an order to our output. Whatever order the table happens to end up in, is fine.
  *
- * The table will run by regenerating the full hashset (using the setGenerator Function passed in); and then comparing
+ * The table will run by regenerating the full hash set (using the setGenerator Function passed in); and then comparing
  * that to the existing hash set.
  */
 public class HashSetBackedTableFactory {
-    private final Function.Nullary<HashSet<SmartKey>> setGenerator;
+
+    private final Supplier<HashSet<ArrayTuple>> setGenerator;
     private final int refreshIntervalMs;
     private long nextRefresh;
     private final Map<String, ColumnSource<?>> columns;
-    private final TObjectLongMap<SmartKey> valueToIndexMap = new TObjectLongHashMap<>();
-    private final TLongObjectMap<SmartKey> indexToValueMap = new TLongObjectHashMap<>();
 
-    private final TLongObjectMap<SmartKey> indexToPreviousMap = new TLongObjectHashMap<>();
+    private final UpdateGraph updateGraph;
+
+    private final TObjectLongMap<ArrayTuple> valueToIndexMap = new TObjectLongHashMap<>();
+    private final TLongObjectMap<ArrayTuple> indexToValueMap = new TLongObjectHashMap<>();
+
+    private final TLongObjectMap<ArrayTuple> indexToPreviousMap = new TLongObjectHashMap<>();
     private final TLongLongMap indexToPreviousClock = new TLongLongHashMap();
     private long lastIndex = 0;
     private final TLongArrayList freeSet = new TLongArrayList();
     private TrackingWritableRowSet rowSet;
 
-    private HashSetBackedTableFactory(Function.Nullary<HashSet<SmartKey>> setGenerator, int refreshIntervalMs,
+    private HashSetBackedTableFactory(Supplier<HashSet<ArrayTuple>> setGenerator, int refreshIntervalMs,
             String... colNames) {
         this.setGenerator = setGenerator;
         this.refreshIntervalMs = refreshIntervalMs;
@@ -59,19 +63,21 @@ public class HashSetBackedTableFactory {
         columns = new LinkedHashMap<>();
 
         for (int ii = 0; ii < colNames.length; ++ii) {
-            columns.put(colNames[ii], new SmartKeyWrapperColumnSource(ii));
+            columns.put(colNames[ii], new ArrayTupleWrapperColumnSource(ii));
         }
+
+        updateGraph = ExecutionContext.getContext().getUpdateGraph();
     }
 
     /**
      * Create a ticking table based on a setGenerator.
      *
-     * @param setGenerator a function that returns a HashSet of SmartKeys, each SmartKey is a row in the output.
+     * @param setGenerator a function that returns a HashSet of ArrayTuples, each ArrayTuple is a row in the output.
      * @param refreshIntervalMs how often to run the table, if less than or equal to 0 the table does not tick.
-     * @param colNames the column names for the output table, must match the number of elements in each SmartKey.
+     * @param colNames the column names for the output table, must match the number of elements in each ArrayTuple.
      * @return a table representing the Set returned by the setGenerator
      */
-    public static Table create(Function.Nullary<HashSet<SmartKey>> setGenerator, int refreshIntervalMs,
+    public static Table create(Supplier<HashSet<ArrayTuple>> setGenerator, int refreshIntervalMs,
             String... colNames) {
         HashSetBackedTableFactory factory = new HashSetBackedTableFactory(setGenerator, refreshIntervalMs, colNames);
 
@@ -94,18 +100,18 @@ public class HashSetBackedTableFactory {
     }
 
     private void updateValueSet(RowSetBuilderRandom addedBuilder, RowSetBuilderRandom removedBuilder) {
-        HashSet<SmartKey> valueSet = setGenerator.call();
+        HashSet<ArrayTuple> valueSet = setGenerator.get();
 
         synchronized (this) {
-            for (TObjectLongIterator<SmartKey> it = valueToIndexMap.iterator(); it.hasNext();) {
+            for (TObjectLongIterator<ArrayTuple> it = valueToIndexMap.iterator(); it.hasNext();) {
                 it.advance();
-                SmartKey key = it.key();
+                ArrayTuple key = it.key();
                 if (!valueSet.contains(key)) {
                     removeValue(it, removedBuilder);
                 }
             }
 
-            for (SmartKey value : valueSet) {
+            for (ArrayTuple value : valueSet) {
                 if (!valueToIndexMap.containsKey(value)) {
                     addValue(value, addedBuilder);
                 }
@@ -113,21 +119,21 @@ public class HashSetBackedTableFactory {
         }
     }
 
-    private void removeValue(TObjectLongIterator<SmartKey> vtiIt, RowSetBuilderRandom removedBuilder) {
+    private void removeValue(TObjectLongIterator<ArrayTuple> vtiIt, RowSetBuilderRandom removedBuilder) {
         long index = vtiIt.value();
 
         // record the old value for get prev
         indexToPreviousMap.put(index, vtiIt.key());
         vtiIt.remove();
 
-        indexToPreviousClock.put(index, LogicalClock.DEFAULT.currentStep());
+        indexToPreviousClock.put(index, updateGraph.clock().currentStep());
 
         indexToValueMap.remove(index);
         removedBuilder.addKey(index);
         freeSet.add(index);
     }
 
-    private void addValue(SmartKey value, RowSetBuilderRandom addedBuilder) {
+    private void addValue(ArrayTuple value, RowSetBuilderRandom addedBuilder) {
         long newIndex;
         if (freeSet.isEmpty()) {
             newIndex = lastIndex++;
@@ -139,18 +145,21 @@ public class HashSetBackedTableFactory {
         valueToIndexMap.put(value, newIndex);
         indexToValueMap.put(newIndex, value);
 
-        if (indexToPreviousClock.get(newIndex) != LogicalClock.DEFAULT.currentStep()) {
-            indexToPreviousClock.put(newIndex, LogicalClock.DEFAULT.currentStep());
+        if (indexToPreviousClock.get(newIndex) != updateGraph.clock().currentStep()) {
+            indexToPreviousClock.put(newIndex, updateGraph.clock().currentStep());
             indexToPreviousMap.put(newIndex, null);
         }
     }
 
-    private class HashSetBackedTable extends QueryTable implements Runnable {
+    /**
+     * @implNote The constructor publishes {@code this} to the {@link UpdateGraph} and cannot be subclassed.
+     */
+    private final class HashSetBackedTable extends QueryTable implements Runnable {
         HashSetBackedTable(TrackingRowSet rowSet, Map<String, ColumnSource<?>> columns) {
             super(rowSet, columns);
             if (refreshIntervalMs >= 0) {
                 setRefreshing(true);
-                UpdateGraphProcessor.DEFAULT.addSource(this);
+                updateGraph.addSource(this);
             }
         }
 
@@ -179,45 +188,46 @@ public class HashSetBackedTableFactory {
             }
         }
 
+        @OverridingMethodsMustInvokeSuper
         @Override
         public void destroy() {
             super.destroy();
             if (refreshIntervalMs >= 0) {
-                UpdateGraphProcessor.DEFAULT.removeSource(this);
+                updateGraph.removeSource(this);
             }
         }
     }
 
-    private class SmartKeyWrapperColumnSource extends AbstractColumnSource<String>
+    private class ArrayTupleWrapperColumnSource extends AbstractColumnSource<String>
             implements MutableColumnSourceGetDefaults.ForObject<String> {
 
         private final int columnIndex;
 
-        public SmartKeyWrapperColumnSource(int columnIndex) {
+        public ArrayTupleWrapperColumnSource(int columnIndex) {
             super(String.class, null);
             this.columnIndex = columnIndex;
         }
 
         @Override
-        public String get(long index) {
+        public String get(long rowKey) {
             synchronized (HashSetBackedTableFactory.this) {
-                SmartKey row = indexToValueMap.get(index);
+                ArrayTuple row = indexToValueMap.get(rowKey);
                 if (row == null)
                     return null;
-                return (String) row.values_[columnIndex];
+                return row.getElement(columnIndex);
             }
         }
 
         @Override
-        public String getPrev(long index) {
+        public String getPrev(long rowKey) {
             synchronized (HashSetBackedTableFactory.this) {
-                if (indexToPreviousClock.get(index) == LogicalClock.DEFAULT.currentStep()) {
-                    SmartKey row = indexToPreviousMap.get(index);
+                if (indexToPreviousClock.get(rowKey) == updateGraph.clock().currentStep()) {
+                    ArrayTuple row = indexToPreviousMap.get(rowKey);
                     if (row == null)
                         return null;
-                    return (String) row.values_[columnIndex];
+                    return row.getElement(columnIndex);
                 } else {
-                    return get(index);
+                    return get(rowKey);
                 }
             }
         }

@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources;
 
 import io.deephaven.base.verify.Assert;
@@ -28,12 +27,12 @@ public class UngroupedObjectVectorColumnSource<T> extends UngroupedColumnSource<
     }
 
     @Override
-    public T get(long index) {
-        if (index < 0) {
+    public T get(long rowKey) {
+        if (rowKey < 0) {
             return null;
         }
-        long segment = index >> base;
-        long offset = index & ((1 << base) - 1);
+        long segment = rowKey >> base;
+        long offset = rowKey & ((1 << base) - 1);
         if (isUngroupable) {
             // noinspection unchecked
             return (T) ((UngroupableColumnSource) innerSource).getUngrouped(segment, (int) offset);
@@ -43,12 +42,12 @@ public class UngroupedObjectVectorColumnSource<T> extends UngroupedColumnSource<
     }
 
     @Override
-    public T getPrev(long index) {
-        if (index < 0) {
+    public T getPrev(long rowKey) {
+        if (rowKey < 0) {
             return null;
         }
-        long segment = index >> getPrevBase();
-        long offset = index & ((1 << getPrevBase()) - 1);
+        long segment = rowKey >> getPrevBase();
+        long offset = rowKey & ((1 << getPrevBase()) - 1);
 
         if (isUngroupable) {
             // noinspection unchecked
@@ -62,13 +61,13 @@ public class UngroupedObjectVectorColumnSource<T> extends UngroupedColumnSource<
     }
 
     @Override
-    public Boolean getBoolean(long index) {
-        return (Boolean) get(index);
+    public Boolean getBoolean(long rowKey) {
+        return (Boolean) get(rowKey);
     }
 
     @Override
-    public Boolean getPrevBoolean(long index) {
-        return (Boolean) getPrev(index);
+    public Boolean getPrevBoolean(long rowKey) {
+        return (Boolean) getPrev(rowKey);
     }
 
     @Override

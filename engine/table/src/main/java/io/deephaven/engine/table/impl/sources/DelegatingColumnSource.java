@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources;
 
 import io.deephaven.chunk.Chunk;
@@ -7,10 +10,11 @@ import io.deephaven.engine.rowset.RowSequence;
 import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.engine.rowset.WritableRowSet;
 import io.deephaven.engine.table.ColumnSource;
+import io.deephaven.engine.table.DataIndex;
 import io.deephaven.engine.table.SharedContext;
 import io.deephaven.engine.table.impl.AbstractColumnSource;
-import io.deephaven.util.annotations.FinalDefault;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.annotation.OverridingMethodsMustInvokeSuper;
 
@@ -23,9 +27,14 @@ public class DelegatingColumnSource<T, R> extends AbstractColumnSource<T> {
     }
 
     @Override
-    public WritableRowSet match(boolean invertMatch, boolean usePrev, boolean caseInsensitive, RowSet mapper,
+    public WritableRowSet match(
+            boolean invertMatch,
+            boolean usePrev,
+            boolean caseInsensitive,
+            @Nullable final DataIndex dataIndex,
+            @NotNull RowSet mapper,
             Object... keys) {
-        return delegate.match(invertMatch, usePrev, caseInsensitive, mapper, keys);
+        return delegate.match(invertMatch, usePrev, caseInsensitive, dataIndex, mapper, keys);
     }
 
     @Override
@@ -88,53 +97,53 @@ public class DelegatingColumnSource<T, R> extends AbstractColumnSource<T> {
     }
 
     @Override
-    public T get(long index) {
-        return (T) delegate.get(index);
+    public T get(long rowKey) {
+        return (T) delegate.get(rowKey);
     }
 
     @Override
-    public Boolean getBoolean(long index) {
-        return delegate.getBoolean(index);
+    public Boolean getBoolean(long rowKey) {
+        return delegate.getBoolean(rowKey);
     }
 
     @Override
-    public byte getByte(long index) {
-        return delegate.getByte(index);
+    public byte getByte(long rowKey) {
+        return delegate.getByte(rowKey);
     }
 
     @Override
-    public char getChar(long index) {
-        return delegate.getChar(index);
+    public char getChar(long rowKey) {
+        return delegate.getChar(rowKey);
     }
 
     @Override
-    public double getDouble(long index) {
-        return delegate.getDouble(index);
+    public double getDouble(long rowKey) {
+        return delegate.getDouble(rowKey);
     }
 
     @Override
-    public float getFloat(long index) {
-        return delegate.getFloat(index);
+    public float getFloat(long rowKey) {
+        return delegate.getFloat(rowKey);
     }
 
     @Override
-    public int getInt(long index) {
-        return delegate.getInt(index);
+    public int getInt(long rowKey) {
+        return delegate.getInt(rowKey);
     }
 
     @Override
-    public long getLong(long index) {
-        return delegate.getLong(index);
+    public long getLong(long rowKey) {
+        return delegate.getLong(rowKey);
     }
 
     @Override
-    public short getShort(long index) {
-        return delegate.getShort(index);
+    public short getShort(long rowKey) {
+        return delegate.getShort(rowKey);
     }
 
     @Override
-    public T getPrev(long index) {
-        return (T) delegate.getPrev(index);
+    public T getPrev(long rowKey) {
+        return (T) delegate.getPrev(rowKey);
     }
 
     @Override
@@ -143,59 +152,52 @@ public class DelegatingColumnSource<T, R> extends AbstractColumnSource<T> {
     }
 
     @Override
-    @FinalDefault
-    public FillContext makeFillContext(int chunkCapacity) {
-        return delegate.makeFillContext(chunkCapacity);
-    }
-
-    @Override
     public GetContext makeGetContext(int chunkCapacity, SharedContext sharedContext) {
         return delegate.makeGetContext(chunkCapacity, sharedContext);
     }
 
     @Override
-    @FinalDefault
-    public GetContext makeGetContext(int chunkCapacity) {
-        return delegate.makeGetContext(chunkCapacity);
+    public Boolean getPrevBoolean(long rowKey) {
+        return delegate.getPrevBoolean(rowKey);
     }
 
     @Override
-    public Boolean getPrevBoolean(long index) {
-        return delegate.getPrevBoolean(index);
+    public byte getPrevByte(long rowKey) {
+        return delegate.getPrevByte(rowKey);
     }
 
     @Override
-    public byte getPrevByte(long index) {
-        return delegate.getPrevByte(index);
+    public char getPrevChar(long rowKey) {
+        return delegate.getPrevChar(rowKey);
     }
 
     @Override
-    public char getPrevChar(long index) {
-        return delegate.getPrevChar(index);
+    public double getPrevDouble(long rowKey) {
+        return delegate.getPrevDouble(rowKey);
     }
 
     @Override
-    public double getPrevDouble(long index) {
-        return delegate.getPrevDouble(index);
+    public float getPrevFloat(long rowKey) {
+        return delegate.getPrevFloat(rowKey);
     }
 
     @Override
-    public float getPrevFloat(long index) {
-        return delegate.getPrevFloat(index);
+    public int getPrevInt(long rowKey) {
+        return delegate.getPrevInt(rowKey);
     }
 
     @Override
-    public int getPrevInt(long index) {
-        return delegate.getPrevInt(index);
+    public long getPrevLong(long rowKey) {
+        return delegate.getPrevLong(rowKey);
     }
 
     @Override
-    public long getPrevLong(long index) {
-        return delegate.getPrevLong(index);
+    public short getPrevShort(long rowKey) {
+        return delegate.getPrevShort(rowKey);
     }
 
     @Override
-    public short getPrevShort(long index) {
-        return delegate.getPrevShort(index);
+    public boolean isStateless() {
+        return delegate.isStateless();
     }
 }

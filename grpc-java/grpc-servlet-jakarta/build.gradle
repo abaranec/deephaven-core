@@ -1,12 +1,18 @@
 plugins {
     id 'java-library'
+    id 'io.deephaven.project.register'
 }
 
 dependencies {
-    Classpaths.inheritGrpcPlatform(project)
-    implementation 'io.grpc:grpc-core'
-    compileOnly 'jakarta.servlet:jakarta.servlet-api:5.0.0',
-            'org.apache.tomcat:annotations-api:6.0.53'
+    implementation platform(libs.grpc.bom)
+    implementation libs.grpc.core
+    compileOnly libs.jakarata.servlet.api
 
-    implementation 'com.google.guava:guava:19.0'
+    implementation libs.guava
+}
+
+spotless {
+    java {
+        targetExclude '**/*'
+    }
 }

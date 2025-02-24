@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.base.cache;
 
 import io.deephaven.base.verify.Assert;
@@ -49,7 +48,7 @@ public class OpenAddressedCanonicalizationCache {
         int hashCode(@NotNull final INPUT_TYPE inputItem);
 
         /**
-         * Note: The following must be true: hashCode(inputItem) == outputItem.hashCode() && equals(inputItem,
+         * Note: The following must be true: hashCode(inputItem) == outputItem.hashCode() &amp;&amp; equals(inputItem,
          * outputItem)
          * 
          * @param inputItem The input item
@@ -76,7 +75,7 @@ public class OpenAddressedCanonicalizationCache {
         }
     }
 
-    private static Adapter<?, ?> DEFAULT_ADAPTER = new DefaultAdapter();
+    private static final Adapter<?, ?> DEFAULT_ADAPTER = new DefaultAdapter();
 
     private static class ItemReference<T> extends WeakReference<T> {
 
@@ -97,7 +96,7 @@ public class OpenAddressedCanonicalizationCache {
 
     private final float loadFactor;
 
-    private ItemReference<?> storage[];
+    private ItemReference<?>[] storage;
     private int occupancyThreshold;
     private int occupiedSlots;
     private int emptySlots;
@@ -228,7 +227,7 @@ public class OpenAddressedCanonicalizationCache {
     }
 
     private void rehash(final int newCapacity) {
-        final ItemReference<?> oldStorage[] = storage;
+        final ItemReference<?>[] oldStorage = storage;
 
         initialize(newCapacity);
 

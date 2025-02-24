@@ -1,9 +1,14 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.benchmarking.impl;
 
-import io.deephaven.base.StringUtils;
 import io.deephaven.benchmarking.BenchmarkTable;
 
-import java.util.*;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 public class PersistentBenchmarkTableBuilder extends AbstractBenchmarkTableBuilder<PersistentBenchmarkTableBuilder> {
 
@@ -50,7 +55,7 @@ public class PersistentBenchmarkTableBuilder extends AbstractBenchmarkTableBuild
 
         if (!missingGroupingColumns.isEmpty()) {
             throw new IllegalStateException("Grouping requested on the following nonexistant columns "
-                    + StringUtils.joinStrings(missingGroupingColumns, ", "));
+                    + String.join(", ", missingGroupingColumns));
         }
 
         // TODO (deephaven/deephaven-core/issues/147): Replace this with a Parquet-backed table, or delete this entirely

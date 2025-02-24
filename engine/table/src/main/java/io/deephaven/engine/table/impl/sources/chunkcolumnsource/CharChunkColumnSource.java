@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources.chunkcolumnsource;
 
 import gnu.trove.list.array.TLongArrayList;
@@ -13,7 +16,7 @@ import io.deephaven.chunk.*;
 import io.deephaven.engine.rowset.RowSequence;
 import io.deephaven.util.QueryConstants;
 import io.deephaven.util.SafeCloseable;
-import org.apache.commons.lang3.mutable.MutableInt;
+import io.deephaven.util.mutable.MutableInt;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
@@ -21,11 +24,12 @@ import java.util.ArrayList;
 /**
  * A column source backed by {@link CharChunk CharChunks}.
  * <p>
- * The address space of the column source is dense, with each chunk backing a contiguous set of indices.  The
- * {@link #getChunk(GetContext, RowSequence)}
- * call will return the backing chunk or a slice of the backing chunk if possible.
+ * The address space of the column source is dense, with each chunk backing a contiguous set of indices. The
+ * {@link #getChunk(GetContext, RowSequence)} call will return the backing chunk or a slice of the backing chunk if
+ * possible.
  */
-public class CharChunkColumnSource extends AbstractColumnSource<Character> implements ImmutableColumnSourceGetDefaults.ForChar, ChunkColumnSource<Character> {
+public class CharChunkColumnSource extends AbstractColumnSource<Character>
+        implements ImmutableColumnSourceGetDefaults.ForChar, ChunkColumnSource<Character> {
     private final ArrayList<WritableCharChunk<? extends Values>> data = new ArrayList<>();
     private final TLongArrayList firstOffsetForData;
     private long totalSize = 0;
@@ -42,20 +46,21 @@ public class CharChunkColumnSource extends AbstractColumnSource<Character> imple
     // endregion constructor
 
     @Override
-    public char getChar(final long index) {
-        if (index < 0 || index >= totalSize) {
+    public char getChar(final long rowKey) {
+        if (rowKey < 0 || rowKey >= totalSize) {
             return QueryConstants.NULL_CHAR;
         }
 
-        final int chunkIndex = getChunkIndex(index);
+        final int chunkIndex = getChunkIndex(rowKey);
         final long offset = firstOffsetForData.getQuick(chunkIndex);
-        return data.get(chunkIndex).get((int) (index - offset));
+        return data.get(chunkIndex).get((int) (rowKey - offset));
     }
 
     private final static class ChunkGetContext<ATTR extends Any> extends DefaultGetContext<ATTR> {
         private final ResettableCharChunk resettableCharChunk = ResettableCharChunk.makeResettableChunk();
 
-        public ChunkGetContext(final ChunkSource<ATTR> chunkSource, final int chunkCapacity, final SharedContext sharedContext) {
+        public ChunkGetContext(final ChunkSource<ATTR> chunkSource, final int chunkCapacity,
+                final SharedContext sharedContext) {
             super(chunkSource, chunkCapacity, sharedContext);
         }
 
@@ -95,12 +100,13 @@ public class CharChunkColumnSource extends AbstractColumnSource<Character> imple
     }
 
     @Override
-    public void fillChunk(@NotNull final FillContext context, @NotNull final WritableChunk<? super Values> destination, @NotNull final RowSequence rowSequence) {
+    public void fillChunk(@NotNull final FillContext context, @NotNull final WritableChunk<? super Values> destination,
+            @NotNull final RowSequence rowSequence) {
         final MutableInt searchStartChunkIndex = new MutableInt(0);
         destination.setSize(0);
         rowSequence.forAllRowKeyRanges((s, e) -> {
             while (s <= e) {
-                final int chunkIndex = getChunkIndex(s, searchStartChunkIndex.intValue());
+                final int chunkIndex = getChunkIndex(s, searchStartChunkIndex.get());
                 final int offsetWithinChunk = (int) (s - firstOffsetForData.get(chunkIndex));
                 Assert.geqZero(offsetWithinChunk, "offsetWithinChunk");
                 final CharChunk<? extends Values> charChunk = data.get(chunkIndex);
@@ -115,14 +121,15 @@ public class CharChunkColumnSource extends AbstractColumnSource<Character> imple
                 s += length;
                 if (s <= e) {
                     // We have more of this range to gather from a subsequent chunk.
-                    searchStartChunkIndex.setValue(chunkIndex + 1);
+                    searchStartChunkIndex.set(chunkIndex + 1);
                 }
             }
         });
     }
 
     @Override
-    public void fillPrevChunk(@NotNull final FillContext context, @NotNull final WritableChunk<? super Values> destination, @NotNull final RowSequence rowSequence) {
+    public void fillPrevChunk(@NotNull final FillContext context,
+            @NotNull final WritableChunk<? super Values> destination, @NotNull final RowSequence rowSequence) {
         // immutable, so we can delegate to fill
         fillChunk(context, destination, rowSequence);
     }
@@ -140,7 +147,7 @@ public class CharChunkColumnSource extends AbstractColumnSource<Character> imple
     /**
      * Given a row key within this column's address space; return the chunk index that contains the row key.
      *
-     * @param start      the data row key to find the corresponding chunk for
+     * @param start the data row key to find the corresponding chunk for
      * @param startChunk the first chunk that may possibly contain start
      * @return the chunk index within data and offsets
      */
@@ -178,7 +185,7 @@ public class CharChunkColumnSource extends AbstractColumnSource<Character> imple
     }
 
     @Override
-    public void clear() {
+    public synchronized void clear() {
         totalSize = 0;
         data.forEach(SafeCloseable::close);
         data.clear();

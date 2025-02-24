@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table;
 
 import io.deephaven.chunk.Chunk;
@@ -93,7 +96,9 @@ public interface ChunkSource<ATTR extends Any> extends FillContextMaker, GetCont
      *          Post-condition: destination.size() will be equal to rowSequence.size()
      *          </p>
      */
-    void fillChunk(@NotNull FillContext context, @NotNull WritableChunk<? super ATTR> destination,
+    void fillChunk(
+            @NotNull FillContext context,
+            @NotNull WritableChunk<? super ATTR> destination,
             @NotNull RowSequence rowSequence);
 
     /**
@@ -115,7 +120,7 @@ public interface ChunkSource<ATTR extends Any> extends FillContextMaker, GetCont
          */
         default boolean supportsUnboundedFill() {
             return false;
-        };
+        }
     }
 
     /**
@@ -170,7 +175,9 @@ public interface ChunkSource<ATTR extends Any> extends FillContextMaker, GetCont
          *          Post-condition: destination.size() will be equal to rowSequence.size()
          *          </p>
          */
-        void fillPrevChunk(@NotNull FillContext context, @NotNull WritableChunk<? super ATTR> destination,
+        void fillPrevChunk(
+                @NotNull FillContext context,
+                @NotNull WritableChunk<? super ATTR> destination,
                 @NotNull RowSequence rowSequence);
 
         /**

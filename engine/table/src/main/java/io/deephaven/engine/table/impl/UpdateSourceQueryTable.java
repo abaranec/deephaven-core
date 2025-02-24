@@ -1,20 +1,20 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl;
 
 import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.engine.rowset.RowSetBuilderRandom;
 import io.deephaven.engine.rowset.RowSetFactory;
 import io.deephaven.engine.rowset.TrackingWritableRowSet;
-import io.deephaven.engine.updategraph.UpdateGraphProcessor;
+import io.deephaven.engine.updategraph.impl.PeriodicUpdateGraph;
 import io.deephaven.engine.table.ColumnSource;
 
+import javax.annotation.OverridingMethodsMustInvokeSuper;
 import java.util.Map;
 
 /**
- * A {@link QueryTable} that acts as an update source within the {@link UpdateGraphProcessor}, with {@link RowSet}
+ * A {@link QueryTable} that acts as an update source within the {@link PeriodicUpdateGraph}, with {@link RowSet}
  * changes queued externally by a single producer.
  */
 public class UpdateSourceQueryTable extends QueryTable implements Runnable {
@@ -48,9 +48,10 @@ public class UpdateSourceQueryTable extends QueryTable implements Runnable {
         additionsBuilder.addRange(firstRowKey, lastRowKey);
     }
 
+    @OverridingMethodsMustInvokeSuper
     @Override
     public void destroy() {
         super.destroy();
-        UpdateGraphProcessor.DEFAULT.removeSource(this);
+        updateGraph.removeSource(this);
     }
 }

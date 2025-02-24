@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.base;
 
 public class CompareUtils {
@@ -121,7 +120,7 @@ public class CompareUtils {
     }
 
     /**
-     * Since logical comparison of double values considerig error is effectively a three-value logic, you can't really
+     * Since logical comparison of double values considering error is effectively a three-value logic, you can't really
      * do !equals when you mean notEquals.
      * 
      * @param x
@@ -160,7 +159,7 @@ public class CompareUtils {
     }
 
     /**
-     * You can't do double1 > double2 because floating point numbers are not exact values. Just make sure that x-y is
+     * You can't do double1 &gt; double2 because floating point numbers are not exact values. Just make sure that x-y is
      * greater than some allowable error factor for equality
      *
      * @param x
@@ -192,8 +191,8 @@ public class CompareUtils {
     }
 
     /**
-     * You can't do double1 < double2 because floating point numbers are not exact values. Just make sure that y - x is
-     * greater than some allowable error factor for equality
+     * You can't do double1 &lt; double2 because floating point numbers are not exact values. Just make sure that y - x
+     * is greater than some allowable error factor for equality
      *
      * @param x
      * @param y

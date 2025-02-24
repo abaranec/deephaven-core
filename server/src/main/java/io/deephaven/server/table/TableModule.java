@@ -1,32 +1,20 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.server.table;
 
 import dagger.Binds;
 import dagger.MapKey;
 import dagger.Module;
+import dagger.Provides;
 import dagger.multibindings.IntoMap;
 import dagger.multibindings.IntoSet;
+import io.deephaven.auth.codegen.impl.TableServiceContextualAuthWiring;
 import io.deephaven.proto.backplane.grpc.BatchTableRequest;
-import io.deephaven.server.table.ops.ApplyPreviewColumnsGrpcImpl;
-import io.deephaven.server.table.ops.ComboAggregateGrpcImpl;
-import io.deephaven.server.table.ops.CreateInputTableGrpcImpl;
-import io.deephaven.server.table.ops.DropColumnsGrpcImpl;
-import io.deephaven.server.table.ops.EmptyTableGrpcImpl;
-import io.deephaven.server.table.ops.FetchTableGrpcImpl;
-import io.deephaven.server.table.ops.FilterTableGrpcImpl;
-import io.deephaven.server.table.ops.FlattenTableGrpcImpl;
-import io.deephaven.server.table.ops.GrpcTableOperation;
-import io.deephaven.server.table.ops.HeadOrTailByGrpcImpl;
-import io.deephaven.server.table.ops.HeadOrTailGrpcImpl;
-import io.deephaven.server.table.ops.JoinTablesGrpcImpl;
-import io.deephaven.server.table.ops.MergeTablesGrpcImpl;
-import io.deephaven.server.table.ops.RunChartDownsampleGrpcImpl;
-import io.deephaven.server.table.ops.SelectDistinctGrpcImpl;
-import io.deephaven.server.table.ops.SnapshotTableGrpcImpl;
-import io.deephaven.server.table.ops.SortTableGrpcImpl;
-import io.deephaven.server.table.ops.TimeTableGrpcImpl;
-import io.deephaven.server.table.ops.UngroupGrpcImpl;
-import io.deephaven.server.table.ops.UnstructuredFilterTableGrpcImpl;
-import io.deephaven.server.table.ops.UpdateOrSelectGrpcImpl;
+import io.deephaven.server.auth.AuthorizationProvider;
+import io.deephaven.server.table.ops.*;
+import io.deephaven.server.table.ops.AjRajGrpcImpl.AjGrpcImpl;
+import io.deephaven.server.table.ops.AjRajGrpcImpl.RajGrpcImpl;
 import io.grpc.BindableService;
 
 @MapKey
@@ -37,6 +25,11 @@ import io.grpc.BindableService;
 
 @Module
 public interface TableModule {
+    @Provides
+    static TableServiceContextualAuthWiring provideAuthWiring(AuthorizationProvider authProvider) {
+        return authProvider.getTableServiceContextualAuthWiring();
+    }
+
     @Binds
     @IntoSet
     BindableService bindTableServiceGrpcImpl(TableServiceGrpcImpl tableService);
@@ -118,6 +111,16 @@ public interface TableModule {
 
     @Binds
     @IntoMap
+    @BatchOpCode(BatchTableRequest.Operation.OpCase.AGGREGATE_ALL)
+    GrpcTableOperation<?> bindOperationAggregateAll(AggregateAllGrpcImpl op);
+
+    @Binds
+    @IntoMap
+    @BatchOpCode(BatchTableRequest.Operation.OpCase.AGGREGATE)
+    GrpcTableOperation<?> bindOperationAggregate(AggregateGrpcImpl op);
+
+    @Binds
+    @IntoMap
     @BatchOpCode(BatchTableRequest.Operation.OpCase.CROSS_JOIN)
     GrpcTableOperation<?> bindOperationCrossJoin(JoinTablesGrpcImpl.CrossJoinTablesGrpcImpl op);
 
@@ -153,6 +156,11 @@ public interface TableModule {
 
     @Binds
     @IntoMap
+    @BatchOpCode(BatchTableRequest.Operation.OpCase.SNAPSHOT_WHEN)
+    GrpcTableOperation<?> bindOperationSnapshotWhenTable(SnapshotWhenTableGrpcImpl op);
+
+    @Binds
+    @IntoMap
     @BatchOpCode(BatchTableRequest.Operation.OpCase.SORT)
     GrpcTableOperation<?> bindOperationSortTable(SortTableGrpcImpl op);
 
@@ -173,6 +181,26 @@ public interface TableModule {
 
     @Binds
     @IntoMap
+    @BatchOpCode(BatchTableRequest.Operation.OpCase.AJ)
+    GrpcTableOperation<?> bindOperationAj(AjGrpcImpl op);
+
+    @Binds
+    @IntoMap
+    @BatchOpCode(BatchTableRequest.Operation.OpCase.RAJ)
+    GrpcTableOperation<?> bindOperationRaj(RajGrpcImpl op);
+
+    @Binds
+    @IntoMap
+    @BatchOpCode(BatchTableRequest.Operation.OpCase.MULTI_JOIN)
+    GrpcTableOperation<?> bindOperationMultiJoin(MultiJoinGrpcImpl op);
+
+    @Binds
+    @IntoMap
+    @BatchOpCode(BatchTableRequest.Operation.OpCase.RANGE_JOIN)
+    GrpcTableOperation<?> bindOperationRangeJoin(RangeJoinGrpcImpl op);
+
+    @Binds
+    @IntoMap
     @BatchOpCode(BatchTableRequest.Operation.OpCase.RUN_CHART_DOWNSAMPLE)
     GrpcTableOperation<?> bindOperationRunChartDownsample(RunChartDownsampleGrpcImpl op);
 
@@ -190,4 +218,30 @@ public interface TableModule {
     @IntoMap
     @BatchOpCode(BatchTableRequest.Operation.OpCase.CREATE_INPUT_TABLE)
     GrpcTableOperation<?> bindCreateInputTable(CreateInputTableGrpcImpl op);
+
+    @Binds
+    @IntoMap
+    @BatchOpCode(BatchTableRequest.Operation.OpCase.UPDATE_BY)
+    GrpcTableOperation<?> bindUpdateBy(UpdateByGrpcImpl op);
+
+    @Binds
+    @IntoMap
+    @BatchOpCode(BatchTableRequest.Operation.OpCase.WHERE_IN)
+    GrpcTableOperation<?> bindWhereIn(WhereInGrpcImpl op);
+
+    @Binds
+    @IntoMap
+    @BatchOpCode(BatchTableRequest.Operation.OpCase.COLUMN_STATISTICS)
+    GrpcTableOperation<?> bindColumnStats(ColumnStatisticsGrpcImpl op);
+
+    @Binds
+    @IntoMap
+    @BatchOpCode(BatchTableRequest.Operation.OpCase.META_TABLE)
+    GrpcTableOperation<?> bindMeta(MetaTableGrpcImpl op);
+
+    @Binds
+    @IntoMap
+    @BatchOpCode(BatchTableRequest.Operation.OpCase.SLICE)
+    GrpcTableOperation<?> bindSlice(SliceGrpcImpl op);
+
 }

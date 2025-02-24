@@ -1,22 +1,22 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.client.examples;
 
+import io.deephaven.base.system.AsyncSystem;
 import io.deephaven.qst.TableCreationLogic;
 import io.deephaven.qst.table.TableSpec;
+import io.deephaven.qst.table.TimeTable;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
-import picocli.CommandLine.Parameters;
+
+import java.time.Duration;
 
 @Command(name = "subscribe-qst", mixinStandardHelpOptions = true,
         description = "Send a QST, get the results, and subscribe over barrage", version = "0.1.0")
 class SubscribeQST extends SubscribeExampleBase {
 
-    @Parameters(arity = "1", paramLabel = "QST", description = "QST file to send and get.",
-            converter = TableConverter.class)
-    TableSpec table;
+    TableSpec table = TimeTable.of(Duration.ofSeconds(1));
 
     @Override
     protected TableCreationLogic logic() {
@@ -24,6 +24,7 @@ class SubscribeQST extends SubscribeExampleBase {
     }
 
     public static void main(String[] args) {
+        Thread.setDefaultUncaughtExceptionHandler(AsyncSystem.uncaughtExceptionHandler(1, System.err));
         int execute = new CommandLine(new SubscribeQST()).execute(args);
         System.exit(execute);
     }

@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table;
 
 import io.deephaven.api.RawString;
@@ -27,9 +30,9 @@ public class WouldMatchPair {
     }
 
     /**
-     * Create a WouldMatchPair from a column name and {@link Filter}
+     * Create a WouldMatchPair from a column name and {@link Filter}.
      *
-     * @see SelectFilterFactory
+     * @see io.deephaven.engine.table.impl.select.WhereFilterFactory
      *
      * @param columnName the name of the resultant column
      * @param filter the filter to populate the column

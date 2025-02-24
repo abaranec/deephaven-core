@@ -1,264 +1,307 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.server.console;
 
+import com.google.common.base.Throwables;
 import com.google.rpc.Code;
+import io.deephaven.base.LockFreeArrayQueue;
 import io.deephaven.configuration.Configuration;
+import io.deephaven.engine.context.ExecutionContext;
+import io.deephaven.engine.context.QueryScope;
 import io.deephaven.engine.table.Table;
-import io.deephaven.engine.updategraph.DynamicNode;
+import io.deephaven.engine.table.impl.perf.QueryPerformanceNugget;
+import io.deephaven.engine.table.impl.perf.QueryPerformanceRecorder;
+import io.deephaven.engine.table.impl.util.RuntimeMemory;
+import io.deephaven.engine.table.impl.util.RuntimeMemory.Sample;
 import io.deephaven.engine.util.DelegatingScriptSession;
-import io.deephaven.engine.util.ExportedObjectType;
-import io.deephaven.engine.util.NoLanguageDeephavenSession;
 import io.deephaven.engine.util.ScriptSession;
-import io.deephaven.engine.util.VariableProvider;
-import io.deephaven.engine.util.jpy.JpyInit;
+import io.deephaven.engine.util.systemicmarking.SystemicObjectTracker;
 import io.deephaven.extensions.barrage.util.GrpcUtil;
+import io.deephaven.integrations.python.PythonDeephavenSession;
 import io.deephaven.internal.log.LoggerFactory;
 import io.deephaven.io.logger.LogBuffer;
 import io.deephaven.io.logger.LogBufferRecord;
 import io.deephaven.io.logger.LogBufferRecordListener;
 import io.deephaven.io.logger.Logger;
-import io.deephaven.lang.completion.ChunkerCompleter;
-import io.deephaven.lang.completion.CompletionLookups;
-import io.deephaven.lang.parse.CompletionParser;
-import io.deephaven.lang.parse.LspTools;
-import io.deephaven.lang.parse.ParsedDocument;
-import io.deephaven.lang.shared.lsp.CompletionCancelled;
-import io.deephaven.plot.FigureWidget;
+import io.deephaven.lang.completion.CustomCompletion;
+import io.deephaven.proto.backplane.grpc.FieldInfo;
+import io.deephaven.proto.backplane.grpc.FieldsChangeUpdate;
 import io.deephaven.proto.backplane.grpc.Ticket;
-import io.deephaven.proto.backplane.script.grpc.AutoCompleteRequest;
-import io.deephaven.proto.backplane.script.grpc.AutoCompleteResponse;
-import io.deephaven.proto.backplane.script.grpc.BindTableToVariableRequest;
-import io.deephaven.proto.backplane.script.grpc.BindTableToVariableResponse;
-import io.deephaven.proto.backplane.script.grpc.CancelCommandRequest;
-import io.deephaven.proto.backplane.script.grpc.CancelCommandResponse;
-import io.deephaven.proto.backplane.script.grpc.ChangeDocumentRequest;
-import io.deephaven.proto.backplane.script.grpc.CloseDocumentRequest;
-import io.deephaven.proto.backplane.script.grpc.CompletionItem;
-import io.deephaven.proto.backplane.script.grpc.ConsoleServiceGrpc;
-import io.deephaven.proto.backplane.script.grpc.ExecuteCommandRequest;
-import io.deephaven.proto.backplane.script.grpc.ExecuteCommandResponse;
-import io.deephaven.proto.backplane.script.grpc.FetchFigureRequest;
-import io.deephaven.proto.backplane.script.grpc.FetchFigureResponse;
-import io.deephaven.proto.backplane.script.grpc.FigureDescriptor;
-import io.deephaven.proto.backplane.script.grpc.GetCompletionItemsRequest;
-import io.deephaven.proto.backplane.script.grpc.GetCompletionItemsResponse;
-import io.deephaven.proto.backplane.script.grpc.GetConsoleTypesRequest;
-import io.deephaven.proto.backplane.script.grpc.GetConsoleTypesResponse;
-import io.deephaven.proto.backplane.script.grpc.LogSubscriptionData;
-import io.deephaven.proto.backplane.script.grpc.LogSubscriptionRequest;
-import io.deephaven.proto.backplane.script.grpc.StartConsoleRequest;
-import io.deephaven.proto.backplane.script.grpc.StartConsoleResponse;
-import io.deephaven.proto.backplane.script.grpc.TextDocumentItem;
-import io.deephaven.proto.backplane.script.grpc.VariableDefinition;
-import io.deephaven.proto.backplane.script.grpc.VersionedTextDocumentIdentifier;
-import io.deephaven.server.console.figure.FigureWidgetTranslator;
+import io.deephaven.proto.backplane.grpc.TypedTicket;
+import io.deephaven.proto.backplane.script.grpc.*;
+import io.deephaven.proto.util.Exceptions;
+import io.deephaven.server.console.completer.JavaAutoCompleteObserver;
+import io.deephaven.server.console.completer.PythonAutoCompleteObserver;
 import io.deephaven.server.session.SessionCloseableObserver;
 import io.deephaven.server.session.SessionService;
 import io.deephaven.server.session.SessionState;
 import io.deephaven.server.session.SessionState.ExportBuilder;
 import io.deephaven.server.session.TicketRouter;
+import io.deephaven.server.util.Scheduler;
+import io.deephaven.util.SafeCloseable;
+import io.grpc.stub.ServerCallStreamObserver;
 import io.grpc.stub.StreamObserver;
+import org.jetbrains.annotations.NotNull;
+import org.jpy.PyObject;
 
 import javax.inject.Inject;
 import javax.inject.Provider;
 import javax.inject.Singleton;
-import java.io.IOException;
-import java.util.Collection;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeoutException;
-import java.util.stream.Collectors;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-import static io.deephaven.extensions.barrage.util.GrpcUtil.safelyExecute;
-import static io.deephaven.extensions.barrage.util.GrpcUtil.safelyExecuteLocked;
+import static io.deephaven.extensions.barrage.util.GrpcUtil.*;
 
 @Singleton
 public class ConsoleServiceGrpcImpl extends ConsoleServiceGrpc.ConsoleServiceImplBase {
     private static final Logger log = LoggerFactory.getLogger(ConsoleServiceGrpcImpl.class);
 
-    private static final String PYTHON_TYPE = "python";
-
-    public static final String WORKER_CONSOLE_TYPE =
-            Configuration.getInstance().getStringWithDefault("deephaven.console.type", PYTHON_TYPE);
     public static final boolean REMOTE_CONSOLE_DISABLED =
             Configuration.getInstance().getBooleanWithDefault("deephaven.console.disable", false);
 
-    private final Map<String, Provider<ScriptSession>> scriptTypes;
+    private static final String DISABLE_AUTOCOMPLETE_FLAG = "deephaven.console.autocomplete.disable";
+    public static final boolean AUTOCOMPLETE_DISABLED =
+            Configuration.getInstance().getBooleanWithDefault(DISABLE_AUTOCOMPLETE_FLAG, false);
+
+
+    public static final boolean QUIET_AUTOCOMPLETE_ERRORS =
+            Configuration.getInstance().getBooleanWithDefault("deephaven.console.autocomplete.quiet", true);
+
+    public static final long SUBSCRIBE_TO_LOGS_SEND_MILLIS =
+            Configuration.getInstance().getLongWithDefault("deephaven.console.subscribeToLogs.sendMillis", 100);
+
+    public static final String SUBSCRIBE_TO_LOGS_BUFFER_SIZE_PROP = "deephaven.console.subscribeToLogs.bufferSize";
+
+    public static final int SUBSCRIBE_TO_LOGS_BUFFER_SIZE =
+            Configuration.getInstance().getIntegerWithDefault(SUBSCRIBE_TO_LOGS_BUFFER_SIZE_PROP, 32768);
+
+    private static final AtomicBoolean ALREADY_WARNED_ABOUT_NO_AUTOCOMPLETE = new AtomicBoolean();
+
     private final TicketRouter ticketRouter;
     private final SessionService sessionService;
+    private final Provider<ScriptSession> scriptSessionProvider;
+    private final Scheduler scheduler;
     private final LogBuffer logBuffer;
-
-    private final Map<SessionState, CompletionParser> parsers = new ConcurrentHashMap<>();
-
-    private final GlobalSessionProvider globalSessionProvider;
+    private final Set<CustomCompletion.Factory> customCompletionFactory;
 
     @Inject
-    public ConsoleServiceGrpcImpl(final Map<String, Provider<ScriptSession>> scriptTypes,
-            final TicketRouter ticketRouter,
+    public ConsoleServiceGrpcImpl(final TicketRouter ticketRouter,
             final SessionService sessionService,
-            final LogBuffer logBuffer,
-            final GlobalSessionProvider globalSessionProvider) {
-        this.scriptTypes = scriptTypes;
+            final Provider<ScriptSession> scriptSessionProvider,
+            final Scheduler scheduler,
+            final LogBuffer logBuffer, Set<CustomCompletion.Factory> customCompletionFactory) {
         this.ticketRouter = ticketRouter;
         this.sessionService = sessionService;
-        this.logBuffer = logBuffer;
-        this.globalSessionProvider = globalSessionProvider;
+        this.scriptSessionProvider = scriptSessionProvider;
+        this.scheduler = Objects.requireNonNull(scheduler);
+        this.logBuffer = Objects.requireNonNull(logBuffer);
+        this.customCompletionFactory = customCompletionFactory;
+    }
 
-        if (!scriptTypes.containsKey(WORKER_CONSOLE_TYPE)) {
-            throw new IllegalArgumentException("Console type not found: " + WORKER_CONSOLE_TYPE);
+    @Override
+    public void getConsoleTypes(
+            @NotNull final GetConsoleTypesRequest request,
+            @NotNull final StreamObserver<GetConsoleTypesResponse> responseObserver) {
+        // TODO (deephaven-core#3147): for legacy reasons, this method is used prior to authentication
+        if (!REMOTE_CONSOLE_DISABLED) {
+            responseObserver.onNext(GetConsoleTypesResponse.newBuilder()
+                    .addConsoleTypes(scriptSessionProvider.get().scriptType().toLowerCase())
+                    .build());
+        } else {
+            responseObserver.onNext(GetConsoleTypesResponse.getDefaultInstance());
         }
+        responseObserver.onCompleted();
     }
 
-    public void initializeGlobalScriptSession() throws IOException, InterruptedException, TimeoutException {
-        if (PYTHON_TYPE.equals(WORKER_CONSOLE_TYPE)) {
-            JpyInit.init(log);
+    @Override
+    public void startConsole(
+            @NotNull final StartConsoleRequest request,
+            @NotNull final StreamObserver<StartConsoleResponse> responseObserver) {
+        SessionState session = sessionService.getCurrentSession();
+        if (REMOTE_CONSOLE_DISABLED) {
+            responseObserver
+                    .onError(Exceptions.statusRuntimeException(Code.FAILED_PRECONDITION, "Remote console disabled"));
+            return;
         }
-        globalSessionProvider.initializeGlobalScriptSession(scriptTypes.get(WORKER_CONSOLE_TYPE).get());
+
+        // TODO (#702): initially global session will be null; set it here if applicable
+
+        final String sessionType = request.getSessionType();
+        if (!scriptSessionProvider.get().scriptType().equalsIgnoreCase(sessionType)) {
+            throw Exceptions.statusRuntimeException(Code.FAILED_PRECONDITION,
+                    "session type '" + sessionType + "' is not supported");
+        }
+
+        session.newExport(request.getResultId(), "resultId")
+                .onError(responseObserver)
+                .submit(() -> {
+                    final ScriptSession scriptSession = new DelegatingScriptSession(scriptSessionProvider.get());
+                    safelyOnNextAndComplete(responseObserver, StartConsoleResponse.newBuilder()
+                            .setResultId(request.getResultId())
+                            .build());
+                    return scriptSession;
+                });
     }
 
     @Override
-    public void getConsoleTypes(final GetConsoleTypesRequest request,
-            final StreamObserver<GetConsoleTypesResponse> responseObserver) {
-        GrpcUtil.rpcWrapper(log, responseObserver, () -> {
-            if (!REMOTE_CONSOLE_DISABLED) {
-                // TODO (#702): initially show all console types; the first console determines the global console type
-                // thereafter
-                responseObserver.onNext(GetConsoleTypesResponse.newBuilder()
-                        .addConsoleTypes(WORKER_CONSOLE_TYPE)
-                        .build());
-            }
-            responseObserver.onCompleted();
-        });
+    public void subscribeToLogs(
+            @NotNull final LogSubscriptionRequest request,
+            @NotNull final StreamObserver<LogSubscriptionData> responseObserver) {
+        sessionService.getCurrentSession();
+        if (REMOTE_CONSOLE_DISABLED) {
+            safelyError(responseObserver, Code.FAILED_PRECONDITION, "Remote console disabled");
+            return;
+        }
+        // Session close logic implicitly handled in
+        // io.deephaven.server.session.SessionServiceGrpcImpl.SessionServiceInterceptor
+        final LogsClient client =
+                new LogsClient(request, (ServerCallStreamObserver<LogSubscriptionData>) responseObserver);
+        client.start();
     }
 
     @Override
-    public void startConsole(StartConsoleRequest request, StreamObserver<StartConsoleResponse> responseObserver) {
-        GrpcUtil.rpcWrapper(log, responseObserver, () -> {
-            SessionState session = sessionService.getCurrentSession();
-            if (REMOTE_CONSOLE_DISABLED) {
-                responseObserver
-                        .onError(GrpcUtil.statusRuntimeException(Code.FAILED_PRECONDITION, "Remote console disabled"));
-                return;
-            }
+    public void executeCommand(
+            @NotNull final ExecuteCommandRequest request,
+            @NotNull final StreamObserver<ExecuteCommandResponse> responseObserver) {
+        final SessionState session = sessionService.getCurrentSession();
+        final Ticket consoleId = request.getConsoleId();
+        if (consoleId.getTicket().isEmpty()) {
+            throw Exceptions.statusRuntimeException(Code.FAILED_PRECONDITION, "No consoleId supplied");
+        }
 
-            // TODO auth hook, ensure the user can do this (owner of worker or admin)
-            // session.getAuthContext().requirePrivilege(CreateConsole);
+        final String description = "ConsoleService#executeCommand(console="
+                + ticketRouter.getLogNameFor(consoleId, "consoleId") + ")";
+        final QueryPerformanceRecorder queryPerformanceRecorder = QueryPerformanceRecorder.newQuery(
+                description, session.getSessionId(), QueryPerformanceNugget.DEFAULT_FACTORY);
 
-            // TODO (#702): initially global session will be null; set it here if applicable
-
-            final String sessionType = request.getSessionType();
-            if (!scriptTypes.containsKey(sessionType)) {
-                throw GrpcUtil.statusRuntimeException(Code.FAILED_PRECONDITION,
-                        "session type '" + sessionType + "' is not supported");
-            }
-
-            session.newExport(request.getResultId(), "resultId")
-                    .onError(responseObserver)
-                    .submit(() -> {
-                        final ScriptSession scriptSession;
-                        if (sessionType.equals(WORKER_CONSOLE_TYPE)) {
-                            scriptSession = new DelegatingScriptSession(globalSessionProvider.getGlobalSession());
-                        } else {
-                            scriptSession = new NoLanguageDeephavenSession(sessionType);
-                            log.error().append("Session type '" + sessionType + "' is disabled." +
-                                    "Use the session type '" + WORKER_CONSOLE_TYPE + "' instead.").endl();
-                        }
-
-                        safelyExecute(() -> {
-                            responseObserver.onNext(StartConsoleResponse.newBuilder()
-                                    .setResultId(request.getResultId())
-                                    .build());
-                            responseObserver.onCompleted();
-                        });
-
-                        return scriptSession;
-                    });
-        });
-    }
-
-    @Override
-    public void subscribeToLogs(LogSubscriptionRequest request, StreamObserver<LogSubscriptionData> responseObserver) {
-        GrpcUtil.rpcWrapper(log, responseObserver, () -> {
-            if (REMOTE_CONSOLE_DISABLED) {
-                responseObserver
-                        .onError(GrpcUtil.statusRuntimeException(Code.FAILED_PRECONDITION, "Remote console disabled"));
-                return;
-            }
-            SessionState session = sessionService.getCurrentSession();
-            // if that didn't fail, we at least are authenticated, but possibly not authorized
-            // TODO auth hook, ensure the user can do this (owner of worker or admin). same rights as creating a console
-            // session.getAuthContext().requirePrivilege(LogBuffer);
-
-            logBuffer.subscribe(new LogBufferStreamAdapter(session, request, responseObserver));
-        });
-    }
-
-    @Override
-    public void executeCommand(ExecuteCommandRequest request, StreamObserver<ExecuteCommandResponse> responseObserver) {
-        GrpcUtil.rpcWrapper(log, responseObserver, () -> {
-            final SessionState session = sessionService.getCurrentSession();
-
-            final Ticket consoleId = request.getConsoleId();
-            if (consoleId.getTicket().isEmpty()) {
-                throw GrpcUtil.statusRuntimeException(Code.FAILED_PRECONDITION, "No consoleId supplied");
-            }
-
-            SessionState.ExportObject<ScriptSession> exportedConsole =
+        try (final SafeCloseable ignored = queryPerformanceRecorder.startQuery()) {
+            final SessionState.ExportObject<ScriptSession> exportedConsole =
                     ticketRouter.resolve(session, consoleId, "consoleId");
-            session.nonExport()
+
+            session.<ExecuteCommandResponse>nonExport()
+                    .queryPerformanceRecorder(queryPerformanceRecorder)
                     .requiresSerialQueue()
                     .require(exportedConsole)
                     .onError(responseObserver)
+                    .onSuccess((final ExecuteCommandResponse response) -> safelyOnNextAndComplete(responseObserver,
+                            response))
                     .submit(() -> {
-                        ScriptSession scriptSession = exportedConsole.get();
+                        final ScriptSession scriptSession = exportedConsole.get();
+                        final ExecuteCommandRequest.SystemicType systemicOption =
+                                request.hasSystemic()
+                                        ? request.getSystemic()
+                                        : ExecuteCommandRequest.SystemicType.NOT_SET_SYSTEMIC;
 
-                        // produce a diff
-                        ExecuteCommandResponse.Builder diff = ExecuteCommandResponse.newBuilder();
+                        // If not set, we'll use defaults, otherwise we will explicitly set the systemicness.
+                        final ScriptSession.Changes changes;
+                        switch (systemicOption) {
+                            case NOT_SET_SYSTEMIC:
+                                changes = scriptSession.evaluateScript(request.getCode());
+                                break;
+                            case EXECUTE_NOT_SYSTEMIC:
+                                changes = SystemicObjectTracker.executeSystemically(false,
+                                        () -> scriptSession.evaluateScript(request.getCode()));
+                                break;
+                            case EXECUTE_SYSTEMIC:
+                                changes = SystemicObjectTracker.executeSystemically(true,
+                                        () -> scriptSession.evaluateScript(request.getCode()));
+                                break;
+                            default:
+                                throw new UnsupportedOperationException(
+                                        "Unrecognized systemic option: " + systemicOption);
+                        }
 
-                        ScriptSession.Changes changes = scriptSession.evaluateScript(request.getCode());
-
+                        final ExecuteCommandResponse.Builder diff = ExecuteCommandResponse.newBuilder();
+                        final FieldsChangeUpdate.Builder fieldChanges = FieldsChangeUpdate.newBuilder();
                         changes.created.entrySet()
-                                .forEach(entry -> diff.addCreated(makeVariableDefinition(entry)));
+                                .forEach(entry -> fieldChanges.addCreated(makeVariableDefinition(entry)));
                         changes.updated.entrySet()
-                                .forEach(entry -> diff.addUpdated(makeVariableDefinition(entry)));
+                                .forEach(entry -> fieldChanges.addUpdated(makeVariableDefinition(entry)));
                         changes.removed.entrySet()
-                                .forEach(entry -> diff.addRemoved(makeVariableDefinition(entry)));
-
-                        responseObserver.onNext(diff.build());
-                        responseObserver.onCompleted();
+                                .forEach(entry -> fieldChanges.addRemoved(makeVariableDefinition(entry)));
+                        if (changes.error != null) {
+                            diff.setErrorMessage(Throwables.getStackTraceAsString(changes.error));
+                            log.error().append("Error running script: ").append(changes.error).endl();
+                        }
+                        return diff.setChanges(fieldChanges).build();
                     });
-        });
-    }
-
-    private static VariableDefinition makeVariableDefinition(Map.Entry<String, ExportedObjectType> entry) {
-        return VariableDefinition.newBuilder().setTitle(entry.getKey()).setType(entry.getValue().name())
-                .setId(ScopeTicketResolver.ticketForName(entry.getKey())).build();
+        }
     }
 
     @Override
-    public void cancelCommand(CancelCommandRequest request, StreamObserver<CancelCommandResponse> responseObserver) {
-        // TODO not yet implemented, need a way to handle stopping a command in a consistent way
+    public void getHeapInfo(
+            @NotNull final GetHeapInfoRequest request,
+            @NotNull final StreamObserver<GetHeapInfoResponse> responseObserver) {
+        sessionService.getCurrentSession();
+        final RuntimeMemory runtimeMemory = RuntimeMemory.getInstance();
+        final Sample sample = new Sample();
+        runtimeMemory.read(sample);
+        final GetHeapInfoResponse infoResponse = GetHeapInfoResponse.newBuilder()
+                .setTotalMemory(sample.totalMemory)
+                .setFreeMemory(sample.freeMemory)
+                .setMaxMemory(runtimeMemory.maxMemory())
+                .build();
+        responseObserver.onNext(infoResponse);
+        responseObserver.onCompleted();
+    }
+
+    private static FieldInfo makeVariableDefinition(Map.Entry<String, String> entry) {
+        return makeVariableDefinition(entry.getKey(), entry.getValue());
+    }
+
+    private static FieldInfo makeVariableDefinition(String title, String type) {
+        final TypedTicket id = TypedTicket.newBuilder()
+                .setType(type)
+                .setTicket(ScopeTicketResolver.ticketForName(title))
+                .build();
+        return FieldInfo.newBuilder()
+                .setApplicationId("scope")
+                .setFieldName(title)
+                .setFieldDescription("query scope variable")
+                .setTypedTicket(id)
+                .build();
+    }
+
+    @Override
+    public void cancelCommand(
+            @NotNull final CancelCommandRequest request,
+            @NotNull final StreamObserver<CancelCommandResponse> responseObserver) {
+        // TODO (#53): consider task cancellation
         super.cancelCommand(request, responseObserver);
     }
 
     @Override
-    public void bindTableToVariable(BindTableToVariableRequest request,
-            StreamObserver<BindTableToVariableResponse> responseObserver) {
-        GrpcUtil.rpcWrapper(log, responseObserver, () -> {
-            final SessionState session = sessionService.getCurrentSession();
-            Ticket tableId = request.getTableId();
-            if (tableId.getTicket().isEmpty()) {
-                throw GrpcUtil.statusRuntimeException(Code.FAILED_PRECONDITION, "No source tableId supplied");
-            }
-            final SessionState.ExportObject<Table> exportedTable = ticketRouter.resolve(session, tableId, "tableId");
+    public void bindTableToVariable(
+            @NotNull final BindTableToVariableRequest request,
+            @NotNull final StreamObserver<BindTableToVariableResponse> responseObserver) {
+        final SessionState session = sessionService.getCurrentSession();
+
+        final Ticket tableId = request.getTableId();
+        if (tableId.getTicket().isEmpty()) {
+            throw Exceptions.statusRuntimeException(Code.FAILED_PRECONDITION, "No source tableId supplied");
+        }
+
+        final String description = "ConsoleService#bindTableToVariable(table="
+                + ticketRouter.getLogNameFor(tableId, "tableId") + ", variableName=" + request.getVariableName()
+                + ")";
+        final QueryPerformanceRecorder queryPerformanceRecorder = QueryPerformanceRecorder.newQuery(
+                description, session.getSessionId(), QueryPerformanceNugget.DEFAULT_FACTORY);
+
+        try (final SafeCloseable ignored = queryPerformanceRecorder.startQuery()) {
+            final SessionState.ExportObject<Table> exportedTable =
+                    ticketRouter.resolve(session, tableId, "tableId");
+
             final SessionState.ExportObject<ScriptSession> exportedConsole;
 
             ExportBuilder<?> exportBuilder = session.nonExport()
+                    .queryPerformanceRecorder(queryPerformanceRecorder)
                     .requiresSerialQueue()
-                    .onError(responseObserver);
+                    .onError(responseObserver)
+                    .onSuccess(() -> safelyOnNextAndComplete(responseObserver,
+                            BindTableToVariableResponse.getDefaultInstance()));
 
             if (request.hasConsoleId()) {
                 exportedConsole = ticketRouter.resolve(session, request.getConsoleId(), "consoleId");
@@ -269,214 +312,249 @@ public class ConsoleServiceGrpcImpl extends ConsoleServiceGrpc.ConsoleServiceImp
             }
 
             exportBuilder.submit(() -> {
-                ScriptSession scriptSession =
-                        exportedConsole != null ? exportedConsole.get() : globalSessionProvider.getGlobalSession();
-                Table table = exportedTable.get();
-                scriptSession.setVariable(request.getVariableName(), table);
-                if (DynamicNode.notDynamicOrIsRefreshing(table)) {
-                    scriptSession.manage(table);
-                }
-                responseObserver.onNext(BindTableToVariableResponse.getDefaultInstance());
-                responseObserver.onCompleted();
-            });
-        });
-    }
+                QueryScope queryScope = exportedConsole != null ? exportedConsole.get().getQueryScope()
+                        : ExecutionContext.getContext().getQueryScope();
 
-    private CompletionParser ensureParserForSession(SessionState session) {
-        return parsers.computeIfAbsent(session, s -> {
-            CompletionParser parser = new CompletionParser();
-            s.addOnCloseCallback(() -> {
-                parsers.remove(s);
-                parser.close();
+                Table table = exportedTable.get();
+                queryScope.putParam(request.getVariableName(), table);
             });
-            return parser;
-        });
+        }
     }
 
     @Override
     public StreamObserver<AutoCompleteRequest> autoCompleteStream(
-            StreamObserver<AutoCompleteResponse> responseObserver) {
-        return GrpcUtil.rpcWrapper(log, responseObserver, () -> {
-            final SessionState session = sessionService.getCurrentSession();
-            CompletionParser parser = ensureParserForSession(session);
-            return new StreamObserver<AutoCompleteRequest>() {
-
-                @Override
-                public void onNext(AutoCompleteRequest value) {
-                    switch (value.getRequestCase()) {
-                        case OPEN_DOCUMENT: {
-                            final TextDocumentItem doc = value.getOpenDocument().getTextDocument();
-
-                            parser.open(doc.getText(), doc.getUri(), Integer.toString(doc.getVersion()));
-                            break;
-                        }
-                        case CHANGE_DOCUMENT: {
-                            ChangeDocumentRequest request = value.getChangeDocument();
-                            final VersionedTextDocumentIdentifier text = request.getTextDocument();
-                            parser.update(text.getUri(), Integer.toString(text.getVersion()),
-                                    request.getContentChangesList());
-                            break;
-                        }
-                        case GET_COMPLETION_ITEMS: {
-                            GetCompletionItemsRequest request = value.getGetCompletionItems();
-                            SessionState.ExportObject<ScriptSession> exportedConsole =
-                                    session.getExport(request.getConsoleId(), "consoleId");
-                            session.nonExport()
-                                    .require(exportedConsole)
-                                    .onError(responseObserver)
-                                    .submit(() -> {
-                                        final VersionedTextDocumentIdentifier doc = request.getTextDocument();
-                                        ScriptSession scriptSession = exportedConsole.get();
-                                        final VariableProvider vars = scriptSession.getVariableProvider();
-                                        final CompletionLookups h = CompletionLookups.preload(scriptSession);
-                                        // The only stateful part of a completer is the CompletionLookups, which are
-                                        // already once-per-session-cached
-                                        // so, we'll just create a new completer for each request. No need to hang onto
-                                        // these guys.
-                                        final ChunkerCompleter completer = new ChunkerCompleter(log, vars, h);
-
-                                        final ParsedDocument parsed;
-                                        try {
-                                            parsed = parser.finish(doc.getUri());
-                                        } catch (CompletionCancelled exception) {
-                                            if (log.isTraceEnabled()) {
-                                                log.trace().append("Completion canceled").append(exception).endl();
-                                            }
-                                            safelyExecuteLocked(responseObserver,
-                                                    () -> responseObserver.onNext(AutoCompleteResponse.newBuilder()
-                                                            .setCompletionItems(GetCompletionItemsResponse.newBuilder()
-                                                                    .setSuccess(false)
-                                                                    .setRequestId(request.getRequestId()))
-                                                            .build()));
-                                            return;
-                                        }
-
-                                        int offset = LspTools.getOffsetFromPosition(parsed.getSource(),
-                                                request.getPosition());
-                                        final Collection<CompletionItem.Builder> results =
-                                                completer.runCompletion(parsed, request.getPosition(), offset);
-                                        final GetCompletionItemsResponse mangledResults =
-                                                GetCompletionItemsResponse.newBuilder()
-                                                        .setSuccess(true)
-                                                        .setRequestId(request.getRequestId())
-                                                        .addAllItems(results.stream().map(
-                                                                // insertTextFormat is a default we used to set in
-                                                                // constructor;
-                                                                // for now, we'll just process the objects before
-                                                                // sending back to client
-                                                                item -> item.setInsertTextFormat(2).build())
-                                                                .collect(Collectors.toSet()))
-                                                        .build();
-
-                                        safelyExecuteLocked(responseObserver,
-                                                () -> responseObserver.onNext(AutoCompleteResponse.newBuilder()
-                                                        .setCompletionItems(mangledResults)
-                                                        .build()));
-                                    });
-                            break;
-                        }
-                        case CLOSE_DOCUMENT: {
-                            CloseDocumentRequest request = value.getCloseDocument();
-                            parser.remove(request.getTextDocument().getUri());
-                            break;
-                        }
-                        case REQUEST_NOT_SET: {
-                            throw GrpcUtil.statusRuntimeException(Code.INVALID_ARGUMENT,
-                                    "Autocomplete command missing request");
-                        }
-                    }
+            @NotNull final StreamObserver<AutoCompleteResponse> responseObserver) {
+        final SessionState session = sessionService.getCurrentSession();
+        if (AUTOCOMPLETE_DISABLED || ALREADY_WARNED_ABOUT_NO_AUTOCOMPLETE.get()) {
+            return new NoopAutoCompleteObserver(session, responseObserver);
+        }
+        if (PythonDeephavenSession.SCRIPT_TYPE.equals(scriptSessionProvider.get().scriptType())) {
+            PyObject[] settings = new PyObject[1];
+            try {
+                final ScriptSession scriptSession = scriptSessionProvider.get();
+                scriptSession.evaluateScript(
+                        "from deephaven_internal.auto_completer import jedi_settings ; jedi_settings.set_scope(globals())");
+                settings[0] = scriptSession.getQueryScope().readParamValue("jedi_settings");
+            } catch (Exception err) {
+                if (!ALREADY_WARNED_ABOUT_NO_AUTOCOMPLETE.getAndSet(true)) {
+                    log.error().append("Autocomplete package not found; disabling autocomplete.").endl();
+                    log.error().append("Do you need to install the autocomplete package?").endl();
+                    log.error().append("    pip install deephaven-core[autocomplete]==<version>").endl();
+                    log.error().append("Add the jvm flag '-D").append(DISABLE_AUTOCOMPLETE_FLAG)
+                            .append("=true' to disable this message.").endl();
                 }
-
-                @Override
-                public void onError(Throwable t) {
-                    // ignore, client doesn't need us, will be cleaned up later
-                }
-
-                @Override
-                public void onCompleted() {
-                    // just hang up too, browser will reconnect if interested
-                    synchronized (responseObserver) {
-                        responseObserver.onCompleted();
-                    }
-                }
-            };
-        });
-    }
-
-    @Override
-    public void fetchFigure(FetchFigureRequest request, StreamObserver<FetchFigureResponse> responseObserver) {
-        GrpcUtil.rpcWrapper(log, responseObserver, () -> {
-            final SessionState session = sessionService.getCurrentSession();
-            if (request.getSourceId().getTicket().isEmpty()) {
-                throw GrpcUtil.statusRuntimeException(Code.FAILED_PRECONDITION, "No sourceId supplied");
             }
-            final SessionState.ExportObject<Object> figure = ticketRouter.resolve(
-                    session, request.getSourceId(), "sourceId");
+            boolean canJedi = settings[0] != null && settings[0].call("can_jedi").getBooleanValue();
+            log.info().append(canJedi ? "Using jedi for python autocomplete"
+                    : "No jedi dependency available in python environment; disabling autocomplete.").endl();
+            return canJedi ? new PythonAutoCompleteObserver(responseObserver, scriptSessionProvider, session)
+                    : new NoopAutoCompleteObserver(session, responseObserver);
+        }
 
-            session.nonExport()
-                    .require(figure)
-                    .onError(responseObserver)
-                    .submit(() -> {
-                        Object result = figure.get();
-                        if (!(result instanceof FigureWidget)) {
-                            final String name = ticketRouter.getLogNameFor(request.getSourceId(), "sourceId");
-                            throw GrpcUtil.statusRuntimeException(Code.NOT_FOUND,
-                                    "Value bound to ticket " + name + " is not a FigureWidget");
-                        }
-                        FigureWidget widget = (FigureWidget) result;
-
-                        FigureDescriptor translated = FigureWidgetTranslator.translate(widget, session);
-
-                        responseObserver
-                                .onNext(FetchFigureResponse.newBuilder().setFigureDescriptor(translated).build());
-                        responseObserver.onCompleted();
-                    });
-        });
+        return new JavaAutoCompleteObserver(session, responseObserver, customCompletionFactory);
     }
 
-    private static class LogBufferStreamAdapter extends SessionCloseableObserver<LogSubscriptionData>
-            implements LogBufferRecordListener {
-        private final LogSubscriptionRequest request;
-
-        public LogBufferStreamAdapter(
-                final SessionState session,
-                final LogSubscriptionRequest request,
-                final StreamObserver<LogSubscriptionData> responseObserver) {
+    private static class NoopAutoCompleteObserver extends SessionCloseableObserver<AutoCompleteResponse>
+            implements StreamObserver<AutoCompleteRequest> {
+        public NoopAutoCompleteObserver(SessionState session, StreamObserver<AutoCompleteResponse> responseObserver) {
             super(session, responseObserver);
-            this.request = request;
         }
 
         @Override
+        public void onNext(AutoCompleteRequest value) {
+            // This implementation only responds to autocomplete requests with "success, nothing found"
+            AutoCompleteResponse.Builder responseBuilder = AutoCompleteResponse.newBuilder()
+                    .setSuccess(true)
+                    .setRequestId(value.getRequestId());
+
+            if (value.getRequestCase() == AutoCompleteRequest.RequestCase.GET_COMPLETION_ITEMS) {
+                // For maintaining backwards compatibility
+                responseBuilder.setCompletionItems(
+                        GetCompletionItemsResponse.newBuilder()
+                                .setSuccess(true)
+                                .setRequestId(value.getRequestId()));
+            }
+            safelyOnNext(responseObserver, responseBuilder.build());
+        }
+
+        @Override
+        public void onError(Throwable t) {
+            // ignore, client doesn't need us, will be cleaned up later
+        }
+
+        @Override
+        public void onCompleted() {
+            // just hang up too, browser will reconnect if interested
+            safelyComplete(responseObserver);
+        }
+    }
+
+    @Override
+    public void cancelAutoComplete(
+            @NotNull final CancelAutoCompleteRequest request,
+            @NotNull final StreamObserver<CancelAutoCompleteResponse> responseObserver) {
+        // TODO: Consider autocomplete cancellation
+        super.cancelAutoComplete(request, responseObserver);
+    }
+
+    private final class LogsClient implements LogBufferRecordListener, Runnable {
+        private final LogSubscriptionRequest request;
+        private final ServerCallStreamObserver<LogSubscriptionData> client;
+        private final LockFreeArrayQueue<LogSubscriptionData> buffer;
+        private final AtomicBoolean guard;
+        private volatile boolean done;
+        private volatile boolean tooSlow;
+
+        public LogsClient(
+                final LogSubscriptionRequest request,
+                final ServerCallStreamObserver<LogSubscriptionData> client) {
+            this.request = Objects.requireNonNull(request);
+            this.client = Objects.requireNonNull(client);
+            // Our buffer capacity should always be greater than the capacity of the logBuffer; otherwise, the initial
+            // act of subscribeToLogs could fully fill up this buffer (immediately causing the tooSlow case).
+            //
+            // Ideally, the buffer should be sized based on the maximum expected logging rate and the behavior of the
+            // clients subscribing to logs.
+            this.buffer = LockFreeArrayQueue.of(Math.max(SUBSCRIBE_TO_LOGS_BUFFER_SIZE, logBuffer.capacity() * 2));
+            this.guard = new AtomicBoolean(false);
+            this.client.setOnReadyHandler(this::onReady);
+            this.client.setOnCancelHandler(this::onCancel);
+            this.client.setOnCloseHandler(this::onClose);
+        }
+
+        public void start() {
+            logBuffer.subscribe(this);
+            scheduler.runImmediately(this);
+        }
+
+        public void stop() {
+            safelyComplete(client);
+        }
+
+        // ------------------------------------------------------------------------------------------------------------
+
+        @Override
         public void record(LogBufferRecord record) {
+            if (done) {
+                return;
+            }
             // only pass levels the client wants
             if (request.getLevelsCount() != 0 && !request.getLevelsList().contains(record.getLevel().getName())) {
                 return;
             }
-
-            // since the subscribe() method auto-replays all existing logs, filter to just once this
-            // consumer probably hasn't seen
-            if (record.getTimestampMicros() < request.getLastSeenLogTimestamp()) {
+            // since the subscribe() method auto-replays all existing logs, filter to just once this consumer probably
+            // hasn't seen
+            if (record.getTimestampMicros() <= request.getLastSeenLogTimestamp()) {
                 return;
             }
+            // Note: we can't send record off-thread without doing a deepCopy.
+            // io.deephaven.io.logger.LogBufferInterceptor owns io.deephaven.io.logger.LogBufferRecord.getData.
+            // We can side-step this problem by creating the appropriate response here.
+            final LogSubscriptionData payload = LogSubscriptionData.newBuilder()
+                    .setMicros(record.getTimestampMicros())
+                    .setLogLevel(record.getLevel().getName())
+                    .setMessage(record.getDataString())
+                    .build();
+            enqueue(payload);
+        }
 
-            // TODO this is not a good implementation, just a quick one, but it does appear to be safe,
-            // since LogBuffer is synchronized on access to the listeners. We're on the same thread
-            // as all other log receivers and
-            try {
-                LogSubscriptionData payload = LogSubscriptionData.newBuilder()
-                        .setMicros(record.getTimestampMicros())
-                        .setLogLevel(record.getLevel().getName())
-                        // this could be done on either side, doing it here because its a weird charset and we should
-                        // own that
-                        .setMessage(record.getDataString())
-                        .build();
-                synchronized (responseObserver) {
-                    responseObserver.onNext(payload);
+        // ------------------------------------------------------------------------------------------------------------
+
+        // Our implementation relies on backpressure from the gRPC network stack; and an application-level, per-stream,
+        // buffer. Our application buffer gives us capacity for handling logging bursts that exceed the achievable
+        // bandwidth between server and client. Ultimately, the achievable bandwidth is a function of the gRPC
+        // networking stack. Unfortunately, there are not many knobs that gRPC java currently exposes for tuning these
+        // parts of the stack.
+        // See https://github.com/grpc/proposal/pull/135, A25: make backpressure threshold configurable
+        // See https://github.com/grpc/grpc-java/issues/5433, Allow configuring onReady threshold
+
+        @Override
+        public void run() {
+            while (!done) {
+                if (!guard.compareAndSet(false, true)) {
+                    return;
                 }
-            } catch (Throwable ignored) {
-                // we are ignoring exceptions here deliberately, and just shutting down
-                close();
+                boolean bufferIsKnownEmpty;
+                try {
+                    bufferIsKnownEmpty = false;
+                    while (true) {
+                        if (done) {
+                            return;
+                        }
+                        if (tooSlow) {
+                            safelyError(client, Code.RESOURCE_EXHAUSTED, String.format(
+                                    "Too slow: the client or network may be too slow to keep up with the logging rates, or there may be logging bursts that exceed the available buffer size. The buffer size can be configured through the server property '%s'.",
+                                    SUBSCRIBE_TO_LOGS_BUFFER_SIZE_PROP));
+                            return;
+                        }
+                        if (!client.isReady()) {
+                            break;
+                        }
+                        final LogSubscriptionData payload = dequeue();
+                        if (payload == null) {
+                            bufferIsKnownEmpty = true;
+                            break;
+                        }
+                        safelyOnNext(client, payload);
+                    }
+                } finally {
+                    guard.set(false);
+                }
+                if (!client.isReady()) {
+                    // When !client.isReady(), onReady() is going to be called and will handle the reschedule.
+                    // Note: it's important that client.isReady() is checked _outside_ of the guard block (otherwise,
+                    // the onReady() call could execute and schedule before the current thread exits the guard block,
+                    // and we'd fail to successfully reschedule).
+                    return;
+                }
+                if (bufferIsKnownEmpty) {
+                    // TODO(deephaven-core#3396): Add io.deephaven.server.util.Scheduler fixed delay support
+                    scheduler.runAfterDelay(SUBSCRIBE_TO_LOGS_SEND_MILLIS, this);
+                    return;
+                }
+                // Continue sending until the client's buffer is full or our buffer is empty (or done, or tooSlow).
             }
+        }
+
+        // ------------------------------------------------------------------------------------------------------------
+
+        private void onReady() {
+            scheduler.runImmediately(this);
+        }
+
+        private void onClose() {
+            done = true;
+            logBuffer.unsubscribe(this);
+        }
+
+        private void onCancel() {
+            done = true;
+            logBuffer.unsubscribe(this);
+        }
+
+        // ------------------------------------------------------------------------------------------------------------
+        // Buffer implementation
+        // ------------------------------------------------------------------------------------------------------------
+        // The implementation needs to support single-producer / single-consumer concurrency. The current implementation
+        // uses a io.deephaven.base.LockFreeArrayQueue, and chooses to close clients who are too slow to keep up.
+        //
+        // If desired, the implementation could be changed so that slow clients are allowed to stay connected, but start
+        // missing logging data (either, they miss the latest data [queue-based impl], or they miss older data
+        // [ringbuffer-based impl]).
+
+        private void enqueue(LogSubscriptionData payload) {
+            if (!buffer.enqueue(payload)) {
+                // Just like we don't want to do onNext(payload) on this thread, we'll have the scheduler handle the
+                // tooSlow error.
+                tooSlow = true;
+                // Note: the unsubscribe here will happen on the LogBufferRecordListener#record() caller's thread
+                logBuffer.unsubscribe(this);
+                scheduler.runImmediately(this);
+            }
+        }
+
+        private LogSubscriptionData dequeue() {
+            return buffer.dequeue();
         }
     }
 }

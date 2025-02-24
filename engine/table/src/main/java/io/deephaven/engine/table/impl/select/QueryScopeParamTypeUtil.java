@@ -1,7 +1,10 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.select;
 
 import groovy.lang.Closure;
-import io.deephaven.compilertools.CompilerTools;
+import io.deephaven.engine.context.QueryCompilerImpl;
 import io.deephaven.util.type.TypeUtils;
 
 import java.lang.reflect.Modifier;
@@ -45,7 +48,7 @@ public class QueryScopeParamTypeUtil {
         }
 
         final String name = cls.getName();
-        if (!name.startsWith(CompilerTools.DYNAMIC_GROOVY_CLASS_PREFIX)) {
+        if (!name.startsWith(QueryCompilerImpl.DYNAMIC_CLASS_PREFIX)) {
             return;
         }
 

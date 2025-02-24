@@ -1,11 +1,13 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit CharSetResult and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit CharSetResult and run "./gradlew replicateSegmentedSortedMultiset" to regenerate
+//
+// @formatter:off
 package io.deephaven.engine.table.impl.by.ssmminmax;
 
-import io.deephaven.engine.table.impl.sources.ArrayBackedColumnSource;
+import io.deephaven.engine.table.WritableColumnSource;
 import io.deephaven.engine.table.impl.sources.DoubleArraySource;
 import io.deephaven.engine.table.impl.ssms.DoubleSegmentedSortedMultiset;
 import io.deephaven.engine.table.impl.ssms.SegmentedSortedMultiSet;
@@ -16,7 +18,7 @@ public class DoubleSetResult implements SsmChunkedMinMaxOperator.SetResult {
     private final boolean minimum;
     private final DoubleArraySource resultColumn;
 
-    public DoubleSetResult(boolean minimum, ArrayBackedColumnSource resultColumn) {
+    public DoubleSetResult(boolean minimum, WritableColumnSource resultColumn) {
         this.minimum = minimum;
         this.resultColumn = (DoubleArraySource) resultColumn;
     }

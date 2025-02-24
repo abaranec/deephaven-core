@@ -1,7 +1,11 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.client.impl;
 
 import io.deephaven.client.impl.ExportRequest.Listener;
 import io.deephaven.proto.DeephavenChannel;
+import io.deephaven.proto.DeephavenChannelImpl;
 import io.deephaven.proto.backplane.grpc.BatchTableRequest;
 import io.deephaven.proto.backplane.grpc.BatchTableRequest.Operation;
 import io.deephaven.proto.backplane.grpc.ExportedTableCreationResponse;
@@ -86,17 +90,23 @@ public class ExportStatesTest {
         ManagedChannel channel = grpcCleanup
                 .register(InProcessChannelBuilder.forName(serverName).directExecutor().build());
 
-        DeephavenChannel deephavenChannel = new DeephavenChannel(channel);
+        DeephavenChannel deephavenChannel = new DeephavenChannelImpl(channel);
 
         states = new ExportStates(deephavenChannel.session(), deephavenChannel.table(), new ExportTicketCreator());
     }
 
     Export export(TableSpec table) {
-        return states.export(ExportsRequest.logging(table)).get(0);
+        try (final ExportServiceRequest request = states.exportRequest(ExportsRequest.logging(table))) {
+            request.send();
+            return request.exports().get(0);
+        }
     }
 
     List<Export> export(TableSpec... tables) {
-        return states.export(ExportsRequest.logging(tables));
+        try (final ExportServiceRequest request = states.exportRequest(ExportsRequest.logging(tables))) {
+            request.send();
+            return request.exports();
+        }
     }
 
     @Test
@@ -195,7 +205,7 @@ public class ExportStatesTest {
 
     @Test
     public void checkUnexportedParent() {
-        final HeadTable empty42head6 = TableSpec.empty(42L).head(6);
+        final TableSpec empty42head6 = TableSpec.empty(42L).head(6);
         final Export export = export(empty42head6);
         assertThat(export.table()).isEqualTo(empty42head6);
 
@@ -208,7 +218,7 @@ public class ExportStatesTest {
     @Test
     public void reusePreviousExports() {
         final EmptyTable empty42 = TableSpec.empty(42L);
-        final HeadTable empty42head6 = empty42.head(6);
+        final TableSpec empty42head6 = empty42.head(6);
         try (final Export e1 = export(empty42); final Export e2 = export(empty42head6)) {
             assertThat(batches).hasSize(2); // Check that we are re-using the
             // ticket from e1 assertThat(batches.get(1).getOpsList()).hasSize(1);
@@ -219,7 +229,7 @@ public class ExportStatesTest {
     @Test
     public void mustReexportIfPreviousHasBeenReleased() {
         final EmptyTable empty42 = TableSpec.empty(42L);
-        final HeadTable empty42head6 = empty42.head(6);
+        final TableSpec empty42head6 = empty42.head(6);
         try (final Export e1 = export(empty42)) {
             // ignore
         }

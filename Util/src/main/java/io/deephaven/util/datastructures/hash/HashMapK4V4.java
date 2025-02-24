@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.util.datastructures.hash;
 
 public abstract class HashMapK4V4 extends HashMapBase {
@@ -88,8 +87,7 @@ public abstract class HashMapK4V4 extends HashMapBase {
         // In units of buckets
         final int numBuckets = length / (4 * 2);
 
-        final int hash1 = gnu.trove.impl.HashFunctions.hash(target) & 0x7fffffff;
-        final int bucketProbe = hash1 % numBuckets;
+        final int bucketProbe = probe1(target, numBuckets);
         // In units of longs again
         int probe = bucketProbe * (4 * 2);
 
@@ -141,7 +139,7 @@ public abstract class HashMapK4V4 extends HashMapBase {
         }
 
         // Offset is also in units of longs
-        final int offset = (1 + (hash1 % (numBuckets - 2))) * (4 * 2);
+        final int offset = (1 + probe2(target, numBuckets - 2)) * (4 * 2);
         final int probeStart = probe;
         while (true) {
             probe = (int) (((long) probe + offset) % length);

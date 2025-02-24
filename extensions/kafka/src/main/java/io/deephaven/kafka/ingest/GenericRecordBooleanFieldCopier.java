@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.kafka.ingest;
 
 import io.deephaven.chunk.ObjectChunk;
@@ -28,4 +31,5 @@ public class GenericRecordBooleanFieldCopier extends GenericRecordFieldCopier {
             final Boolean value = (Boolean) GenericRecordUtil.getPath(record, fieldPath);
             output.set(ii + destOffset, BooleanUtils.booleanAsByte(value));
         }
-    }}
+    }
+}

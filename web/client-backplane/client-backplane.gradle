@@ -1,10 +1,13 @@
-evaluationDependsOn ':proto'
-evaluationDependsOn ':proto:proto-backplane-grpc'
-
-apply from: "$rootDir/gradle/web-common.gradle"
+plugins {
+    id 'io.deephaven.project.register'
+}
 
 GwtTools.gwtLib project
-Classpaths.inheritJsInterop project
-Classpaths.inheritJsInterop project, 'jsinterop-annotations'
-Classpaths.inheritElemental project
-Classpaths.inheritElemental project, 'elemental2-promise'
+
+dependencies {
+    implementation libs.jsinterop.base
+    compileOnly libs.jsinterop.annotations
+
+    implementation libs.elemental.core
+    implementation libs.elemental.promise
+}

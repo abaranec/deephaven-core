@@ -1,20 +1,24 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.select.python;
 
 import io.deephaven.engine.table.ColumnDefinition;
-import io.deephaven.engine.table.lang.QueryScopeParam;
+import io.deephaven.engine.context.QueryScopeParam;
+import io.deephaven.util.CompletionStageFuture;
+import io.deephaven.util.type.ArrayTypeUtils;
 import io.deephaven.vector.Vector;
 import io.deephaven.engine.table.impl.select.AbstractFormulaColumn;
 import io.deephaven.engine.table.impl.select.SelectColumn;
 import io.deephaven.engine.table.impl.select.formula.FormulaKernel;
 import io.deephaven.engine.table.impl.select.formula.FormulaKernelFactory;
 import io.deephaven.engine.table.impl.select.formula.FormulaSourceDescriptor;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-
-import static io.deephaven.datastructures.util.CollectionUtil.ZERO_LENGTH_STRING_ARRAY;
 
 /**
  * A formula column for python native code.
@@ -22,63 +26,60 @@ import static io.deephaven.datastructures.util.CollectionUtil.ZERO_LENGTH_STRING
 public class FormulaColumnPython extends AbstractFormulaColumn implements FormulaKernelFactory {
 
     @SuppressWarnings("unused") // called from python
-    public static FormulaColumnPython create(String columnName,
-            io.deephaven.engine.table.impl.select.python.DeephavenCompatibleFunction dcf) {
+    public static FormulaColumnPython create(String columnName, DeephavenCompatibleFunction dcf) {
         return new FormulaColumnPython(columnName, dcf);
     }
 
-    private final io.deephaven.engine.table.impl.select.python.DeephavenCompatibleFunction dcf;
-
-    private boolean initialized;
+    private final DeephavenCompatibleFunction dcf;
 
     private FormulaColumnPython(String columnName,
-            io.deephaven.engine.table.impl.select.python.DeephavenCompatibleFunction dcf) {
-        super(columnName, "<python-formula>", true);
+            DeephavenCompatibleFunction dcf) {
+        super(columnName, "<python-formula>");
         this.dcf = Objects.requireNonNull(dcf);
     }
 
-    private void initFromDef(Map<String, ColumnDefinition<?>> columnNameMap) {
-        if (initialized) {
-            throw new IllegalStateException("Already initialized");
-        }
-        returnedType = dcf.getReturnedType();
-        this.initialized = true;
-    }
-
     @Override
-    protected final FormulaKernelFactory getFormulaKernelFactory() {
-        return this;
-    }
-
-    @Override
-    public final List<String> initDef(Map<String, ColumnDefinition<?>> columnNameMap) {
-        if (!initialized) {
-            initFromDef(columnNameMap);
-            applyUsedVariables(columnNameMap, new LinkedHashSet<>(dcf.getColumnNames()));
+    public final List<String> initDef(@NotNull final Map<String, ColumnDefinition<?>> columnDefinitionMap) {
+        if (formulaFactoryFuture != null) {
+            validateColumnDefinition(columnDefinitionMap);
+        } else {
+            returnedType = dcf.getReturnedType();
+            applyUsedVariables(columnDefinitionMap, new LinkedHashSet<>(dcf.getColumnNames()), Map.of());
+            formulaFactoryFuture = createKernelFormulaFactory(CompletionStageFuture.completedFuture(this));
         }
+
         return usedColumns;
     }
 
     @Override
+    public boolean isStateless() {
+        // we can't control python
+        return false;
+    }
+
+    @Override
     protected final FormulaSourceDescriptor getSourceDescriptor() {
-        if (!initialized) {
-            throw new IllegalStateException("Must be initialized first");
-        }
         return new FormulaSourceDescriptor(
                 returnedType,
-                dcf.getColumnNames().toArray(new String[0]),
-                ZERO_LENGTH_STRING_ARRAY,
-                ZERO_LENGTH_STRING_ARRAY);
+                dcf.getColumnNames().toArray(String[]::new),
+                ArrayTypeUtils.EMPTY_STRING_ARRAY,
+                ArrayTypeUtils.EMPTY_STRING_ARRAY);
     }
 
     @Override
     public final SelectColumn copy() {
-        return new FormulaColumnPython(columnName, dcf);
+        final FormulaColumnPython copy = new FormulaColumnPython(columnName, dcf);
+        if (formulaFactoryFuture != null) {
+            // copy all initDef state
+            copy.returnedType = returnedType;
+            onCopy(copy);
+        }
+        return copy;
     }
 
     @Override
     public final FormulaKernel createInstance(Vector<?>[] arrays, QueryScopeParam<?>[] params) {
-        if (!initialized) {
+        if (formulaFactoryFuture == null) {
             throw new IllegalStateException("Must be initialized first");
         }
         return dcf.toFormulaKernel();

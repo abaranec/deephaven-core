@@ -1,8 +1,12 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources.regioned;
 
 import io.deephaven.chunk.attributes.Any;
 import io.deephaven.chunk.ChunkType;
 import io.deephaven.chunk.WritableChunk;
+import io.deephaven.engine.page.PagingContextHolder;
 import io.deephaven.util.QueryConstants;
 import io.deephaven.util.annotations.FinalDefault;
 import org.jetbrains.annotations.NotNull;
@@ -23,8 +27,8 @@ public interface ColumnRegionChar<ATTR extends Any> extends ColumnRegion<ATTR> {
     /**
      * Get a single char from this region.
      *
-     * @param context      A {@link RegionContextHolder} to enable resource caching where suitable, with current
-     *                     region index pointing to this region
+     * @param context A {@link PagingContextHolder} to enable resource caching where suitable, with current region index
+     *        pointing to this region
      * @param elementIndex Element row key in the table's address space
      * @return The char value at the specified element row key
      */
@@ -39,13 +43,14 @@ public interface ColumnRegionChar<ATTR extends Any> extends ColumnRegion<ATTR> {
     }
 
     static <ATTR extends Any> ColumnRegionChar<ATTR> createNull(final long pageMask) {
-        //noinspection unchecked
+        // noinspection unchecked
         return pageMask == Null.DEFAULT_INSTANCE.mask() ? Null.DEFAULT_INSTANCE : new Null<ATTR>(pageMask);
     }
 
     final class Null<ATTR extends Any> extends ColumnRegion.Null<ATTR> implements ColumnRegionChar<ATTR> {
         @SuppressWarnings("rawtypes")
-        private static final ColumnRegionChar DEFAULT_INSTANCE = new ColumnRegionChar.Null(RegionedColumnSourceBase.PARAMETERS.regionMask);
+        private static final ColumnRegionChar DEFAULT_INSTANCE =
+                new ColumnRegionChar.Null(RegionedColumnSourceBase.PARAMETERS.regionMask);
 
         private Null(final long pageMask) {
             super(pageMask);
@@ -74,7 +79,8 @@ public interface ColumnRegionChar<ATTR extends Any> extends ColumnRegion<ATTR> {
         }
 
         @Override
-        public void fillChunkAppend(@NotNull final FillContext context, @NotNull final WritableChunk<? super ATTR> destination, final int length) {
+        public void fillChunkAppend(@NotNull final FillContext context,
+                @NotNull final WritableChunk<? super ATTR> destination, final int length) {
             final int offset = destination.size();
             destination.asWritableCharChunk().fillWithValue(offset, length, value);
             destination.setSize(offset + length);
@@ -87,6 +93,13 @@ public interface ColumnRegionChar<ATTR extends Any> extends ColumnRegion<ATTR> {
 
         public StaticPageStore(@NotNull final Parameters parameters, @NotNull final ColumnRegionChar<ATTR>[] regions) {
             super(parameters, regions);
+        }
+
+        @Override
+        public void invalidate() {
+            for (int ii = 0; ii < getRegionCount(); ii++) {
+                getRegion(ii).invalidate();
+            }
         }
 
         @Override

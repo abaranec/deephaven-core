@@ -1,58 +1,34 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl;
 
-import io.deephaven.base.testing.BaseArrayTestCase;
-import io.deephaven.compilertools.CompilerTools;
-import io.deephaven.configuration.Configuration;
 import io.deephaven.engine.exceptions.NotSortableException;
-import io.deephaven.engine.table.DataColumn;
+import io.deephaven.engine.primitive.iterator.CloseableIterator;
+import io.deephaven.engine.primitive.iterator.CloseablePrimitiveIteratorOfInt;
 import io.deephaven.engine.table.Table;
-import io.deephaven.engine.updategraph.UpdateGraphProcessor;
-import io.deephaven.time.DateTime;
+import io.deephaven.engine.testutil.testcase.RefreshingTableTestCase;
 import io.deephaven.engine.rowset.RowSetFactory;
 import io.deephaven.test.types.OutOfBandTest;
+import io.deephaven.time.DateTimeUtils;
 import io.deephaven.util.QueryConstants;
 import io.deephaven.engine.util.TableTools;
 import io.deephaven.engine.table.impl.sources.ArrayBackedColumnSource;
 import io.deephaven.engine.table.ColumnSource;
 import io.deephaven.engine.table.impl.util.ColumnHolder;
 
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.BiFunction;
 
+import io.deephaven.util.mutable.MutableInt;
 import org.jetbrains.annotations.NotNull;
 import org.junit.experimental.categories.Category;
 
 @Category(OutOfBandTest.class)
-public class TestSort extends BaseArrayTestCase {
-
-    private static final boolean ENABLE_COMPILER_TOOLS_LOGGING = Configuration.getInstance()
-            .getBooleanForClassWithDefault(TestSort.class, "CompilerTools.logEnabled", false);
-
-    private boolean lastMemoize = false;
-    private boolean oldCompilerToolsLogEnabled;
-
-    @Override
-    protected void setUp() throws Exception {
-        super.setUp();
-        UpdateGraphProcessor.DEFAULT.enableUnitTestMode();
-        UpdateGraphProcessor.DEFAULT.resetForUnitTests(false);
-        lastMemoize = QueryTable.setMemoizeResults(false);
-        oldCompilerToolsLogEnabled = CompilerTools.setLogEnabled(ENABLE_COMPILER_TOOLS_LOGGING);
-    }
-
-    @Override
-    protected void tearDown() throws Exception {
-        super.tearDown();
-        CompilerTools.setLogEnabled(oldCompilerToolsLogEnabled);
-        QueryTable.setMemoizeResults(lastMemoize);
-        UpdateGraphProcessor.DEFAULT.resetForUnitTests(true);
-    }
+public class TestSort extends RefreshingTableTestCase {
 
     @FunctionalInterface
     interface ThrowingConsumer<A, T extends Exception> {
@@ -65,7 +41,7 @@ public class TestSort extends BaseArrayTestCase {
             r.consume(t);
             fail(failMessage);
         } catch (Exception e) {
-            assertTrue(e.getClass().toString() + " is not a " + excType.toString(), excType.isInstance(e));
+            assertTrue(e.getClass() + " is not a " + excType.toString(), excType.isInstance(e));
         }
     }
 
@@ -92,11 +68,11 @@ public class TestSort extends BaseArrayTestCase {
     }
 
     public void testRestrictedSortingwhere() {
-        final QueryTable source = generateSortTesterTable(4, 1024, new IntGenerator(1000));
+        QueryTable source = generateSortTesterTable(4, 1024, new IntGenerator(1000));
 
         // All columns should be sortable
         source.assertSortable(source.getDefinition().getColumnNamesArray());
-        source.restrictSortTo("Column1", "Column3");
+        source = (QueryTable) source.restrictSortTo("Column1", "Column3");
 
         assertException(source, (t) -> t.assertSortable(t.getDefinition().getColumnNamesArray()),
                 "Columns 1 and 3 should not be sortable.", NotSortableException.class);
@@ -115,7 +91,7 @@ public class TestSort extends BaseArrayTestCase {
         assertException(temp, (t) -> t.sortDescending("Column2"), "Should not be able to sort by Column2",
                 NotSortableException.class);
 
-        temp.clearSortingRestrictions();
+        temp = (QueryTable) temp.clearSortingRestrictions();
         temp.assertSortable(temp.getDefinition().getColumnNamesArray());
         temp.sort(temp.getDefinition().getColumnNamesArray());
 
@@ -127,11 +103,11 @@ public class TestSort extends BaseArrayTestCase {
     }
 
     public void testRestrictedSortingSelect() {
-        final QueryTable source = generateSortTesterTable(4, 1024, new IntGenerator(10));
+        QueryTable source = generateSortTesterTable(4, 1024, new IntGenerator(10));
 
         // All columns should be sortable
         source.assertSortable(source.getDefinition().getColumnNamesArray());
-        source.restrictSortTo("Column1", "Column3");
+        source = (QueryTable) source.restrictSortTo("Column1", "Column3");
 
         // Check Select
         QueryTable temp = (QueryTable) source.select();
@@ -146,11 +122,11 @@ public class TestSort extends BaseArrayTestCase {
     }
 
     private void testRestrictedSortingViewSelect(BiFunction<Table, String[], QueryTable> func) {
-        final QueryTable source = generateSortTesterTable(4, 1024, new IntGenerator(1000));
+        QueryTable source = generateSortTesterTable(4, 1024, new IntGenerator(1000));
 
         // All columns should be sortable
         source.assertSortable(source.getDefinition().getColumnNamesArray());
-        source.restrictSortTo("Column1", "Column3");
+        source = (QueryTable) source.restrictSortTo("Column1", "Column3");
 
         QueryTable temp = func.apply(source, new String[] {"Column1a=Column1", "Column0=Column3", "Column2=Column2",
                 "Column5=Column3", "Column5=Column1"});
@@ -202,11 +178,11 @@ public class TestSort extends BaseArrayTestCase {
     }
 
     private void testRestrictedSortingUpdateUpdateView(BiFunction<Table, String[], QueryTable> func) {
-        final QueryTable source = generateSortTesterTable(4, 1024, new IntGenerator(1000));
+        QueryTable source = generateSortTesterTable(4, 1024, new IntGenerator(1000));
 
         // All columns should be sortable
         source.assertSortable(source.getDefinition().getColumnNamesArray());
-        source.restrictSortTo("Column1", "Column3");
+        source = (QueryTable) source.restrictSortTo("Column1", "Column3");
 
         QueryTable temp = func.apply(source, new String[] {"Column1a=Column1", "Column0=Column3", "Column2=Column2",
                 "Column5=Column3", "Column5=Column1"});
@@ -251,11 +227,11 @@ public class TestSort extends BaseArrayTestCase {
     }
 
     public void testRestrictedSortingDropColumns() {
-        final QueryTable source = generateSortTesterTable(4, 1024, new IntGenerator(1000));
+        QueryTable source = generateSortTesterTable(4, 1024, new IntGenerator(1000));
 
         // All columns should be sortable
         source.assertSortable(source.getDefinition().getColumnNamesArray());
-        source.restrictSortTo("Column1", "Column3");
+        source = (QueryTable) source.restrictSortTo("Column1", "Column3");
 
         QueryTable temp = (QueryTable) source.dropColumns("Column3");
         temp.sort("Column1");
@@ -275,11 +251,11 @@ public class TestSort extends BaseArrayTestCase {
     }
 
     public void testRestrictedSortingRenameColumns() {
-        final QueryTable source = generateSortTesterTable(4, 1024, new IntGenerator(1000));
+        QueryTable source = generateSortTesterTable(4, 1024, new IntGenerator(1000));
 
         // All columns should be sortable
         source.assertSortable(source.getDefinition().getColumnNamesArray());
-        source.restrictSortTo("Column1", "Column3");
+        source = (QueryTable) source.restrictSortTo("Column1", "Column3");
         source.sort("Column1");
         source.sort("Column3");
         assertException(source, (t) -> t.sortDescending("Column0"), "Should not be able to sort by Column0",
@@ -476,12 +452,12 @@ public class TestSort extends BaseArrayTestCase {
         }
     }
 
-    private class DateTimeGenerator extends DataGenerator {
+    private class InstantGenerator extends DataGenerator {
         public Class getType() {
-            return DateTime.class;
+            return Instant.class;
         }
 
-        public DateTime makeEntry() {
+        public Instant makeEntry() {
             if (Math.random() < nullFraction) {
                 return null;
             }
@@ -490,8 +466,7 @@ public class TestSort extends BaseArrayTestCase {
             long offset = (int) Math.rint(Math.random() * 3600);
             offset *= 1000000000;
 
-            DateTime dateTime = new DateTime((startTime * 1000000000) - offset);
-            return dateTime;
+            return DateTimeUtils.epochNanosToInstant((startTime * 1000000000) - offset);
         }
 
         @Override
@@ -621,13 +596,16 @@ public class TestSort extends BaseArrayTestCase {
         return new QueryTable(RowSetFactory.fromRange(0, size - 1).toTracking(), columns);
     }
 
-    private Comparable[][] createBoxedData(Table source, int ncols, int size) {
-        final Comparable[][] boxedData = new Comparable[ncols][];
+    private Comparable<?>[][] createBoxedData(Table source, int ncols, int size) {
+        final Comparable<?>[][] boxedData = new Comparable[ncols][];
         for (int ii = 0; ii < ncols; ++ii) {
-            final DataColumn column = source.getColumn("Column" + ii);
-            boxedData[ii] = new Comparable[size];
-            for (int jj = 0; jj < size; ++jj) {
-                boxedData[ii][jj] = (Comparable) column.get(jj);
+            try (final CloseableIterator<? extends Comparable<?>> columnIter = source.columnIterator("Column" + ii)) {
+                boxedData[ii] = new Comparable[size];
+                int jj = 0;
+                while (columnIter.hasNext()) {
+                    boxedData[ii][jj] = columnIter.next();
+                    ++jj;
+                }
             }
         }
 
@@ -675,26 +653,21 @@ public class TestSort extends BaseArrayTestCase {
     }
 
     private void sortTester(int ncols, int size, Comparable[][] columnData, Table source, boolean isRefreshing) {
-        ((QueryTable) source).setRefreshing(isRefreshing);
+        source.setRefreshing(isRefreshing);
 
         // Now sort the table by the sentinel, which should just give us a simple ordering.
         assertEquals(source.size(), size);
-        assertEquals(source.getColumn("Sentinel").size(), size);
 
         Table result0 = source.sort("Sentinel");
-        // show(result0);
-        DataColumn col = result0.getColumn("Sentinel");
-        assertEquals(col.size(), size);
-        for (int jj = 0; jj < size; ++jj) {
-            assertEquals(jj + 1, col.get(jj));
+        final MutableInt expected = new MutableInt(1);
+        try (final CloseablePrimitiveIteratorOfInt sentinelIterator = result0.integerColumnIterator("Sentinel")) {
+            sentinelIterator.forEachRemaining((final int actual) -> assertEquals(expected.getAndIncrement(), actual));
         }
 
         Table result1 = source.sortDescending("Sentinel");
-        // show(result1);
-        col = result1.getColumn("Sentinel");
-        assertEquals(col.size(), size);
-        for (int jj = 0; jj < size; ++jj) {
-            assertEquals(size - jj, col.get(jj));
+        expected.set(size);
+        try (final CloseablePrimitiveIteratorOfInt sentinelIterator = result1.integerColumnIterator("Sentinel")) {
+            sentinelIterator.forEachRemaining((final int actual) -> assertEquals(expected.getAndAdd(-1), actual));
         }
 
         // Sort it by Column0 through (Column0, .. ColumnN-1)
@@ -707,19 +680,18 @@ public class TestSort extends BaseArrayTestCase {
             System.out.println("Sorted by " + Arrays.toString(colNames));
             Table resultAscending = source.sort(colNames);
             Table resultDescending = source.sortDescending(colNames);
-            // TableTools.show(resultAscending);
-            // TableTools.show(resultDescending);
 
-
-            DataColumn colAscending = resultAscending.getColumn("Sentinel");
-            assertEquals(colAscending.size(), size);
-            DataColumn colDescending = resultDescending.getColumn("Sentinel");
-            assertEquals(colDescending.size(), size);
-
-            MultiColumnSortHelper multiColumnSortHelper = new MultiColumnSortHelper(columnData, ii);
-            for (int jj = 0; jj < size; ++jj) {
-                assertEquals(multiColumnSortHelper.getSentinel(jj), (int) colAscending.get(jj));
-                assertEquals(multiColumnSortHelper.getReverseSentinel(jj), (int) colDescending.get(jj));
+            final MultiColumnSortHelper multiColumnSortHelper = new MultiColumnSortHelper(columnData, ii);
+            try (final CloseablePrimitiveIteratorOfInt sentinelAscending =
+                    resultAscending.integerColumnIterator("Sentinel");
+                    final CloseablePrimitiveIteratorOfInt sentinelDescending =
+                            resultDescending.integerColumnIterator("Sentinel")) {
+                for (int jj = 0; jj < size; ++jj) {
+                    assertEquals(multiColumnSortHelper.getSentinel(jj), sentinelAscending.nextInt());
+                    assertEquals(multiColumnSortHelper.getReverseSentinel(jj), sentinelDescending.nextInt());
+                }
+                assertFalse(sentinelAscending.hasNext());
+                assertFalse(sentinelDescending.hasNext());
             }
         }
     }

@@ -1,27 +1,33 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.util;
 
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+import io.deephaven.UncheckedDeephavenException;
+import io.deephaven.configuration.Configuration;
 import org.jpy.PyDictWrapper;
 import org.jpy.PyLib;
-import org.jpy.PyModule;
 import org.jpy.PyObject;
 
-import java.util.*;
-import java.util.Map.Entry;
-import java.util.stream.Stream;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.Optional;
+import java.util.concurrent.ExecutionException;
 
 public class PythonScopeJpyImpl implements PythonScope<PyObject> {
-    private final PyDictWrapper dict;
-    private static final PyObject NUMBA_VECTORIZED_FUNC_TYPE = getNumbaVectorizedFuncType();
+    private static volatile boolean cacheEnabled =
+            Configuration.getInstance().getBooleanForClassWithDefault(PythonScopeJpyImpl.class, "cacheEnabled", false);
 
-    // this assumes that the Python interpreter won't be re-initialized during a session, if this turns out to be a
-    // false assumption, then we'll need to make this initialization code 'python restart' proof.
-    private static PyObject getNumbaVectorizedFuncType() {
-        try {
-            return PyModule.importModule("numba.np.ufunc.dufunc").getAttribute("DUFunc");
-        } catch (Exception e) {
-            return null;
-        }
+    public static void setCacheEnabled(boolean enabled) {
+        cacheEnabled = enabled;
     }
+
+    private final PyDictWrapper dict;
+
+    private static final ThreadLocal<Deque<PyDictWrapper>> threadScopeStack = new ThreadLocal<>();
+    private static final Cache<PyObject, Object> conversionCache = CacheBuilder.newBuilder().weakValues().build();
 
     public static PythonScopeJpyImpl ofMainGlobals() {
         return new PythonScopeJpyImpl(PyLib.getMainGlobals().asDict());
@@ -29,29 +35,28 @@ public class PythonScopeJpyImpl implements PythonScope<PyObject> {
 
     public PythonScopeJpyImpl(PyDictWrapper dict) {
         this.dict = dict;
+    }
 
+    @Override
+    public PyDictWrapper currentScope() {
+        Deque<PyDictWrapper> scopeStack = threadScopeStack.get();
+        if (scopeStack == null || scopeStack.isEmpty()) {
+            return this.dict;
+        } else {
+            return scopeStack.peek();
+        }
     }
 
     @Override
     public Optional<PyObject> getValueRaw(String name) {
         // note: we *may* be returning Optional.of(None)
         // None is a valid PyObject, and can be in scope
-        return Optional.ofNullable(dict.get(name));
-    }
-
-    @Override
-    public Stream<PyObject> getKeysRaw() {
-        return dict.keySet().stream();
-    }
-
-    @Override
-    public Stream<Entry<PyObject, PyObject>> getEntriesRaw() {
-        return dict.entrySet().stream();
+        return Optional.ofNullable(currentScope().get(name));
     }
 
     @Override
     public boolean containsKey(String name) {
-        return dict.containsKey(name);
+        return currentScope().containsKey(name);
     }
 
     @Override
@@ -72,104 +77,6 @@ public class PythonScopeJpyImpl implements PythonScope<PyObject> {
     }
 
     /**
-     * When given a pyObject that is a callable, we stick it inside the callable wrapper, which implements a call()
-     * varargs method, so that we can call it using __call__ without all of the JPy nastiness.
-     */
-    public static class CallableWrapper {
-        private final PyObject pyObject;
-
-        public CallableWrapper(PyObject pyObject) {
-            this.pyObject = pyObject;
-        }
-
-        public Object call(Object... args) {
-            return convert(pyObject.callMethod("__call__", args));
-        }
-
-        public PyObject getPyObject() {
-            return pyObject;
-        }
-    }
-
-    public static final class NumbaCallableWrapper extends CallableWrapper {
-        private final List<Class<?>> paramTypes;
-        private final Class<?> returnType;
-
-        public NumbaCallableWrapper(PyObject pyObject, Class<?> returnType, List<Class<?>> paramTypes) {
-            super(pyObject);
-            this.returnType = returnType;
-            this.paramTypes = paramTypes;
-        }
-
-        public Class<?> getReturnType() {
-            return returnType;
-        }
-
-        public List<Class<?>> getParamTypes() {
-            return paramTypes;
-        }
-    }
-
-    private static CallableWrapper wrapCallable(PyObject pyObject) {
-        // check if this is a numba vectorized function
-        if (pyObject.getType().equals(NUMBA_VECTORIZED_FUNC_TYPE)) {
-            List<PyObject> params = pyObject.getAttribute("types").asList();
-            if (params.isEmpty()) {
-                throw new IllegalArgumentException("numba vectorized function must have an explicit signature.");
-            }
-            // numba allows a vectorized function to have multiple signatures, only the first one
-            // will be accepted by DH
-            String numbaFuncTypes = params.get(0).getStringValue();
-            return parseNumbaVectorized(pyObject, numbaFuncTypes);
-        } else {
-            return new CallableWrapper(pyObject);
-        }
-    }
-
-    private static final Map<Character, Class<?>> numpyType2JavaClass = new HashMap<>();
-    static {
-        numpyType2JavaClass.put('i', int.class);
-        numpyType2JavaClass.put('l', long.class);
-        numpyType2JavaClass.put('h', short.class);
-        numpyType2JavaClass.put('f', float.class);
-        numpyType2JavaClass.put('d', double.class);
-        numpyType2JavaClass.put('b', byte.class);
-        numpyType2JavaClass.put('?', boolean.class);
-    }
-
-    private static CallableWrapper parseNumbaVectorized(PyObject pyObject, String numbaFuncTypes) {
-        // the 'types' field of a numba vectorized function takes the form of
-        // '[parameter-type-char*]->[return-type-char]',
-        // eg. [ll->d] defines two int64 (long) arguments and a double return type.
-
-        char numpyTypeCode = numbaFuncTypes.charAt(numbaFuncTypes.length() - 1);
-        Class<?> returnType = numpyType2JavaClass.get(numpyTypeCode);
-        if (returnType == null) {
-            throw new IllegalArgumentException(
-                    "numba vectorized functions must have an integral, floating point, or boolean return type.");
-        }
-
-        List<Class<?>> paramTypes = new ArrayList<>();
-        for (char numpyTypeChar : numbaFuncTypes.toCharArray()) {
-            if (numpyTypeChar != '-') {
-                Class<?> paramType = numpyType2JavaClass.get(numpyTypeChar);
-                if (paramType == null) {
-                    throw new IllegalArgumentException(
-                            "parameters of numba vectorized functions must be of integral, floating point, or boolean type.");
-                }
-                paramTypes.add(numpyType2JavaClass.get(numpyTypeChar));
-            } else {
-                break;
-            }
-        }
-
-        if (paramTypes.size() == 0) {
-            throw new IllegalArgumentException("numba vectorized functions must have at least one argument.");
-        }
-        return new NumbaCallableWrapper(pyObject, returnType, paramTypes);
-    }
-
-    /**
      * Converts a pyObject into an appropriate Java object for use outside of JPy.
      * <p>
      * If we're a List, Dictionary, or Callable, then we wrap them in a java object.
@@ -182,20 +89,61 @@ public class PythonScopeJpyImpl implements PythonScope<PyObject> {
      * @return a Java object representing the underlying JPy object.
      */
     public static Object convert(PyObject pyObject) {
-        if (pyObject.isList()) {
-            return pyObject.asList();
-        } else if (pyObject.isDict()) {
-            return pyObject.asDict();
-        } else if (pyObject.isCallable()) {
-            return wrapCallable(pyObject);
-        } else if (pyObject.isConvertible()) {
-            return pyObject.getObjectValue();
-        } else {
-            return pyObject;
+        if (!cacheEnabled) {
+            return convertInternal(pyObject, false);
+        }
+
+        try {
+            final Object cached = conversionCache.get(pyObject, () -> convertInternal(pyObject, true));
+            return cached instanceof NULL_TOKEN ? null : cached;
+        } catch (ExecutionException err) {
+            throw new UncheckedDeephavenException("Error converting PyObject to Java object", err);
         }
     }
 
-    public PyDictWrapper globals() {
+    private static Object convertInternal(PyObject pyObject, boolean fromCache) {
+        Object ret = pyObject;
+        if (pyObject.isList()) {
+            ret = pyObject.asList();
+        } else if (pyObject.isDict()) {
+            ret = pyObject.asDict();
+        } else if (pyObject.isCallable()) {
+            ret = new PyCallableWrapperJpyImpl(pyObject);
+        } else if (pyObject.isConvertible()) {
+            ret = pyObject.getObjectValue();
+        }
+
+        return ret == null && fromCache ? new NULL_TOKEN() : ret;
+    }
+
+    public PyDictWrapper mainGlobals() {
         return dict;
+    }
+
+    @Override
+    public void pushScope(PyObject pydict) {
+        Deque<PyDictWrapper> scopeStack = threadScopeStack.get();
+        if (scopeStack == null) {
+            scopeStack = new ArrayDeque<>();
+            threadScopeStack.set(scopeStack);
+        }
+        scopeStack.push(pydict.asDict());
+    }
+
+    @Override
+    public void popScope() {
+        Deque<PyDictWrapper> scopeStack = threadScopeStack.get();
+        if (scopeStack == null) {
+            throw new IllegalStateException("The thread scope stack is empty.");
+        }
+        PyDictWrapper pydict = scopeStack.pop();
+        pydict.close();
+    }
+
+    /**
+     * Guava caches are not allowed to hold on to null values. Additionally, we can't use a singleton pattern or else
+     * the weak-value map will never release null values.
+     */
+    private static class NULL_TOKEN {
     }
 }

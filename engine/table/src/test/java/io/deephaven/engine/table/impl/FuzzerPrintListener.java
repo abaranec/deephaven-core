@@ -1,10 +1,13 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl;
 
 import io.deephaven.engine.table.Table;
 import io.deephaven.engine.table.TableUpdate;
 import io.deephaven.engine.util.TableTools;
 
-import static io.deephaven.engine.table.impl.TstUtils.prevTable;
+import static io.deephaven.engine.testutil.TstUtils.prevTable;
 
 public class FuzzerPrintListener extends InstrumentedTableUpdateListener {
     private final String description;
@@ -16,7 +19,7 @@ public class FuzzerPrintListener extends InstrumentedTableUpdateListener {
     }
 
     FuzzerPrintListener(final String description, final Table table, final int rowCount) {
-        super("Fuzzer Failure ShiftObliviousListener");
+        super("Fuzzer Failure Listener");
         this.description = description;
         this.table = table;
         this.rowCount = rowCount;

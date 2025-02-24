@@ -1,0 +1,16 @@
+plugins {
+    id 'base'
+    id 'io.deephaven.lifecycle-conventions'
+    id 'io.deephaven.repository-conventions'
+}
+
+group = 'io.deephaven'
+
+def deephavenBaseVersion = project.property('deephavenBaseVersion').toString().trim()
+def deephavenBaseQualifier = project.property('deephavenBaseQualifier').toString().trim()
+def versionSeparator = deephavenBaseQualifier.isEmpty() ? "" : "-"
+version = "${deephavenBaseVersion}${versionSeparator}${deephavenBaseQualifier}"
+
+if (!name.startsWith('deephaven-')) {
+    base.archivesName.set "deephaven-${name}"
+}

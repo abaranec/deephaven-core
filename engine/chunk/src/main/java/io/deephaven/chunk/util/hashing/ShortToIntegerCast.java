@@ -1,8 +1,10 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit CharToIntegerCast and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit CharToIntegerCast and run "./gradlew replicateHashing" to regenerate
+//
+// @formatter:off
 package io.deephaven.chunk.util.hashing;
 
 import io.deephaven.chunk.*;
@@ -32,7 +34,7 @@ public class ShortToIntegerCast<T extends Any> implements ToIntFunctor<T> {
 
     public static <T2 extends Any> void castInto(ShortChunk<? extends T2> input, WritableIntChunk<T2> result) {
         for (int ii = 0; ii < input.size(); ++ii) {
-            result.set(ii, (int)input.get(ii));
+            result.set(ii, (int) input.get(ii));
         }
         result.setSize(input.size());
     }

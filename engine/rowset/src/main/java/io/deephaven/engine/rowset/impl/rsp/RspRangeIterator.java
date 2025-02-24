@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.rowset.impl.rsp;
 
 import io.deephaven.engine.rowset.impl.RowSetUtils;
@@ -281,8 +284,8 @@ public class RspRangeIterator implements LongRangeIterator, SafeCloseable {
 
     /**
      * Advance the current iterator (start) position to the rightmost (last) value v that maintains
-     * comp.directionToTargetFrom(v) >= 0. I.e, either hasNext() returns false after this call, or the next value in the
-     * iterator nv would be such that comp.directionToTargetFrom(nv) < 0.
+     * comp.directionToTargetFrom(v) &gt;= 0. I.e, either hasNext() returns false after this call, or the next value in
+     * the iterator nv would be such that comp.directionToTargetFrom(nv) &lt; 0.
      *
      * Note this method should be called only after calling hasNext() and next() at least once, eg, from a valid current
      * position in a non-empty and also non-exhausted iterator.

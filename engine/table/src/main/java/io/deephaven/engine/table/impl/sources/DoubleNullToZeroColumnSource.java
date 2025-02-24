@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources;
 
 import io.deephaven.engine.table.impl.AbstractColumnSource;
@@ -6,10 +9,11 @@ import io.deephaven.util.QueryConstants;
 
 /**
  * If you want to expose the internal state of an aggregation and compare it, then the new tables might have nulls where
- * the old tables have zero.  This wrapper prevents that spurious comparison failure.
+ * the old tables have zero. This wrapper prevents that spurious comparison failure.
  */
 @SuppressWarnings("unused")
-public class DoubleNullToZeroColumnSource extends AbstractColumnSource<Double> implements MutableColumnSourceGetDefaults.ForDouble {
+public class DoubleNullToZeroColumnSource extends AbstractColumnSource<Double>
+        implements MutableColumnSourceGetDefaults.ForDouble {
     private final DoubleArraySource column;
 
     private DoubleNullToZeroColumnSource(DoubleArraySource column) {
@@ -23,14 +27,14 @@ public class DoubleNullToZeroColumnSource extends AbstractColumnSource<Double> i
     }
 
     @Override
-    public double getDouble(long index) {
-        final double value = column.getDouble(index);
+    public double getDouble(long rowKey) {
+        final double value = column.getDouble(rowKey);
         return nullToZero(value);
     }
 
     @Override
-    public double getPrevDouble(long index) {
-        final double value = column.getPrevDouble(index);
+    public double getPrevDouble(long rowKey) {
+        final double value = column.getPrevDouble(rowKey);
         return nullToZero(value);
     }
 

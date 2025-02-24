@@ -1,21 +1,23 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit CharPercentileTypeHelper and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit CharPercentileTypeHelper and run "./gradlew replicateSegmentedSortedMultiset" to regenerate
+//
+// @formatter:off
 package io.deephaven.engine.table.impl.by.ssmpercentile;
 
 import io.deephaven.chunk.attributes.ChunkLengths;
 import io.deephaven.chunk.attributes.Values;
+import io.deephaven.engine.table.WritableColumnSource;
 import io.deephaven.util.compare.DoubleComparisons;
-import io.deephaven.engine.table.impl.sources.ArrayBackedColumnSource;
 import io.deephaven.engine.table.impl.sources.DoubleArraySource;
 import io.deephaven.chunk.DoubleChunk;
 import io.deephaven.chunk.Chunk;
 import io.deephaven.chunk.IntChunk;
 import io.deephaven.engine.table.impl.ssms.DoubleSegmentedSortedMultiset;
 import io.deephaven.engine.table.impl.ssms.SegmentedSortedMultiSet;
-import org.apache.commons.lang3.mutable.MutableInt;
+import io.deephaven.util.mutable.MutableInt;
 
 import static io.deephaven.util.QueryConstants.NULL_DOUBLE;
 
@@ -23,7 +25,7 @@ public class DoublePercentileTypeHelper implements SsmChunkedPercentileOperator.
     private final double percentile;
     private final DoubleArraySource resultColumn;
 
-    DoublePercentileTypeHelper(double percentile, ArrayBackedColumnSource resultColumn) {
+    DoublePercentileTypeHelper(double percentile, WritableColumnSource resultColumn) {
         this.percentile = percentile;
         // region resultColumn
         this.resultColumn = (DoubleArraySource) resultColumn;
@@ -46,7 +48,7 @@ public class DoublePercentileTypeHelper implements SsmChunkedPercentileOperator.
                 ssmLo.moveBackToFront(ssmHi, loSize - targetLo);
             }
 
-            return setResult(destination, ((DoubleSegmentedSortedMultiset)ssmLo).getMaxDouble());
+            return setResult(destination, ((DoubleSegmentedSortedMultiset) ssmLo).getMaxDouble());
         }
     }
 
@@ -61,27 +63,30 @@ public class DoublePercentileTypeHelper implements SsmChunkedPercentileOperator.
     }
 
     @Override
-    public int pivot(SegmentedSortedMultiSet segmentedSortedMultiSet, Chunk<? extends Values> valueCopy, IntChunk<ChunkLengths> counts, int startPosition, int runLength, MutableInt leftOvers) {
+    public int pivot(SegmentedSortedMultiSet segmentedSortedMultiSet, Chunk<? extends Values> valueCopy,
+            IntChunk<ChunkLengths> counts, int startPosition, int runLength, MutableInt leftOvers) {
         final DoubleChunk<? extends Values> asDoubleChunk = valueCopy.asDoubleChunk();
-        final DoubleSegmentedSortedMultiset ssmLo = (DoubleSegmentedSortedMultiset)segmentedSortedMultiSet;
+        final DoubleSegmentedSortedMultiset ssmLo = (DoubleSegmentedSortedMultiset) segmentedSortedMultiSet;
         final double hiValue = ssmLo.getMaxDouble();
 
         final int result = upperBound(asDoubleChunk, startPosition, startPosition + runLength, hiValue);
 
         final long hiCount = ssmLo.getMaxCount();
-        if (result > startPosition && DoubleComparisons.eq(asDoubleChunk.get(result - 1), hiValue) && counts.get(result - 1) > hiCount) {
-            leftOvers.setValue((int)(counts.get(result - 1) - hiCount));
+        if (result > startPosition && DoubleComparisons.eq(asDoubleChunk.get(result - 1), hiValue)
+                && counts.get(result - 1) > hiCount) {
+            leftOvers.set((int) (counts.get(result - 1) - hiCount));
         } else {
-            leftOvers.setValue(0);
+            leftOvers.set(0);
         }
 
         return result - startPosition;
     }
 
     @Override
-    public int pivot(SegmentedSortedMultiSet segmentedSortedMultiSet, Chunk<? extends Values> valueCopy, IntChunk<ChunkLengths> counts, int startPosition, int runLength) {
+    public int pivot(SegmentedSortedMultiSet segmentedSortedMultiSet, Chunk<? extends Values> valueCopy,
+            IntChunk<ChunkLengths> counts, int startPosition, int runLength) {
         final DoubleChunk<? extends Values> asDoubleChunk = valueCopy.asDoubleChunk();
-        final DoubleSegmentedSortedMultiset ssmLo = (DoubleSegmentedSortedMultiset)segmentedSortedMultiSet;
+        final DoubleSegmentedSortedMultiset ssmLo = (DoubleSegmentedSortedMultiset) segmentedSortedMultiSet;
         final double hiValue = ssmLo.getMaxDouble();
 
         final int result = upperBound(asDoubleChunk, startPosition, startPosition + runLength, hiValue);
@@ -102,7 +107,7 @@ public class DoublePercentileTypeHelper implements SsmChunkedPercentileOperator.
         while (lo < hi) {
             final int mid = (lo + hi) >>> 1;
             final double testValue = valuesToSearch.get(mid);
-            final boolean moveHi = gt(testValue, searchValue);
+            final boolean moveHi = DoubleComparisons.gt(testValue, searchValue);
             if (moveHi) {
                 hi = mid;
             } else {
@@ -111,13 +116,5 @@ public class DoublePercentileTypeHelper implements SsmChunkedPercentileOperator.
         }
 
         return hi;
-    }
-
-    private static int doComparison(double lhs, double rhs) {
-        return DoubleComparisons.compare(lhs, rhs);
-    }
-
-    private static boolean gt(double lhs, double rhs) {
-        return doComparison(lhs, rhs) > 0;
     }
 }

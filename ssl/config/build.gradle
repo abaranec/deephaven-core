@@ -1,0 +1,33 @@
+plugins {
+    id 'java-library'
+    id 'io.deephaven.project.register'
+}
+
+description = 'The Deephaven SSL Configuration'
+
+dependencies {
+    compileOnly project(':util-immutables')
+    annotationProcessor libs.immutables.value
+
+    implementation platform(libs.grpc.bom)
+    api platform(libs.jackson.bom)
+    api libs.jackson.annotations
+    implementation libs.jackson.databind
+    runtimeOnly(libs.jackson.datatype.jdk8) {
+        because 'we need to parse optional types'
+    }
+
+    testImplementation libs.assertj
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit.jupiter
+    testRuntimeOnly libs.junit.jupiter.engine
+    testRuntimeOnly libs.junit.platform.launcher
+}
+
+test {
+    useJUnitPlatform()
+}
+
+project.tasks.named('quick').configure {
+    dependsOn test
+}

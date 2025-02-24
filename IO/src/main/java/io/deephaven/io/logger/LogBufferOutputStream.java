@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.io.logger;
 
 import io.deephaven.io.log.LogLevel;
@@ -7,7 +10,7 @@ import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.util.Objects;
 
-class LogBufferOutputStream extends OutputStream {
+public class LogBufferOutputStream extends OutputStream {
 
     private final LogBuffer sink;
     private final LogLevel level;

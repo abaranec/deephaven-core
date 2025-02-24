@@ -1,6 +1,10 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.client.impl.script;
 
 import io.deephaven.annotations.BuildableStyle;
+import io.deephaven.client.impl.FieldChanges;
 import org.immutables.value.Value.Immutable;
 
 import java.util.List;
@@ -16,36 +20,16 @@ public abstract class Changes {
 
     public abstract Optional<String> errorMessage();
 
-    public abstract List<VariableDefinition> created();
-
-    public abstract List<VariableDefinition> updated();
-
-    public abstract List<VariableDefinition> removed();
+    public abstract FieldChanges changes();
 
     public final boolean isEmpty() {
-        return created().isEmpty() && updated().isEmpty() && removed().isEmpty();
+        return !errorMessage().isPresent() && changes().isEmpty();
     }
 
     public interface Builder {
         Builder errorMessage(String errorMessage);
 
-        Builder addCreated(VariableDefinition element);
-
-        Builder addCreated(VariableDefinition... elements);
-
-        Builder addAllCreated(Iterable<? extends VariableDefinition> elements);
-
-        Builder addUpdated(VariableDefinition element);
-
-        Builder addUpdated(VariableDefinition... elements);
-
-        Builder addAllUpdated(Iterable<? extends VariableDefinition> elements);
-
-        Builder addRemoved(VariableDefinition element);
-
-        Builder addRemoved(VariableDefinition... elements);
-
-        Builder addAllRemoved(Iterable<? extends VariableDefinition> elements);
+        Builder changes(FieldChanges changes);
 
         Changes build();
     }

@@ -1,9 +1,13 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources;
 
 import io.deephaven.base.verify.Assert;
 import io.deephaven.engine.table.ChunkSource;
 import io.deephaven.engine.table.SharedContext;
 import io.deephaven.engine.table.ColumnSource;
+import io.deephaven.engine.table.Table;
 import io.deephaven.engine.table.impl.AbstractColumnSource;
 import io.deephaven.engine.table.impl.util.RowRedirection;
 import io.deephaven.util.BooleanUtils;
@@ -15,23 +19,70 @@ import io.deephaven.chunk.attributes.ChunkPositions;
 import io.deephaven.chunk.*;
 import io.deephaven.engine.rowset.RowSequence;
 import io.deephaven.engine.rowset.RowSequenceFactory;
+import io.deephaven.util.SafeCloseable;
 import io.deephaven.util.type.TypeUtils;
 import org.jetbrains.annotations.NotNull;
 
 import io.deephaven.engine.rowset.chunkattributes.RowKeys;
 
 import io.deephaven.chunk.attributes.Values;
+
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+
 import static io.deephaven.util.QueryConstants.*;
 
-public class RedirectedColumnSource<T> extends AbstractColumnSource<T> implements UngroupableColumnSource {
+/**
+ * A {@link ColumnSource} that uses a {@link RowRedirection} to direct access into an underlying wrapped
+ * {@link ColumnSource}. This is used, for example, in a {@link Table#sort(String...)}.
+ *
+ * @param <T>
+ */
+public class RedirectedColumnSource<T> extends AbstractColumnSource<T>
+        implements UngroupableColumnSource, ConvertibleTimeSource {
+    /**
+     * Redirect the innerSource if it is not agnostic to redirection. Otherwise, return the innerSource.
+     *
+     * @param rowRedirection The row redirection to use
+     * @param innerSource The column source to redirect
+     */
+    public static <T> ColumnSource<T> maybeRedirect(
+            @NotNull final RowRedirection rowRedirection,
+            @NotNull final ColumnSource<T> innerSource) {
+        if (innerSource instanceof RowKeyAgnosticChunkSource) {
+            return innerSource;
+        }
+        return new RedirectedColumnSource<>(rowRedirection, innerSource);
+    }
+
+    /**
+     * This factory method should be used when unmapped rows in the row redirection must be redirected to null values.
+     * For example, natural joins, left outer joins, and as-of joins must map unmatched rows to null values in
+     * right-side columns.
+     *
+     * @param rowRedirection The row redirection to use
+     * @param innerSource The column source to redirect
+     */
+    public static <T> ColumnSource<T> alwaysRedirect(
+            @NotNull final RowRedirection rowRedirection,
+            @NotNull final ColumnSource<T> innerSource) {
+        return new RedirectedColumnSource<>(rowRedirection, innerSource);
+    }
+
     protected final RowRedirection rowRedirection;
     protected final ColumnSource<T> innerSource;
+    private final boolean ascendingMapping;
 
-    public RedirectedColumnSource(@NotNull final RowRedirection rowRedirection,
+    protected RedirectedColumnSource(
+            @NotNull final RowRedirection rowRedirection,
             @NotNull final ColumnSource<T> innerSource) {
         super(innerSource.getType());
         this.rowRedirection = rowRedirection;
         this.innerSource = innerSource;
+        this.ascendingMapping = rowRedirection.ascendingMapping();
     }
 
     @Override
@@ -43,151 +94,155 @@ public class RedirectedColumnSource<T> extends AbstractColumnSource<T> implement
         return rowRedirection;
     }
 
+    public final ColumnSource<T> getInnerSource() {
+        return innerSource;
+    }
+
     @Override
     public void startTrackingPrevValues() {}
 
     @Override
-    public T get(long index) {
-        if (index < 0) {
+    public T get(long rowKey) {
+        if (rowKey < 0) {
             return null;
         }
-        return innerSource.get(rowRedirection.get(index));
+        return innerSource.get(rowRedirection.get(rowKey));
     }
 
     @Override
-    public Boolean getBoolean(long index) {
-        if (index < 0) {
+    public Boolean getBoolean(long rowKey) {
+        if (rowKey < 0) {
             return null;
         }
-        return innerSource.getBoolean(rowRedirection.get(index));
+        return innerSource.getBoolean(rowRedirection.get(rowKey));
     }
 
     @Override
-    public byte getByte(long index) {
-        if (index < 0) {
+    public byte getByte(long rowKey) {
+        if (rowKey < 0) {
             return NULL_BYTE;
         }
-        return innerSource.getByte(rowRedirection.get(index));
+        return innerSource.getByte(rowRedirection.get(rowKey));
     }
 
     @Override
-    public char getChar(long index) {
-        if (index < 0) {
+    public char getChar(long rowKey) {
+        if (rowKey < 0) {
             return NULL_CHAR;
         }
-        return innerSource.getChar(rowRedirection.get(index));
+        return innerSource.getChar(rowRedirection.get(rowKey));
     }
 
     @Override
-    public double getDouble(long index) {
-        if (index < 0) {
+    public double getDouble(long rowKey) {
+        if (rowKey < 0) {
             return NULL_DOUBLE;
         }
-        return innerSource.getDouble(rowRedirection.get(index));
+        return innerSource.getDouble(rowRedirection.get(rowKey));
     }
 
     @Override
-    public float getFloat(long index) {
-        if (index < 0) {
+    public float getFloat(long rowKey) {
+        if (rowKey < 0) {
             return NULL_FLOAT;
         }
-        return innerSource.getFloat(rowRedirection.get(index));
+        return innerSource.getFloat(rowRedirection.get(rowKey));
     }
 
     @Override
-    public int getInt(long index) {
-        if (index < 0) {
+    public int getInt(long rowKey) {
+        if (rowKey < 0) {
             return NULL_INT;
         }
-        return innerSource.getInt(rowRedirection.get(index));
+        return innerSource.getInt(rowRedirection.get(rowKey));
     }
 
     @Override
-    public long getLong(long index) {
-        if (index < 0) {
+    public long getLong(long rowKey) {
+        if (rowKey < 0) {
             return NULL_LONG;
         }
-        return innerSource.getLong(rowRedirection.get(index));
+        return innerSource.getLong(rowRedirection.get(rowKey));
     }
 
     @Override
-    public short getShort(long index) {
-        if (index < 0) {
+    public short getShort(long rowKey) {
+        if (rowKey < 0) {
             return NULL_SHORT;
         }
-        return innerSource.getShort(rowRedirection.get(index));
+        return innerSource.getShort(rowRedirection.get(rowKey));
     }
 
     @Override
-    public T getPrev(long index) {
-        if (index < 0) {
+    public T getPrev(long rowKey) {
+        if (rowKey < 0) {
             return null;
         }
-        return innerSource.getPrev(rowRedirection.getPrev(index));
+        return innerSource.getPrev(rowRedirection.getPrev(rowKey));
     }
 
     @Override
-    public Boolean getPrevBoolean(long index) {
-        if (index < 0) {
+    public Boolean getPrevBoolean(long rowKey) {
+        if (rowKey < 0) {
             return null;
         }
-        return innerSource.getPrevBoolean(rowRedirection.getPrev(index));
+        return innerSource.getPrevBoolean(rowRedirection.getPrev(rowKey));
     }
 
     @Override
-    public byte getPrevByte(long index) {
-        if (index < 0) {
+    public byte getPrevByte(long rowKey) {
+        if (rowKey < 0) {
             return NULL_BYTE;
         }
-        return innerSource.getPrevByte(rowRedirection.getPrev(index));
+        return innerSource.getPrevByte(rowRedirection.getPrev(rowKey));
     }
 
     @Override
-    public char getPrevChar(long index) {
-        if (index < 0) {
+    public char getPrevChar(long rowKey) {
+        if (rowKey < 0) {
             return NULL_CHAR;
         }
-        return innerSource.getPrevChar(rowRedirection.getPrev(index));
+        return innerSource.getPrevChar(rowRedirection.getPrev(rowKey));
     }
 
     @Override
-    public double getPrevDouble(long index) {
-        if (index < 0) {
+    public double getPrevDouble(long rowKey) {
+        if (rowKey < 0) {
             return NULL_DOUBLE;
         }
-        return innerSource.getPrevDouble(rowRedirection.getPrev(index));
+        return innerSource.getPrevDouble(rowRedirection.getPrev(rowKey));
     }
 
     @Override
-    public float getPrevFloat(long index) {
-        if (index < 0) {
+    public float getPrevFloat(long rowKey) {
+        if (rowKey < 0) {
             return NULL_FLOAT;
         }
-        return innerSource.getPrevFloat(rowRedirection.getPrev(index));
+        return innerSource.getPrevFloat(rowRedirection.getPrev(rowKey));
     }
 
     @Override
-    public int getPrevInt(long index) {
-        if (index < 0) {
+    public int getPrevInt(long rowKey) {
+        if (rowKey < 0) {
             return NULL_INT;
         }
-        return innerSource.getPrevInt(rowRedirection.getPrev(index));
+        return innerSource.getPrevInt(rowRedirection.getPrev(rowKey));
     }
 
     @Override
-    public long getPrevLong(long index) {
-        if (index < 0) {
+    public long getPrevLong(long rowKey) {
+        if (rowKey < 0) {
             return NULL_LONG;
         }
-        return innerSource.getPrevLong(rowRedirection.getPrev(index));
+        return innerSource.getPrevLong(rowRedirection.getPrev(rowKey));
     }
 
     @Override
-    public short getPrevShort(long index) {
-        if (index < 0) {
+    public short getPrevShort(long rowKey) {
+        if (rowKey < 0) {
             return NULL_SHORT;
         }
-        return innerSource.getPrevShort(rowRedirection.getPrev(index));
+        return innerSource.getPrevShort(rowRedirection.getPrev(rowKey));
     }
 
     @Override
@@ -202,116 +257,118 @@ public class RedirectedColumnSource<T> extends AbstractColumnSource<T> implement
     }
 
     @Override
-    public long getUngroupedSize(long columnIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedSize(rowRedirection.get(columnIndex));
+    public long getUngroupedSize(long groupRowKey) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedSize(rowRedirection.get(groupRowKey));
     }
 
     @Override
-    public long getUngroupedPrevSize(long columnIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevSize(rowRedirection.getPrev(columnIndex));
+    public long getUngroupedPrevSize(long groupRowKey) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevSize(rowRedirection.getPrev(groupRowKey));
     }
 
     @Override
-    public T getUngrouped(long columnIndex, int arrayIndex) {
+    public T getUngrouped(long groupRowKey, int offsetInGroup) {
         // noinspection unchecked
-        return (T) ((UngroupableColumnSource) innerSource).getUngrouped(rowRedirection.get(columnIndex), arrayIndex);
+        return (T) ((UngroupableColumnSource) innerSource).getUngrouped(rowRedirection.get(groupRowKey), offsetInGroup);
     }
 
     @Override
-    public T getUngroupedPrev(long columnIndex, int arrayIndex) {
+    public T getUngroupedPrev(long groupRowKey, int offsetInGroup) {
         // noinspection unchecked
-        return (T) ((UngroupableColumnSource) innerSource).getUngroupedPrev(rowRedirection.getPrev(columnIndex),
-                arrayIndex);
+        return (T) ((UngroupableColumnSource) innerSource).getUngroupedPrev(rowRedirection.getPrev(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public Boolean getUngroupedBoolean(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedBoolean(rowRedirection.get(columnIndex),
-                arrayIndex);
+    public Boolean getUngroupedBoolean(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedBoolean(rowRedirection.get(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public Boolean getUngroupedPrevBoolean(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevBoolean(rowRedirection.getPrev(columnIndex),
-                arrayIndex);
+    public Boolean getUngroupedPrevBoolean(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevBoolean(rowRedirection.getPrev(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public double getUngroupedDouble(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedDouble(rowRedirection.get(columnIndex),
-                arrayIndex);
+    public double getUngroupedDouble(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedDouble(rowRedirection.get(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public double getUngroupedPrevDouble(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevDouble(rowRedirection.getPrev(columnIndex),
-                arrayIndex);
+    public double getUngroupedPrevDouble(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevDouble(rowRedirection.getPrev(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public float getUngroupedFloat(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedFloat(rowRedirection.get(columnIndex), arrayIndex);
+    public float getUngroupedFloat(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedFloat(rowRedirection.get(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public float getUngroupedPrevFloat(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevFloat(rowRedirection.getPrev(columnIndex),
-                arrayIndex);
+    public float getUngroupedPrevFloat(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevFloat(rowRedirection.getPrev(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public byte getUngroupedByte(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedByte(rowRedirection.get(columnIndex), arrayIndex);
+    public byte getUngroupedByte(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedByte(rowRedirection.get(groupRowKey), offsetInGroup);
     }
 
     @Override
-    public byte getUngroupedPrevByte(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevByte(rowRedirection.getPrev(columnIndex),
-                arrayIndex);
+    public byte getUngroupedPrevByte(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevByte(rowRedirection.getPrev(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public char getUngroupedChar(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedChar(rowRedirection.get(columnIndex), arrayIndex);
+    public char getUngroupedChar(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedChar(rowRedirection.get(groupRowKey), offsetInGroup);
     }
 
     @Override
-    public char getUngroupedPrevChar(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevChar(rowRedirection.getPrev(columnIndex),
-                arrayIndex);
+    public char getUngroupedPrevChar(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevChar(rowRedirection.getPrev(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public short getUngroupedShort(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedShort(rowRedirection.get(columnIndex), arrayIndex);
+    public short getUngroupedShort(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedShort(rowRedirection.get(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public short getUngroupedPrevShort(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevShort(rowRedirection.getPrev(columnIndex),
-                arrayIndex);
+    public short getUngroupedPrevShort(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevShort(rowRedirection.getPrev(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public int getUngroupedInt(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedInt(rowRedirection.get(columnIndex), arrayIndex);
+    public int getUngroupedInt(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedInt(rowRedirection.get(groupRowKey), offsetInGroup);
     }
 
     @Override
-    public int getUngroupedPrevInt(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevInt(rowRedirection.getPrev(columnIndex),
-                arrayIndex);
+    public int getUngroupedPrevInt(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevInt(rowRedirection.getPrev(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public long getUngroupedLong(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedLong(rowRedirection.get(columnIndex), arrayIndex);
+    public long getUngroupedLong(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedLong(rowRedirection.get(groupRowKey), offsetInGroup);
     }
 
     @Override
-    public long getUngroupedPrevLong(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevLong(rowRedirection.getPrev(columnIndex),
-                arrayIndex);
+    public long getUngroupedPrevLong(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevLong(rowRedirection.getPrev(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
@@ -323,17 +380,68 @@ public class RedirectedColumnSource<T> extends AbstractColumnSource<T> implement
     @Override
     public <ALTERNATE_DATA_TYPE> boolean allowsReinterpret(
             @NotNull final Class<ALTERNATE_DATA_TYPE> alternateDataType) {
+        if ((alternateDataType == long.class
+                || alternateDataType == Long.class
+                || alternateDataType == Instant.class)
+                && supportsTimeConversion()) {
+            return true;
+        }
+
         return innerSource.allowsReinterpret(alternateDataType);
     }
 
+    @Override
+    public boolean supportsTimeConversion() {
+        return innerSource instanceof ConvertibleTimeSource
+                && ((ConvertibleTimeSource) innerSource).supportsTimeConversion();
+    }
+
+    @Override
+    public ColumnSource<Long> toEpochNano() {
+        return new RedirectedColumnSource<>(this.rowRedirection, ((ConvertibleTimeSource) innerSource)
+                .toEpochNano());
+    }
+
+    @Override
+    public ColumnSource<Instant> toInstant() {
+        return new RedirectedColumnSource<>(this.rowRedirection, ((ConvertibleTimeSource) innerSource)
+                .toInstant());
+    }
+
+    @Override
+    public ColumnSource<ZonedDateTime> toZonedDateTime(ZoneId zone) {
+        return new RedirectedColumnSource<>(this.rowRedirection, ((ConvertibleTimeSource) innerSource)
+                .toZonedDateTime(zone));
+    }
+
+    @Override
+    public ColumnSource<LocalDate> toLocalDate(ZoneId zone) {
+        return new RedirectedColumnSource<>(this.rowRedirection, ((ConvertibleTimeSource) innerSource)
+                .toLocalDate(zone));
+    }
+
+    @Override
+    public ColumnSource<LocalTime> toLocalTime(ZoneId zone) {
+        return new RedirectedColumnSource<>(this.rowRedirection, ((ConvertibleTimeSource) innerSource)
+                .toLocalTime(zone));
+    }
+
+    @SuppressWarnings("unchecked")
     @Override
     protected <ALTERNATE_DATA_TYPE> ColumnSource<ALTERNATE_DATA_TYPE> doReinterpret(
             @NotNull Class<ALTERNATE_DATA_TYPE> alternateDataType) {
         if (TypeUtils.getUnboxedTypeIfBoxed(alternateDataType) == byte.class && getType() == Boolean.class) {
             return new ReinterpretToOriginalForBoolean<>(alternateDataType);
         }
-        // noinspection unchecked
-        return new ReinterpretToOriginal(alternateDataType);
+
+        if (supportsTimeConversion()) {
+            if (alternateDataType == long.class || alternateDataType == Long.class) {
+                return (ColumnSource<ALTERNATE_DATA_TYPE>) toEpochNano();
+            } else if (alternateDataType == Instant.class) {
+                return (ColumnSource<ALTERNATE_DATA_TYPE>) toInstant();
+            }
+        }
+        return new ReinterpretToOriginal<>(alternateDataType);
     }
 
     private class ReinterpretToOriginal<ALTERNATE_DATA_TYPE>
@@ -363,30 +471,30 @@ public class RedirectedColumnSource<T> extends AbstractColumnSource<T> implement
         }
 
         @Override
-        public byte getByte(long index) {
-            if (index < 0) {
+        public byte getByte(long rowKey) {
+            if (rowKey < 0) {
                 return BooleanUtils.NULL_BOOLEAN_AS_BYTE;
             }
-            return super.getByte(index);
+            return super.getByte(rowKey);
         }
 
         @Override
-        public byte getPrevByte(long index) {
-            if (index < 0) {
+        public byte getPrevByte(long rowKey) {
+            if (rowKey < 0) {
                 return BooleanUtils.NULL_BOOLEAN_AS_BYTE;
             }
-            return super.getPrevByte(index);
+            return super.getPrevByte(rowKey);
         }
 
         @Override
         public FillContext makeFillContext(int chunkCapacity, SharedContext sharedContext) {
-            return new FillContext(this, chunkCapacity, sharedContext, true);
+            return new FillContext(this, chunkCapacity, sharedContext, true, ascendingMapping);
         }
     }
 
     @Override
-    public FillContext makeFillContext(final int chunkCapacity, final SharedContext sharedContext) {
-        return new FillContext(this, chunkCapacity, sharedContext, false);
+    public ChunkSource.FillContext makeFillContext(final int chunkCapacity, final SharedContext sharedContext) {
+        return new FillContext(this, chunkCapacity, sharedContext, false, ascendingMapping);
     }
 
     @Override
@@ -413,8 +521,11 @@ public class RedirectedColumnSource<T> extends AbstractColumnSource<T> implement
 
         effectiveContext.shareable.ensureMappedKeysInitialized(rowRedirection, usePrev, rowSequence);
 
-        if (FillUnordered.providesFillUnordered(innerSource)) {
-            effectiveContext.doUnorderedFill((FillUnordered) innerSource, usePrev, destination);
+        if (ascendingMapping) {
+            effectiveContext.doOrderedFillAscending(innerSource, usePrev, destination);
+        } else if (FillUnordered.providesFillUnordered(innerSource)) {
+            // noinspection unchecked
+            effectiveContext.doUnorderedFill((FillUnordered<Values>) innerSource, usePrev, destination);
         } else {
             effectiveContext.doOrderedFillAndPermute(innerSource, usePrev, destination);
         }
@@ -432,15 +543,15 @@ public class RedirectedColumnSource<T> extends AbstractColumnSource<T> implement
         private final PermuteKernel permuteKernel;
         private final boolean booleanNullByte;
 
-        FillContext(final RedirectedColumnSource cs, final int chunkCapacity, final SharedContext sharedContext,
-                boolean booleanNullByte) {
+        FillContext(final RedirectedColumnSource<?> cs, final int chunkCapacity, final SharedContext sharedContext,
+                boolean booleanNullByte, boolean ascendingMapping) {
             this.booleanNullByte = booleanNullByte;
-            shareable = sharedContext == null ? new Shareable(false, cs, chunkCapacity)
+            shareable = sharedContext == null ? new Shareable(false, cs, chunkCapacity, ascendingMapping)
                     : sharedContext.getOrCreate(new SharingKey(cs.rowRedirection),
-                            () -> new Shareable(true, cs, chunkCapacity));
+                            () -> new Shareable(true, cs, chunkCapacity, ascendingMapping));
             innerFillContext = cs.innerSource.makeFillContext(chunkCapacity, shareable);
 
-            if (FillUnordered.providesFillUnordered(cs.innerSource)) {
+            if (ascendingMapping || FillUnordered.providesFillUnordered(cs.innerSource)) {
                 innerOrderedValues = null;
                 innerOrderedValuesSlice = null;
                 dupExpandKernel = null;
@@ -494,22 +605,33 @@ public class RedirectedColumnSource<T> extends AbstractColumnSource<T> implement
             private boolean sortedFillContextReusable;
             private int uniqueKeyCount;
             private boolean hasNulls;
+            private int nullCount;
             private RowSequence innerRowSequence;
 
-            private Shareable(final boolean shared, final RedirectedColumnSource cs, final int chunkCapacity) {
+            private Shareable(final boolean shared, final RedirectedColumnSource<?> cs, final int chunkCapacity,
+                    boolean ascendingMapping) {
                 this.shared = shared;
 
                 rowRedirectionFillContext = cs.rowRedirection.makeFillContext(chunkCapacity, this);
                 mappedKeys = WritableLongChunk.makeWritableChunk(chunkCapacity);
 
-                sortKernelContext = LongIntTimsortKernel.createContext(chunkCapacity);
-                sortedMappedKeys = shared ? WritableLongChunk.makeWritableChunk(chunkCapacity) : mappedKeys;
-                mappedKeysOrder = WritableIntChunk.makeWritableChunk(chunkCapacity);
-                // Note that we can't just compact mappedKeys in place, in case we're sharing with another
-                // source with an inner source that is a FillUnordered.
-                compactedMappedKeys = WritableLongChunk.makeWritableChunk(chunkCapacity);
-                nonNullCompactedMappedKeys = ResettableWritableLongChunk.makeResettableChunk();
-                runLengths = WritableIntChunk.makeWritableChunk(chunkCapacity);
+                if (!ascendingMapping) {
+                    sortKernelContext = LongIntTimsortKernel.createContext(chunkCapacity);
+                    sortedMappedKeys = shared ? WritableLongChunk.makeWritableChunk(chunkCapacity) : mappedKeys;
+                    mappedKeysOrder = WritableIntChunk.makeWritableChunk(chunkCapacity);
+                    // Note that we can't just compact mappedKeys in place, in case we're sharing with another
+                    // source with an inner source that is a FillUnordered.
+                    compactedMappedKeys = WritableLongChunk.makeWritableChunk(chunkCapacity);
+                    nonNullCompactedMappedKeys = ResettableWritableLongChunk.makeResettableChunk();
+                    runLengths = WritableIntChunk.makeWritableChunk(chunkCapacity);
+                } else {
+                    sortKernelContext = null;
+                    sortedMappedKeys = null;
+                    mappedKeysOrder = null;
+                    compactedMappedKeys = null;
+                    nonNullCompactedMappedKeys = null;
+                    runLengths = null;
+                }
             }
 
             private void ensureMappedKeysInitialized(@NotNull final RowRedirection rowRedirection,
@@ -528,6 +650,21 @@ public class RedirectedColumnSource<T> extends AbstractColumnSource<T> implement
                     rowRedirection.fillPrevChunk(rowRedirectionFillContext, mappedKeys, rowSequence);
                 } else {
                     rowRedirection.fillChunk(rowRedirectionFillContext, mappedKeys, rowSequence);
+                }
+
+                if (rowRedirection.ascendingMapping()) {
+                    nullCount = 0;
+                    for (int ii = mappedKeys.size() - 1; ii >= 0; ii--) {
+                        if (mappedKeys.get(ii) == RowSequence.NULL_ROW_KEY) {
+                            nullCount++;
+                        } else {
+                            break;
+                        }
+                    }
+
+                    if (nullCount > 0) {
+                        mappedKeys.setSize(mappedKeys.size() - nullCount);
+                    }
                 }
 
                 mappedKeysReusable = shared;
@@ -606,20 +743,17 @@ public class RedirectedColumnSource<T> extends AbstractColumnSource<T> implement
                 rowRedirectionFillContext.close();
                 mappedKeys.close();
 
-                sortKernelContext.close();
-                if (sortedMappedKeys != mappedKeys) {
+                if (sortedMappedKeys != null && sortedMappedKeys != mappedKeys) {
                     sortedMappedKeys.close();
                 }
-                mappedKeysOrder.close();
-                compactedMappedKeys.close();
-                nonNullCompactedMappedKeys.close();
-                runLengths.close();
+                SafeCloseable.closeAll(sortKernelContext, mappedKeysOrder, compactedMappedKeys,
+                        nonNullCompactedMappedKeys, runLengths);
 
                 super.close();
             }
         }
 
-        private void doUnorderedFill(@NotNull final FillUnordered innerSource, final boolean usePrev,
+        private void doUnorderedFill(@NotNull final FillUnordered<Values> innerSource, final boolean usePrev,
                 @NotNull final WritableChunk<? super Values> destination) {
             if (usePrev) {
                 innerSource.fillPrevChunkUnordered(innerFillContext, destination, shareable.mappedKeys);
@@ -666,5 +800,30 @@ public class RedirectedColumnSource<T> extends AbstractColumnSource<T> implement
             destination.setSize(shareable.totalKeyCount);
             permuteKernel.permute(innerOrderedValues, shareable.mappedKeysOrder, destination);
         }
+
+        private void doOrderedFillAscending(@NotNull final ColumnSource<?> innerSource, final boolean usePrev,
+                @NotNull final WritableChunk<? super Values> destination) {
+            try (RowSequence innerOk =
+                    RowSequenceFactory.wrapRowKeysChunkAsRowSequence(LongChunk.downcast(shareable.mappedKeys))) {
+                // Read compacted, ordered keys
+                if (usePrev) {
+                    innerSource.fillPrevChunk(innerFillContext, destination, innerOk);
+                } else {
+                    innerSource.fillChunk(innerFillContext, destination, innerOk);
+                }
+
+                if (shareable.nullCount > 0) {
+                    final int startOff = destination.size();
+                    final int finalSize = startOff + shareable.nullCount;
+                    destination.setSize(finalSize);
+                    destination.fillWithNullValue(startOff, shareable.nullCount);
+                }
+            }
+        }
+    }
+
+    @Override
+    public boolean isStateless() {
+        return innerSource.isStateless();
     }
 }

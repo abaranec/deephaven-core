@@ -1,8 +1,10 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.select;
 
-import io.deephaven.engine.exceptions.ExpressionException;
-import io.deephaven.engine.table.MatchPair;
-import io.deephaven.engine.table.impl.select.MatchPairFactory;
+import io.deephaven.api.expression.ExpressionException;
+import io.deephaven.engine.table.impl.MatchPair;
 import junit.framework.TestCase;
 
 public class MatchPairFactoryTest extends TestCase {

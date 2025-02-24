@@ -1,0 +1,21 @@
+plugins {
+    id 'io.deephaven.project.register'
+}
+
+project.subprojects { Project p ->
+    p.plugins.apply('java-library')
+    p.plugins.apply('io.deephaven.project.register')
+
+    p.dependencies {
+        // Standard dependencies all providers will need, but should not be shadowed
+        shadow project(':authentication')
+        shadow project(':Configuration')
+        shadow project(':log-factory')
+    }
+
+    // ensure we build the shadow jar as part of simple builds
+    p.tasks.findByName('assemble').dependsOn(p.tasks.named('shadowJar'))
+
+    // Let projects be named consistently
+    p.base.archivesName = "deephaven-${p.name}-authentication-provider"
+}

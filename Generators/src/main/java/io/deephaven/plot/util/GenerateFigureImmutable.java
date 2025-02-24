@@ -1,16 +1,14 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.plot.util;
 
-import io.deephaven.configuration.Configuration;
+import io.deephaven.gen.GenUtils;
 import io.deephaven.plot.*;
 import io.deephaven.plot.datasets.DataSeries;
 import io.deephaven.plot.datasets.multiseries.MultiSeries;
 import io.deephaven.plot.errors.PlotExceptionCause;
-import io.deephaven.libs.GroovyStaticImportGenerator;
-import io.deephaven.libs.GroovyStaticImportGenerator.JavaFunction;
+import io.deephaven.gen.JavaFunction;
 
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -22,8 +20,11 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
-import static io.deephaven.plot.util.PlotGeneratorUtils.indent;
+import static io.deephaven.gen.GenUtils.indent;
+import static io.deephaven.gen.GenUtils.typesToImport;
 
 /**
  * Creates a functional interface for plotting.
@@ -32,14 +33,15 @@ import static io.deephaven.plot.util.PlotGeneratorUtils.indent;
 public class GenerateFigureImmutable {
     // See also GroovyStaticImportGenerator
 
-    private static Logger log = Logger.getLogger(GenerateFigureImmutable.class.toString());
+    private static final Logger log = Logger.getLogger(GenerateFigureImmutable.class.toString());
+    private static final String GRADLE_TASK = ":Generators:generateFigureImmutable";
 
     private static final String CLASS_NAME_INTERFACE = "io.deephaven.plot.Figure";
     private static final String CLASS_NAME_IMPLEMENTATION = "io.deephaven.plot.FigureImpl";
 
     private final String outputClass;
     private final String outputClassNameShort;
-    private boolean isInterface;
+    private final boolean isInterface;
     private final String[] imports;
     private final String[] interfaces;
     private final String[] seriesInterfaces;
@@ -63,7 +65,7 @@ public class GenerateFigureImmutable {
         this.functionNamer = functionNamer == null ? JavaFunction::getMethodName : functionNamer;
 
         for (final String imp : interfaces) {
-            final Class<?> c = Class.forName(imp);
+            final Class<?> c = Class.forName(imp, false, Thread.currentThread().getContextClassLoader());
             log.info("Processing class: " + c);
 
             for (final Method m : c.getMethods()) {
@@ -91,15 +93,14 @@ public class GenerateFigureImmutable {
 
 
     private JavaFunction signature(final JavaFunction f) {
-        return new JavaFunction(
-                outputClass,
-                outputClassNameShort,
-                functionNamer.apply(f),
-                f.getTypeParameters(),
-                f.getReturnType(),
-                f.getParameterTypes(),
-                f.getParameterNames(),
-                f.isVarArgs());
+        final Type returnType = new Type() {
+            @Override
+            public String getTypeName() {
+                return isInterface ? "Figure" : "FigureImpl";
+            }
+        };
+
+        return f.transform(outputClass, outputClassNameShort, functionNamer.apply(f), returnType);
     }
 
     private void addPublicNonStatic(Method m) {
@@ -111,7 +112,7 @@ public class GenerateFigureImmutable {
         boolean skip = skip(f);
 
         if (skip) {
-            log.warning("*** Skipping function: " + f);
+            log.info("*** Skipping function: " + f);
             return;
         }
 
@@ -157,55 +158,14 @@ public class GenerateFigureImmutable {
         return imports;
     }
 
-    private static Set<String> typesToImport(Type t) {
-        Set<String> result = new LinkedHashSet<>();
-
-        if (t instanceof Class) {
-            final Class<?> c = (Class) t;
-            final boolean isArray = c.isArray();
-            final boolean isPrimitive = c.isPrimitive();
-
-            if (isPrimitive) {
-                return result;
-            } else if (isArray) {
-                return typesToImport(c.getComponentType());
-            } else {
-                result.add(t.getTypeName());
-            }
-        } else if (t instanceof ParameterizedType) {
-            final ParameterizedType pt = (ParameterizedType) t;
-            result.add(pt.getRawType().getTypeName());
-
-            for (Type a : pt.getActualTypeArguments()) {
-                result.addAll(typesToImport(a));
-            }
-        } else if (t instanceof TypeVariable) {
-            // type variables are generic so they don't need importing
-            return result;
-        } else if (t instanceof GenericArrayType) {
-            GenericArrayType at = (GenericArrayType) t;
-            return typesToImport(at.getGenericComponentType());
-        } else {
-            throw new UnsupportedOperationException("Unsupported Type type: " + t.getClass());
-        }
-
-        return result;
-    }
-
     private String generateImplements() {
         final StringBuilder sb = new StringBuilder();
 
         if (isInterface) {
-            sb.append(" extends ");
-            sb.append("java.io.Serializable");
-
-            for (final String[] ii : new String[][] {interfaces, seriesInterfaces}) {
-                for (final String iface : ii) {
-                    // final String[] siface = iface.split("[.]");
-                    // final String name = siface[siface.length - 1];
-                    sb.append(", ").append(iface);
-                }
-            }
+            sb.append(" extends ").append(
+                    Stream.concat(
+                            Stream.of(interfaces),
+                            Stream.of(seriesInterfaces)).collect(Collectors.joining(", ")));
         } else {
             sb.append(" implements " + CLASS_NAME_INTERFACE);
         }
@@ -215,15 +175,7 @@ public class GenerateFigureImmutable {
 
     private String generateCode() {
 
-        String code = "/*\n" +
-                " * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending\n" +
-                " */\n\n" +
-                "/****************************************************************************************************************************\n"
-                +
-                " ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - Run GenerateFigureImmutable or \"./gradlew :Generators:generateFigureImmutable\" to regenerate\n"
-                +
-                " ****************************************************************************************************************************/\n\n";
-
+        String code = GenUtils.javaHeader(GenerateFigureImmutable.class, GRADLE_TASK);
         code += "package io.deephaven.plot;\n\n";
 
         Set<String> imports = generateImports();
@@ -235,7 +187,7 @@ public class GenerateFigureImmutable {
         code += "\n";
         code += "/** An interface for constructing plots.  A Figure is immutable, and all function calls return a new immutable Figure instance.";
         code += "*/\n";
-        code += "@SuppressWarnings({\"unused\", \"RedundantCast\", \"SameParameterValue\"})\n";
+        code += "@SuppressWarnings({\"unused\", \"RedundantCast\", \"SameParameterValue\", \"rawtypes\"})\n";
         code += "public" + (isInterface ? " interface " : " class ") + outputClassNameShort + generateImplements()
                 + " {\n";
 
@@ -249,7 +201,7 @@ public class GenerateFigureImmutable {
             final boolean skip = skip(f);
 
             if (skip) {
-                log.warning("*** Skipping function: " + f);
+                log.info("*** Skipping function: " + f);
                 continue;
             }
 
@@ -264,7 +216,7 @@ public class GenerateFigureImmutable {
             final boolean skip = skip(f);
 
             if (skip) {
-                log.warning("*** Skipping function: " + f);
+                log.info("*** Skipping function: " + f);
                 continue;
             }
 
@@ -506,39 +458,39 @@ public class GenerateFigureImmutable {
                 +
                 (isInterface ? "\n" +
                         "\n" +
-                        "    @Override  Figure save( java.lang.String saveLocation );\n" +
+                        "    @Override  Figure save( java.lang.String path );\n" +
                         "\n" +
-                        "    @Override  Figure save( java.lang.String saveLocation, int width, int height );\n" +
+                        "    @Override  Figure save( java.lang.String path, int width, int height );\n" +
                         "\n" +
-                        "    @Override  Figure save( java.lang.String saveLocation, boolean wait, long timeoutSeconds );\n"
+                        "    @Override  Figure save( java.lang.String path, boolean wait, long timeoutSeconds );\n"
                         +
                         "\n" +
-                        "    @Override  Figure save( java.lang.String saveLocation, int width, int height, boolean wait, long timeoutSeconds );\n"
-                        : "\n" + "    @Override public  FigureImpl save( java.lang.String saveLocation ) {\n" +
+                        "    @Override  Figure save( java.lang.String path, int width, int height, boolean wait, long timeoutSeconds );\n"
+                        : "\n" + "    @Override public  FigureImpl save( java.lang.String path ) {\n" +
                                 "        final BaseFigureImpl fc = onDisplay();\n" +
-                                "        figure(fc).save( saveLocation );\n" +
+                                "        figure(fc).save( path );\n" +
                                 "        return make(fc);\n" +
                                 "    }\n" +
                                 "\n" +
-                                "    @Override public  FigureImpl save( java.lang.String saveLocation, int width, int height ) {\n"
+                                "    @Override public  FigureImpl save( java.lang.String path, int width, int height ) {\n"
                                 +
                                 "        final BaseFigureImpl fc = onDisplay();\n" +
-                                "        figure(fc).save( saveLocation, width, height );\n" +
+                                "        figure(fc).save( path, width, height );\n" +
                                 "        return make(fc);\n" +
                                 "    }\n" +
                                 "\n" +
                                 "\n" +
-                                "    @Override public  FigureImpl save( java.lang.String saveLocation, boolean wait, long timeoutSeconds ) {\n"
+                                "    @Override public  FigureImpl save( java.lang.String path, boolean wait, long timeoutSeconds ) {\n"
                                 +
                                 "        final BaseFigureImpl fc = onDisplay();\n" +
-                                "        figure(fc).save( saveLocation, wait, timeoutSeconds );\n" +
+                                "        figure(fc).save( path, wait, timeoutSeconds );\n" +
                                 "        return make(fc);\n" +
                                 "    }\n" +
                                 "\n" +
-                                "    @Override public  FigureImpl save( java.lang.String saveLocation, int width, int height, boolean wait, long timeoutSeconds ) {\n"
+                                "    @Override public  FigureImpl save( java.lang.String path, int width, int height, boolean wait, long timeoutSeconds ) {\n"
                                 +
                                 "        final BaseFigureImpl fc = onDisplay();\n" +
-                                "        figure(fc).save( saveLocation, width, height, wait, timeoutSeconds );\n" +
+                                "        figure(fc).save( path, width, height, wait, timeoutSeconds );\n" +
                                 "        return make(fc);\n" +
                                 "    }\n\n")
                 + (isInterface ? ""
@@ -557,15 +509,15 @@ public class GenerateFigureImmutable {
                                 "    private FigureImpl applyFunctionalProperties() {\n" +
                                 "        final Map<Table, java.util.Set<java.util.function.Function<Table, Table>>> tableFunctionMap = getFigure().getTableFunctionMap();\n"
                                 +
-                                "        final Map<io.deephaven.engine.table.TableMap, java.util.Set<java.util.function.Function<io.deephaven.engine.table.TableMap, io.deephaven.engine.table.TableMap>>> tableMapFunctionMap = getFigure().getTableMapFunctionMap();\n"
+                                "        final Map<io.deephaven.engine.table.PartitionedTable, java.util.Set<java.util.function.Function<io.deephaven.engine.table.PartitionedTable, io.deephaven.engine.table.PartitionedTable>>> partitionedTableFunctionMap = getFigure().getPartitionedTableFunctionMap();\n"
                                 +
                                 "        final java.util.List<io.deephaven.plot.util.functions.FigureImplFunction> figureFunctionList = getFigure().getFigureFunctionList();\n"
                                 +
                                 "        final Map<Table, Table> finalTableComputation = new HashMap<>();\n" +
-                                "        final Map<io.deephaven.engine.table.TableMap, io.deephaven.engine.table.TableMap> finalTableMapComputation = new HashMap<>();\n"
+                                "        final Map<io.deephaven.engine.table.PartitionedTable, io.deephaven.engine.table.PartitionedTable> finalPartitionedTableComputation = new HashMap<>();\n"
                                 +
                                 "        final java.util.Set<Table> allTables = new java.util.HashSet<>();\n" +
-                                "        final java.util.Set<io.deephaven.engine.table.TableMap> allTableMaps = new java.util.HashSet<>();\n"
+                                "        final java.util.Set<io.deephaven.engine.table.PartitionedTable> allPartitionedTables = new java.util.HashSet<>();\n"
                                 +
                                 "\n" +
                                 "        for(final io.deephaven.plot.util.tables.TableHandle h : getFigure().getTableHandles()) {\n"
@@ -573,15 +525,15 @@ public class GenerateFigureImmutable {
                                 "            allTables.add(h.getTable());\n" +
                                 "        }\n" +
                                 "\n" +
-                                "        for(final io.deephaven.plot.util.tables.TableMapHandle h : getFigure().getTableMapHandles()) {\n"
+                                "        for(final io.deephaven.plot.util.tables.PartitionedTableHandle h : getFigure().getPartitionedTableHandles()) {\n"
                                 +
-                                "            if(h instanceof io.deephaven.plot.util.tables.TableBackedTableMapHandle) {\n"
+                                "            if(h instanceof io.deephaven.plot.util.tables.TableBackedPartitionedTableHandle) {\n"
                                 +
-                                "                allTables.add(((io.deephaven.plot.util.tables.TableBackedTableMapHandle) h).getTable());\n"
+                                "                allTables.add(((io.deephaven.plot.util.tables.TableBackedPartitionedTableHandle) h).getTable());\n"
                                 +
                                 "            }\n" +
-                                "            if(h.getTableMap() != null) {\n" +
-                                "                allTableMaps.add(h.getTableMap());\n" +
+                                "            if(h.getPartitionedTable() != null) {\n" +
+                                "                allPartitionedTables.add(h.getPartitionedTable());\n" +
                                 "            }\n" +
                                 "        }\n" +
                                 "\n" +
@@ -611,39 +563,42 @@ public class GenerateFigureImmutable {
                                 "            h.setTable(finalTableComputation.get(h.getTable()));\n" +
                                 "        }\n" +
                                 "\n" +
-                                "        for(final io.deephaven.plot.util.tables.TableMapHandle h : getFigure().getTableMapHandles()) {\n"
+                                "        for(final io.deephaven.plot.util.tables.PartitionedTableHandle h : getFigure().getPartitionedTableHandles()) {\n"
                                 +
-                                "            if(h instanceof io.deephaven.plot.util.tables.TableBackedTableMapHandle) {\n"
+                                "            if(h instanceof io.deephaven.plot.util.tables.TableBackedPartitionedTableHandle) {\n"
                                 +
-                                "                ((io.deephaven.plot.util.tables.TableBackedTableMapHandle) h).setTable(finalTableComputation.get(((io.deephaven.plot.util.tables.TableBackedTableMapHandle) h).getTable()));\n"
+                                "                ((io.deephaven.plot.util.tables.TableBackedPartitionedTableHandle) h).setTable(finalTableComputation.get(((io.deephaven.plot.util.tables.TableBackedPartitionedTableHandle) h).getTable()));\n"
                                 +
                                 "            }\n" +
                                 "        }\n" +
                                 "\n" +
-                                "        for(final io.deephaven.engine.table.TableMap initTableMap : allTableMaps) {\n"
+                                "        for(final io.deephaven.engine.table.PartitionedTable initPartitionedTable : allPartitionedTables) {\n"
                                 +
-                                "            if(tableMapFunctionMap.get(initTableMap) != null) {\n" +
-                                "                finalTableMapComputation.computeIfAbsent(initTableMap, t -> {\n" +
-                                "                    final java.util.Set<java.util.function.Function<io.deephaven.engine.table.TableMap, io.deephaven.engine.table.TableMap>> functions = tableMapFunctionMap.get(initTableMap);\n"
+                                "            if(partitionedTableFunctionMap.get(initPartitionedTable) != null) {\n" +
+                                "                finalPartitionedTableComputation.computeIfAbsent(initPartitionedTable, t -> {\n"
                                 +
-                                "                    io.deephaven.engine.table.TableMap resultTableMap = initTableMap;\n"
+                                "                    final java.util.Set<java.util.function.Function<io.deephaven.engine.table.PartitionedTable, io.deephaven.engine.table.PartitionedTable>> functions = partitionedTableFunctionMap.get(initPartitionedTable);\n"
+                                +
+                                "                    io.deephaven.engine.table.PartitionedTable resultPartitionedTable = initPartitionedTable;\n"
                                 +
                                 "\n" +
-                                "                    for(final java.util.function.Function<io.deephaven.engine.table.TableMap, io.deephaven.engine.table.TableMap> f : functions) {\n"
+                                "                    for(final java.util.function.Function<io.deephaven.engine.table.PartitionedTable, io.deephaven.engine.table.PartitionedTable> f : functions) {\n"
                                 +
-                                "                        resultTableMap = f.apply(resultTableMap);\n" +
+                                "                        resultPartitionedTable = f.apply(resultPartitionedTable);\n" +
                                 "                    }\n" +
                                 "\n" +
-                                "                    return resultTableMap;\n" +
+                                "                    return resultPartitionedTable;\n" +
                                 "                });\n" +
                                 "            } else {\n" +
-                                "                finalTableMapComputation.put(initTableMap, initTableMap);\n" +
+                                "                finalPartitionedTableComputation.put(initPartitionedTable, initPartitionedTable);\n"
+                                +
                                 "            }\n" +
                                 "        }\n" +
                                 "\n" +
-                                "        for(final io.deephaven.plot.util.tables.TableMapHandle h : getFigure().getTableMapHandles()) {\n"
+                                "        for(final io.deephaven.plot.util.tables.PartitionedTableHandle h : getFigure().getPartitionedTableHandles()) {\n"
                                 +
-                                "            h.setTableMap(finalTableMapComputation.get(h.getTableMap()));\n" +
+                                "            h.setPartitionedTable(finalPartitionedTableComputation.get(h.getPartitionedTable()));\n"
+                                +
                                 "        }\n" +
                                 "\n" +
                                 "        FigureImpl finalFigure = this;\n" +
@@ -653,7 +608,7 @@ public class GenerateFigureImmutable {
                                 "        }\n" +
                                 "\n" +
                                 "        tableFunctionMap.clear();\n" +
-                                "        tableMapFunctionMap.clear();\n" +
+                                "        partitionedTableFunctionMap.clear();\n" +
                                 "        figureFunctionList.clear();\n" +
                                 "\n" +
                                 "        return finalFigure;\n" +
@@ -662,6 +617,7 @@ public class GenerateFigureImmutable {
                                 + "\n");
     }
 
+    @SuppressWarnings("DuplicateBranchesInSwitch")
     private static String createInstanceGetter(final JavaFunction f) {
         switch (f.getClassName()) {
             case "io.deephaven.plot.BaseFigure":
@@ -683,136 +639,80 @@ public class GenerateFigureImmutable {
     }
 
     private String createFunctionSignature(final JavaFunction f) {
-        String s = "    " + (isInterface ? "@Override " : "@Override public ");
-
-        if (f.getTypeParameters().length > 0) {
-            s += "<";
-
-            for (int i = 0; i < f.getTypeParameters().length; i++) {
-                if (i != 0) {
-                    s += ",";
-                }
-
-                TypeVariable<Method> t = f.getTypeParameters()[i];
-                log.info("BOUNDS: " + Arrays.toString(t.getBounds()));
-                s += t;
-
-                Type[] bounds = t.getBounds();
-
-                if (bounds.length != 1) {
-                    throw new RuntimeException("Unsupported bounds: " + Arrays.toString(bounds));
-                }
-
-                Type bound = bounds[0];
-
-                if (!bound.equals(Object.class)) {
-                    s += " extends " + bound.getTypeName();
-                }
-
-            }
-
-            s += ">";
-        }
-
-        s += " " + outputClassNameShort + " " + f.getMethodName() + "(";
-
-        for (int i = 0; i < f.getParameterTypes().length; i++) {
-            if (i != 0) {
-                s += ",";
-            }
-
-            Type t = f.getParameterTypes()[i];
-
-            String typeString = t.getTypeName().replace("$", ".");
-
-            if (f.isVarArgs() && i == f.getParameterTypes().length - 1) {
-                final int index = typeString.lastIndexOf("[]");
-                typeString = typeString.substring(0, index) + "..." + typeString.substring(index + 2);
-            }
-
-            s += " " + typeString + " " + f.getParameterNames()[i];
-        }
-
-        s += " )";
-
-        return s;
-    }
-
-    private static String createCallArgs(final JavaFunction f) {
-        String callArgs = "";
-
-        for (int i = 0; i < f.getParameterTypes().length; i++) {
-            if (i != 0) {
-                callArgs += ",";
-            }
-
-            callArgs += " " + f.getParameterNames()[i];
-        }
-
-        return callArgs;
+        return GenUtils.javaFunctionSignature(f, (isInterface ? "@Override" : "@Override public"));
     }
 
     private String createFunction(final JavaFunction f) {
-        final String returnType = f.getReturnType().getTypeName().replace("$", ".");
-        final Class returnClass = f.getReturnClass();
+        final Class<?> returnClass = f.getReturnClass();
         final JavaFunction signature = signature(f);
 
-        String s = createFunctionSignature(f);
+        String sigPrefix;
+        String javadoc = null;
+        String funcBody;
 
         if (isInterface) {
-            return s + ";\n";
-        }
-
-        final String callArgs = createCallArgs(f);
-
-        s += " {\n" + indent(2) + "final BaseFigureImpl fc = this.figure.copy();\n";
-
-        if (returnClass != null && BaseFigure.class.isAssignableFrom(returnClass)) {
-            s += indent(2) + createInstanceGetter(f) + "." + signature.getMethodName() + "(" + callArgs + ");\n" +
-                    indent(2) + "return make(fc);\n";
-        } else if (returnClass != null && Chart.class.isAssignableFrom(returnClass)) {
-            s += indent(2) + "final ChartImpl chart = (ChartImpl) " + createInstanceGetter(f) + "."
-                    + signature.getMethodName() + "(" + callArgs + ");\n" +
-                    indent(2) + "return make(chart);\n";
-        } else if (returnClass != null && Axes.class.isAssignableFrom(returnClass)) {
-            s += indent(2) + "final AxesImpl axes = (AxesImpl) " + createInstanceGetter(f) + "."
-                    + signature.getMethodName() + "(" + callArgs + ");\n" +
-                    indent(2) + "return make(axes);\n";
-        } else if (returnClass != null && Axis.class.isAssignableFrom(returnClass)
-                && f.getClassName().equals("io.deephaven.plot.Axes")) {
-            s += indent(2) + "final AxesImpl axes = " + createInstanceGetter(f) + ";\n";
-            s += indent(2) + "final AxisImpl axis = (AxisImpl) axes." + signature.getMethodName() + "(" + callArgs
-                    + ");\n" +
-                    indent(2) + "return make(axes, axis);\n";
-        } else if (returnClass != null && Axis.class.isAssignableFrom(returnClass)) {
-            s += indent(2) + "final AxisImpl axis = (AxisImpl) " + createInstanceGetter(f) + "."
-                    + signature.getMethodName() + "(" + callArgs + ");\n" +
-                    indent(2) + "return make(null, axis);\n";
-        } else if (returnClass != null && DataSeries.class.isAssignableFrom(returnClass)) {
-            s += indent(2) + "final DataSeriesInternal series = (DataSeriesInternal) " + createInstanceGetter(f) + "."
-                    + signature.getMethodName() + "(" + callArgs + ");\n" +
-                    indent(2) + "return make(series);\n";
-        } else if (returnClass != null && Series.class.isAssignableFrom(returnClass)) {
-            s += indent(2) + "final SeriesInternal series = (SeriesInternal) " + createInstanceGetter(f) + "."
-                    + signature.getMethodName() + "(" + callArgs + ");\n" +
-                    indent(2) + "return make(series);\n";
-        } else if (returnClass != null && MultiSeries.class.isAssignableFrom(returnClass)) {
-            s += indent(2) + "final " + returnClass.getSimpleName() + " mseries = " + createInstanceGetter(f) + "."
-                    + signature.getMethodName() + "(" + callArgs + ");\n" +
-                    indent(2) + "return make((SeriesInternal) mseries);\n";
-        } else if (returnClass != null && void.class.equals(returnClass)) {
-            s += indent(2) + createInstanceGetter(f) + "." + signature.getMethodName() + "(" + callArgs + ");\n" +
-                    indent(2) + "return make(fc);\n";
+            sigPrefix = "@Override";
+            funcBody = ";\n";
         } else {
-            System.out.println("WARN: UnsupportedReturnType: " + returnType + " " + f);
+            final String callArgs = GenUtils.javaArgString(f, false);
+            sigPrefix = "@Override public";
+            funcBody = " {\n" + indent(2) + "final BaseFigureImpl fc = this.figure.copy();\n";
 
-            s += indent(2) + createInstanceGetter(f) + "." + signature.getMethodName() + "(" + callArgs + ");\n" +
-                    indent(2) + "return make(fc);\n";
+            if (returnClass != null && BaseFigure.class.isAssignableFrom(returnClass)) {
+                funcBody += indent(2) + createInstanceGetter(f) + "." + signature.getMethodName() + "(" + callArgs
+                        + ");\n" +
+                        indent(2) + "return make(fc);\n";
+            } else if (returnClass != null && Chart.class.isAssignableFrom(returnClass)) {
+                funcBody += indent(2) + "final ChartImpl chart = (ChartImpl) " + createInstanceGetter(f) + "."
+                        + signature.getMethodName() + "(" + callArgs + ");\n" +
+                        indent(2) + "return make(chart);\n";
+            } else if (returnClass != null && Axes.class.isAssignableFrom(returnClass)) {
+                funcBody += indent(2) + "final AxesImpl axes = (AxesImpl) " + createInstanceGetter(f) + "."
+                        + signature.getMethodName() + "(" + callArgs + ");\n" +
+                        indent(2) + "return make(axes);\n";
+            } else if (returnClass != null && Axis.class.isAssignableFrom(returnClass)
+                    && f.getClassName().equals("io.deephaven.plot.Axes")) {
+                funcBody += indent(2) + "final AxesImpl axes = " + createInstanceGetter(f) + ";\n";
+                funcBody += indent(2) + "final AxisImpl axis = (AxisImpl) axes." + signature.getMethodName() + "("
+                        + callArgs
+                        + ");\n" +
+                        indent(2) + "return make(axes, axis);\n";
+            } else if (returnClass != null && Axis.class.isAssignableFrom(returnClass)) {
+                funcBody += indent(2) + "final AxisImpl axis = (AxisImpl) " + createInstanceGetter(f) + "."
+                        + signature.getMethodName() + "(" + callArgs + ");\n" +
+                        indent(2) + "return make(null, axis);\n";
+            } else if (returnClass != null && DataSeries.class.isAssignableFrom(returnClass)) {
+                funcBody += indent(2) + "final DataSeriesInternal series = (DataSeriesInternal) "
+                        + createInstanceGetter(f) + "."
+                        + signature.getMethodName() + "(" + callArgs + ");\n" +
+                        indent(2) + "return make(series);\n";
+            } else if (returnClass != null && Series.class.isAssignableFrom(returnClass)) {
+                funcBody +=
+                        indent(2) + "final SeriesInternal series = (SeriesInternal) " + createInstanceGetter(f) + "."
+                                + signature.getMethodName() + "(" + callArgs + ");\n" +
+                                indent(2) + "return make(series);\n";
+            } else if (returnClass != null && MultiSeries.class.isAssignableFrom(returnClass)) {
+                funcBody += indent(2) + "final " + returnClass.getSimpleName() + " mseries = " + createInstanceGetter(f)
+                        + "."
+                        + signature.getMethodName() + "(" + callArgs + ");\n" +
+                        indent(2) + "return make((SeriesInternal) mseries);\n";
+            } else if (void.class.equals(returnClass)) {
+                funcBody += indent(2) + createInstanceGetter(f) + "." + signature.getMethodName() + "(" + callArgs
+                        + ");\n" +
+                        indent(2) + "return make(fc);\n";
+            } else {
+                final String returnType = f.getReturnType().getTypeName().replace("$", ".");
+                System.out.println("WARN: UnsupportedReturnType: " + returnType + " " + f);
+
+                funcBody += indent(2) + createInstanceGetter(f) + "." + signature.getMethodName() + "(" + callArgs
+                        + ");\n" +
+                        indent(2) + "return make(fc);\n";
+            }
+
+            funcBody += indent(1) + "}\n";
         }
 
-        s += indent(1) + "}\n";
-
-        return s;
+        return GenUtils.javaFunction(signature, sigPrefix, javadoc, funcBody);
     }
 
     private String createSignatureGroupFunction(final TreeSet<JavaFunction> fs) {
@@ -824,74 +724,79 @@ public class GenerateFigureImmutable {
         final JavaFunction f0 = fs.first();
         final JavaFunction s0 = signature(f0);
 
-
-        final String signature = createFunctionSignature(s0);
+        String sigPrefix;
+        String javadoc = null;
+        String funcBody;
 
         if (isInterface) {
-            return signature + ";\n";
+            sigPrefix = "@Override";
+            funcBody = ";\n";
+        } else {
+            final String callArgs = GenUtils.javaArgString(f0, false);
+            sigPrefix = "@Override public";
+            final String signature = GenUtils.javaFunctionSignature(s0, sigPrefix);
+            funcBody = " {\n" +
+                    indent(2) + "final BaseFigureImpl fc = this.figure.copy();\n" +
+                    indent(2) + "Series series = series(fc);\n";
+
+            boolean firstFunc = true;
+
+            for (final JavaFunction f : fs) {
+                final String returnType = f.getReturnType().getTypeName().replace("$", ".");
+                Class<?> returnClass = f.getReturnClass();
+
+                if (returnClass == null) {
+                    throw new UnsupportedOperationException("Null return class. f=" + f);
+                }
+
+                if (firstFunc) {
+                    funcBody += indent(2) + "if( series instanceof " + f.getClassNameShort() + "){\n";
+                } else {
+                    funcBody += indent(2) + "} else if( series instanceof " + f.getClassNameShort() + "){\n";
+                }
+
+                funcBody +=
+                        indent(3) + returnClass.getSimpleName() + " result = ((" + f.getClassNameShort() + ") series)."
+                                + f.getMethodName() + "(" + callArgs + ");\n";
+
+                if (DataSeries.class.isAssignableFrom(returnClass)) {
+                    funcBody += indent(3) + "return make((DataSeriesInternal)result);\n";
+                } else if (MultiSeries.class.isAssignableFrom(returnClass)
+                        || Series.class.isAssignableFrom(returnClass)) {
+                    funcBody += indent(3) + "return make((SeriesInternal)result);\n";
+                } else {
+                    throw new IllegalStateException("UnsupportedReturnType: " + returnType + " " + f);
+                    // System.out.println("WARN: UnsupportedReturnType: " + returnType + " " + f);
+                    // funcBody += indent(3) + "return make(fc);";
+                }
+
+                funcBody += indent(2) + "} ";
+
+                if (!f.getClassNameShort().equals("MultiSeries")
+                        && !f.getClassNameShort().equals("XYDataSeriesFunction")) {
+                    funcBody += makeMultiSeriesGetter(f);
+                }
+
+                firstFunc = false;
+            }
+            funcBody += "else {\n" +
+                    indent(3)
+                    + "throw new PlotUnsupportedOperationException(\"Series type does not support this method.  seriesType=\" + series.getClass() + \" method='"
+                    + signature.trim() + "'\", figure);\n" +
+                    indent(2) + "}\n";
+            funcBody += indent(1) + "}\n";
         }
 
-        final String callArgs = createCallArgs(f0);
-
-        String s = signature;
-        s += " {\n" +
-                indent(2) + "final BaseFigureImpl fc = this.figure.copy();\n" +
-                indent(2) + "Series series = series(fc);\n";
-
-        boolean firstFunc = true;
-
-        for (final JavaFunction f : fs) {
-            final String returnType = f.getReturnType().getTypeName().replace("$", ".");
-            Class returnClass = f.getReturnClass();
-
-            if (returnClass == null) {
-                throw new UnsupportedOperationException("Null return class. f=" + f);
-            }
-
-            if (firstFunc) {
-                s += indent(2) + "if( series instanceof " + f.getClassNameShort() + "){\n";
-            } else {
-                s += indent(2) + "} else if( series instanceof " + f.getClassNameShort() + "){\n";
-            }
-
-            s += indent(3) + returnClass.getSimpleName() + " result = ((" + f.getClassNameShort() + ") series)."
-                    + f.getMethodName() + "(" + callArgs + ");\n";
-
-            if (DataSeries.class.isAssignableFrom(returnClass)) {
-                s += indent(3) + "return make((DataSeriesInternal)result);\n";
-            } else if (MultiSeries.class.isAssignableFrom(returnClass) || Series.class.isAssignableFrom(returnClass)) {
-                s += indent(3) + "return make((SeriesInternal)result);\n";
-            } else {
-                throw new IllegalStateException("UnsupportedReturnType: " + returnType + " " + f);
-                // System.out.println("WARN: UnsupportedReturnType: " + returnType + " " + f);
-                // s += indent(3) + "return make(fc);";
-            }
-
-            s += indent(2) + "} ";
-
-            if (!f.getClassNameShort().equals("MultiSeries") && !f.getClassNameShort().equals("XYDataSeriesFunction")) {
-                s += makeMultiSeriesGetter(f);
-            }
-
-            firstFunc = false;
-        }
-        s += "else {\n" +
-                indent(3)
-                + "throw new PlotUnsupportedOperationException(\"Series type does not support this method.  seriesType=\" + series.getClass() + \" method='"
-                + signature.trim() + "'\", figure);\n" +
-                indent(2) + "}\n";
-        s += indent(1) + "}\n";
-
-        return s;
+        return GenUtils.javaFunction(s0, sigPrefix, javadoc, funcBody);
     }
 
-    private Map<String, TreeSet<GroovyStaticImportGenerator.JavaFunction>> commonSignatureGroups(
+    private Map<String, TreeSet<JavaFunction>> commonSignatureGroups(
             final String[] interfaces) throws ClassNotFoundException {
-        final Map<String, TreeSet<GroovyStaticImportGenerator.JavaFunction>> methods = new TreeMap<>();
+        final Map<String, TreeSet<JavaFunction>> methods = new TreeMap<>();
 
-        final Set<GroovyStaticImportGenerator.JavaFunction> functionSet = new HashSet<>();
+        final Set<JavaFunction> functionSet = new HashSet<>();
         for (String iface : interfaces) {
-            final Class<?> c = Class.forName(iface);
+            final Class<?> c = Class.forName(iface, false, Thread.currentThread().getContextClassLoader());
             log.info("Processing class: " + c);
 
             for (final java.lang.reflect.Method m : c.getMethods()) {
@@ -901,11 +806,11 @@ public class GenerateFigureImmutable {
                 boolean isObject = m.getDeclaringClass().equals(Object.class);
 
                 if (!isStatic && isPublic && !isObject) {
-                    final GroovyStaticImportGenerator.JavaFunction f = new GroovyStaticImportGenerator.JavaFunction(m);
+                    final JavaFunction f = new JavaFunction(m);
                     if (functionSet.add(f)) { // avoids repeating methods that have the same parameter types but
                                               // different parameter names
                         final String key = createFunctionSignature(f);
-                        final TreeSet<GroovyStaticImportGenerator.JavaFunction> mm =
+                        final TreeSet<JavaFunction> mm =
                                 methods.computeIfAbsent(key, k -> new TreeSet<>());
                         mm.add(f);
                     }
@@ -926,11 +831,10 @@ public class GenerateFigureImmutable {
     }
 
     private static String createMultiSeriesArgs(JavaFunction f) {
-        final Type[] types = f.getParameterTypes();
         final String[] names = f.getParameterNames();
         String args = String.join(", ", names);
         if (!names[names.length - 1].equals("keys")) {
-            args += ", io.deephaven.datastructures.util.CollectionUtil.ZERO_LENGTH_OBJECT_ARRAY";
+            args += ", io.deephaven.util.type.ArrayTypeUtils.EMPTY_OBJECT_ARRAY";
         }
 
         return args;
@@ -940,7 +844,7 @@ public class GenerateFigureImmutable {
             throws ClassNotFoundException, IOException {
 
         log.setLevel(Level.WARNING);
-        log.warning("Running GenerateFigureImmutable assertNoChange=" + assertNoChange);
+        log.info("Running GenerateFigureImmutable assertNoChange=" + assertNoChange);
 
         final String[] imports = {
                 "io.deephaven.plot.datasets.DataSeriesInternal",
@@ -996,7 +900,6 @@ public class GenerateFigureImmutable {
         });
 
 
-        @SuppressWarnings("unchecked")
         GenerateFigureImmutable gen = new GenerateFigureImmutable(isInterface, imports, interfaces,
                 seriesInterfaces, skips, JavaFunction::getMethodName);
 
@@ -1008,32 +911,27 @@ public class GenerateFigureImmutable {
 
         if (assertNoChange) {
             String oldCode = new String(Files.readAllBytes(Paths.get(file)));
-            if (!code.equals(oldCode)) {
-                throw new RuntimeException(
-                        "Change in generated code.  Run GenerateFigureImmutable or \"./gradlew :Generators:generateFigureImmutable\" to regenerate\n");
-            }
+            GenUtils.assertGeneratedCodeSame(GenerateFigureImmutable.class, GRADLE_TASK, oldCode, code);
         } else {
 
             PrintWriter out = new PrintWriter(file);
             out.print(code);
             out.close();
 
-            log.warning(gen.outputClass + " written to: " + file);
+            log.info(gen.outputClass + " written to: " + file);
         }
     }
 
     public static void main(String[] args) throws ClassNotFoundException, IOException {
         String devroot = null;
         boolean assertNoChange = false;
-        if (args.length == 0) {
-            devroot = Configuration.getInstance().getDevRootPath();
-        } else if (args.length == 1) {
+        if (args.length == 1) {
             devroot = args[0];
         } else if (args.length == 2) {
             devroot = args[0];
             assertNoChange = Boolean.parseBoolean(args[1]);
         } else {
-            System.out.println("Usage: [<devroot> [assertNoChange]]");
+            System.out.println("Usage: <devroot> [assertNoChange]");
             System.exit(-1);
         }
 

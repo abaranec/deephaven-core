@@ -1,6 +1,8 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.api;
 
-import java.io.Serializable;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
@@ -14,12 +16,19 @@ import java.util.stream.Collectors;
  * @see TableOperations#join(Object, Collection, Collection, int)
  * @see TableOperations#naturalJoin(Object, Collection, Collection)
  * @see TableOperations#exactJoin(Object, Collection, Collection)
- * @see TableOperations#aj(Object, Collection, Collection, AsOfJoinRule)
- * @see TableOperations#raj(Object, Collection, Collection, ReverseAsOfJoinRule)
+ * @see TableOperations#asOfJoin(Object, Collection, AsOfJoinMatch, Collection)
  * @see TableOperations#whereIn(Object, Collection)
  * @see TableOperations#whereNotIn(Object, Collection)
  */
-public interface JoinMatch extends Serializable {
+public interface JoinMatch {
+
+    static Collection<ColumnName> lefts(Collection<? extends JoinMatch> matches) {
+        return matches.stream().map(JoinMatch::left).collect(Collectors.toList());
+    }
+
+    static Collection<ColumnName> rights(Collection<? extends JoinMatch> matches) {
+        return matches.stream().map(JoinMatch::right).collect(Collectors.toList());
+    }
 
     static JoinMatch of(ColumnName left, ColumnName right) {
         if (left.equals(right)) {

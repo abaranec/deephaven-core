@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.rowset;
 
 import io.deephaven.engine.rowset.chunkattributes.OrderedRowKeys;
@@ -123,6 +126,14 @@ public interface WritableRowSet extends RowSet {
      * May reclaim some unused memory.
      */
     void compact();
+
+    /**
+     * Reset this RowSet to exactly match another RowSet. Subsequent modifications to {@code other} will not change
+     * {@code this}.
+     *
+     * @param other The RowSet to reset to
+     */
+    void resetTo(@NotNull final RowSet other);
 
     @Override
     default TrackingWritableRowSet trackingCast() {

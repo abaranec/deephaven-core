@@ -1,45 +1,44 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.appmode;
 
 import java.io.IOException;
 import java.nio.file.Files;
-import java.nio.file.InvalidPathException;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
+import java.util.Optional;
 
 public interface ApplicationConfig {
 
     /**
-     * True if application mode is enabled; set system property {@link ApplicationConfigImpl#APPLICATION_DIR_PROP} to
-     * enable.
+     * Returns true if the configuration property {@value ApplicationConfigImpl#APPLICATION_DIR_PROP} is set, or if the
+     * {@value ApplicationConfigImpl#DEFAULT_APP_DIRNAME} exists in the configuration directory.
      *
-     * @return true if application mode is enabled
+     * @return true if custom application mode is enabled
      */
-    static boolean isApplicationModeEnabled() {
-        return ApplicationConfigImpl.APPLICATION_DIR != null;
+    static boolean isCustomApplicationModeEnabled() {
+        return ApplicationConfigImpl.applicationDir().isPresent();
     }
 
     /**
-     * The application directory. Application mode must be enabled.
+     * The custom application directory. Returns the configuration property
+     * {@value ApplicationConfigImpl#APPLICATION_DIR_PROP} if it set, otherwise it returns the
+     * {@value ApplicationConfigImpl#DEFAULT_APP_DIRNAME} from the configuration directory if it exists, otherwise it
+     * throws an {@link IllegalStateException}.
      *
      * @return the application dir
-     * @see #isApplicationModeEnabled()
+     * @see #isCustomApplicationModeEnabled()
      */
-    static Path applicationDir() {
-        if (!isApplicationModeEnabled()) {
+    static Path customApplicationDir() {
+        final Optional<Path> applicationDir = ApplicationConfigImpl.applicationDir();
+        if (applicationDir.isEmpty()) {
             throw new IllegalStateException(
-                    String.format("Application mode is not enabled, please set system property '%s'",
+                    String.format("Custom application mode is not enabled, please set the configuration property '%s'",
                             ApplicationConfigImpl.APPLICATION_DIR_PROP));
         }
-        final Path applicationDir;
-        try {
-            applicationDir = Paths.get(ApplicationConfigImpl.APPLICATION_DIR);
-        } catch (InvalidPathException e) {
-            throw new IllegalArgumentException(String.format("Invalid application directory '%s'",
-                    ApplicationConfigImpl.APPLICATION_DIR));
-        }
-        return applicationDir;
+        return applicationDir.get();
     }
 
     /**
@@ -54,7 +53,7 @@ public interface ApplicationConfig {
      * @throws ClassNotFoundException on class not found
      */
     static List<ApplicationConfig> find() throws IOException, ClassNotFoundException {
-        return ApplicationConfigImpl.find(applicationDir());
+        return ApplicationConfigImpl.find(customApplicationDir());
     }
 
     /**

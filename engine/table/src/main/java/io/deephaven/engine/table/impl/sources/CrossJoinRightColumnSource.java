@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources;
 
 import io.deephaven.engine.rowset.chunkattributes.RowKeys;
@@ -25,20 +28,42 @@ import io.deephaven.engine.rowset.RowSequence;
 import io.deephaven.engine.rowset.RowSequenceFactory;
 import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.engine.rowset.TrackingRowSet;
-import org.apache.commons.lang3.mutable.MutableInt;
-import org.apache.commons.lang3.mutable.MutableLong;
+import io.deephaven.engine.table.impl.util.ChunkUtils;
+import io.deephaven.util.mutable.MutableInt;
+import io.deephaven.util.mutable.MutableLong;
 import org.jetbrains.annotations.NotNull;
 
 import static io.deephaven.util.QueryConstants.*;
 
 public class CrossJoinRightColumnSource<T> extends AbstractColumnSource<T> implements UngroupableColumnSource {
+
+    /**
+     * Wrap the innerSource if it is not agnostic to redirection. Otherwise, return the innerSource.
+     *
+     * @param crossJoinManager The cross join manager to use
+     * @param innerSource The column source to redirect
+     * @param rightIsLive Whether the right side is live
+     */
+    public static <T> ColumnSource<T> maybeWrap(
+            @NotNull final CrossJoinStateManager crossJoinManager,
+            @NotNull final ColumnSource<T> innerSource,
+            boolean rightIsLive) {
+        // Force wrapping if this is a leftOuterJoin or else we will not see the nulls; unless every row is null.
+        if ((!crossJoinManager.leftOuterJoin() && innerSource instanceof RowKeyAgnosticChunkSource)
+                || innerSource instanceof NullValueColumnSource) {
+            return innerSource;
+        }
+        return new CrossJoinRightColumnSource<>(crossJoinManager, innerSource, rightIsLive);
+    }
+
     private final boolean rightIsLive;
     private final CrossJoinStateManager crossJoinManager;
     protected final ColumnSource<T> innerSource;
 
-
-    public CrossJoinRightColumnSource(@NotNull final CrossJoinStateManager crossJoinManager,
-            @NotNull final ColumnSource<T> innerSource, boolean rightIsLive) {
+    protected CrossJoinRightColumnSource(
+            @NotNull final CrossJoinStateManager crossJoinManager,
+            @NotNull final ColumnSource<T> innerSource,
+            boolean rightIsLive) {
         super(innerSource.getType());
         this.rightIsLive = rightIsLive;
         this.crossJoinManager = crossJoinManager;
@@ -54,147 +79,147 @@ public class CrossJoinRightColumnSource<T> extends AbstractColumnSource<T> imple
     public void startTrackingPrevValues() {}
 
     @Override
-    public T get(long index) {
-        if (index < 0) {
+    public T get(long rowKey) {
+        if (rowKey < 0) {
             return null;
         }
-        return innerSource.get(redirect(index));
+        return innerSource.get(redirect(rowKey));
     }
 
     @Override
-    public Boolean getBoolean(long index) {
-        if (index < 0) {
+    public Boolean getBoolean(long rowKey) {
+        if (rowKey < 0) {
             return null;
         }
-        return innerSource.getBoolean(redirect(index));
+        return innerSource.getBoolean(redirect(rowKey));
     }
 
     @Override
-    public byte getByte(long index) {
-        if (index < 0) {
+    public byte getByte(long rowKey) {
+        if (rowKey < 0) {
             return NULL_BYTE;
         }
-        return innerSource.getByte(redirect(index));
+        return innerSource.getByte(redirect(rowKey));
     }
 
     @Override
-    public char getChar(long index) {
-        if (index < 0) {
+    public char getChar(long rowKey) {
+        if (rowKey < 0) {
             return NULL_CHAR;
         }
-        return innerSource.getChar(redirect(index));
+        return innerSource.getChar(redirect(rowKey));
     }
 
     @Override
-    public double getDouble(long index) {
-        if (index < 0) {
+    public double getDouble(long rowKey) {
+        if (rowKey < 0) {
             return NULL_DOUBLE;
         }
-        return innerSource.getDouble(redirect(index));
+        return innerSource.getDouble(redirect(rowKey));
     }
 
     @Override
-    public float getFloat(long index) {
-        if (index < 0) {
+    public float getFloat(long rowKey) {
+        if (rowKey < 0) {
             return NULL_FLOAT;
         }
-        return innerSource.getFloat(redirect(index));
+        return innerSource.getFloat(redirect(rowKey));
     }
 
     @Override
-    public int getInt(long index) {
-        if (index < 0) {
+    public int getInt(long rowKey) {
+        if (rowKey < 0) {
             return NULL_INT;
         }
-        return innerSource.getInt(redirect(index));
+        return innerSource.getInt(redirect(rowKey));
     }
 
     @Override
-    public long getLong(long index) {
-        if (index < 0) {
+    public long getLong(long rowKey) {
+        if (rowKey < 0) {
             return NULL_LONG;
         }
-        return innerSource.getLong(redirect(index));
+        return innerSource.getLong(redirect(rowKey));
     }
 
     @Override
-    public short getShort(long index) {
-        if (index < 0) {
+    public short getShort(long rowKey) {
+        if (rowKey < 0) {
             return NULL_SHORT;
         }
-        return innerSource.getShort(redirect(index));
+        return innerSource.getShort(redirect(rowKey));
     }
 
     @Override
-    public T getPrev(long index) {
-        if (index < 0) {
+    public T getPrev(long rowKey) {
+        if (rowKey < 0) {
             return null;
         }
-        return innerSource.getPrev(redirectPrev(index));
+        return innerSource.getPrev(redirectPrev(rowKey));
     }
 
     @Override
-    public Boolean getPrevBoolean(long index) {
-        if (index < 0) {
+    public Boolean getPrevBoolean(long rowKey) {
+        if (rowKey < 0) {
             return null;
         }
-        return innerSource.getPrevBoolean(redirectPrev(index));
+        return innerSource.getPrevBoolean(redirectPrev(rowKey));
     }
 
     @Override
-    public byte getPrevByte(long index) {
-        if (index < 0) {
+    public byte getPrevByte(long rowKey) {
+        if (rowKey < 0) {
             return NULL_BYTE;
         }
-        return innerSource.getPrevByte(redirectPrev(index));
+        return innerSource.getPrevByte(redirectPrev(rowKey));
     }
 
     @Override
-    public char getPrevChar(long index) {
-        if (index < 0) {
+    public char getPrevChar(long rowKey) {
+        if (rowKey < 0) {
             return NULL_CHAR;
         }
-        return innerSource.getPrevChar(redirectPrev(index));
+        return innerSource.getPrevChar(redirectPrev(rowKey));
     }
 
     @Override
-    public double getPrevDouble(long index) {
-        if (index < 0) {
+    public double getPrevDouble(long rowKey) {
+        if (rowKey < 0) {
             return NULL_DOUBLE;
         }
-        return innerSource.getPrevDouble(redirectPrev(index));
+        return innerSource.getPrevDouble(redirectPrev(rowKey));
     }
 
     @Override
-    public float getPrevFloat(long index) {
-        if (index < 0) {
+    public float getPrevFloat(long rowKey) {
+        if (rowKey < 0) {
             return NULL_FLOAT;
         }
-        return innerSource.getPrevFloat(redirectPrev(index));
+        return innerSource.getPrevFloat(redirectPrev(rowKey));
     }
 
     @Override
-    public int getPrevInt(long index) {
-        if (index < 0) {
+    public int getPrevInt(long rowKey) {
+        if (rowKey < 0) {
             return NULL_INT;
         }
-        return innerSource.getPrevInt(redirectPrev(index));
+        return innerSource.getPrevInt(redirectPrev(rowKey));
     }
 
     @Override
-    public long getPrevLong(long index) {
-        if (index < 0) {
+    public long getPrevLong(long rowKey) {
+        if (rowKey < 0) {
             return NULL_LONG;
         }
-        return innerSource.getPrevLong(redirectPrev(index));
+        return innerSource.getPrevLong(redirectPrev(rowKey));
     }
 
     @Override
-    public short getPrevShort(long index) {
-        if (index < 0) {
+    public short getPrevShort(long rowKey) {
+        if (rowKey < 0) {
             return NULL_SHORT;
         }
-        return innerSource.getPrevShort(redirectPrev(index));
+        return innerSource.getPrevShort(redirectPrev(rowKey));
     }
 
     @Override
@@ -209,105 +234,106 @@ public class CrossJoinRightColumnSource<T> extends AbstractColumnSource<T> imple
     }
 
     @Override
-    public long getUngroupedSize(long columnIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedSize(redirect(columnIndex));
+    public long getUngroupedSize(long groupRowKey) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedSize(redirect(groupRowKey));
     }
 
     @Override
-    public long getUngroupedPrevSize(long columnIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevSize(redirectPrev(columnIndex));
+    public long getUngroupedPrevSize(long groupRowKey) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevSize(redirectPrev(groupRowKey));
     }
 
     @Override
-    public T getUngrouped(long columnIndex, int arrayIndex) {
+    public T getUngrouped(long groupRowKey, int offsetInGroup) {
         // noinspection unchecked
-        return (T) ((UngroupableColumnSource) innerSource).getUngrouped(redirect(columnIndex), arrayIndex);
+        return (T) ((UngroupableColumnSource) innerSource).getUngrouped(redirect(groupRowKey), offsetInGroup);
     }
 
     @Override
-    public T getUngroupedPrev(long columnIndex, int arrayIndex) {
+    public T getUngroupedPrev(long groupRowKey, int offsetInGroup) {
         // noinspection unchecked
-        return (T) ((UngroupableColumnSource) innerSource).getUngroupedPrev(redirectPrev(columnIndex), arrayIndex);
+        return (T) ((UngroupableColumnSource) innerSource).getUngroupedPrev(redirectPrev(groupRowKey), offsetInGroup);
     }
 
     @Override
-    public Boolean getUngroupedBoolean(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedBoolean(redirect(columnIndex), arrayIndex);
+    public Boolean getUngroupedBoolean(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedBoolean(redirect(groupRowKey), offsetInGroup);
     }
 
     @Override
-    public Boolean getUngroupedPrevBoolean(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevBoolean(redirectPrev(columnIndex), arrayIndex);
+    public Boolean getUngroupedPrevBoolean(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevBoolean(redirectPrev(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public double getUngroupedDouble(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedDouble(redirect(columnIndex), arrayIndex);
+    public double getUngroupedDouble(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedDouble(redirect(groupRowKey), offsetInGroup);
     }
 
     @Override
-    public double getUngroupedPrevDouble(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevDouble(redirectPrev(columnIndex), arrayIndex);
+    public double getUngroupedPrevDouble(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevDouble(redirectPrev(groupRowKey), offsetInGroup);
     }
 
     @Override
-    public float getUngroupedFloat(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedFloat(redirect(columnIndex), arrayIndex);
+    public float getUngroupedFloat(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedFloat(redirect(groupRowKey), offsetInGroup);
     }
 
     @Override
-    public float getUngroupedPrevFloat(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevFloat(redirectPrev(columnIndex), arrayIndex);
+    public float getUngroupedPrevFloat(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevFloat(redirectPrev(groupRowKey), offsetInGroup);
     }
 
     @Override
-    public byte getUngroupedByte(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedByte(redirect(columnIndex), arrayIndex);
+    public byte getUngroupedByte(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedByte(redirect(groupRowKey), offsetInGroup);
     }
 
     @Override
-    public byte getUngroupedPrevByte(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevByte(redirectPrev(columnIndex), arrayIndex);
+    public byte getUngroupedPrevByte(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevByte(redirectPrev(groupRowKey), offsetInGroup);
     }
 
     @Override
-    public char getUngroupedChar(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedChar(redirect(columnIndex), arrayIndex);
+    public char getUngroupedChar(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedChar(redirect(groupRowKey), offsetInGroup);
     }
 
     @Override
-    public char getUngroupedPrevChar(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevChar(redirectPrev(columnIndex), arrayIndex);
+    public char getUngroupedPrevChar(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevChar(redirectPrev(groupRowKey), offsetInGroup);
     }
 
     @Override
-    public short getUngroupedShort(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedShort(redirect(columnIndex), arrayIndex);
+    public short getUngroupedShort(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedShort(redirect(groupRowKey), offsetInGroup);
     }
 
     @Override
-    public short getUngroupedPrevShort(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevShort(redirectPrev(columnIndex), arrayIndex);
+    public short getUngroupedPrevShort(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevShort(redirectPrev(groupRowKey), offsetInGroup);
     }
 
     @Override
-    public int getUngroupedInt(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedInt(redirect(columnIndex), arrayIndex);
+    public int getUngroupedInt(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedInt(redirect(groupRowKey), offsetInGroup);
     }
 
     @Override
-    public int getUngroupedPrevInt(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevInt(redirectPrev(columnIndex), arrayIndex);
+    public int getUngroupedPrevInt(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevInt(redirectPrev(groupRowKey), offsetInGroup);
     }
 
     @Override
-    public long getUngroupedLong(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedLong(redirect(columnIndex), arrayIndex);
+    public long getUngroupedLong(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedLong(redirect(groupRowKey), offsetInGroup);
     }
 
     @Override
-    public long getUngroupedPrevLong(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevLong(redirectPrev(columnIndex), arrayIndex);
+    public long getUngroupedPrevLong(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevLong(redirectPrev(groupRowKey), offsetInGroup);
     }
 
     @Override
@@ -325,27 +351,8 @@ public class CrossJoinRightColumnSource<T> extends AbstractColumnSource<T> imple
     @Override
     protected <ALTERNATE_DATA_TYPE> ColumnSource<ALTERNATE_DATA_TYPE> doReinterpret(
             @NotNull Class<ALTERNATE_DATA_TYPE> alternateDataType) {
-        return new ReinterpretToOriginal<>(alternateDataType);
-    }
-
-    private class ReinterpretToOriginal<ALTERNATE_DATA_TYPE> extends CrossJoinRightColumnSource<ALTERNATE_DATA_TYPE> {
-        private ReinterpretToOriginal(Class<ALTERNATE_DATA_TYPE> alternateDataType) {
-            super(CrossJoinRightColumnSource.this.crossJoinManager,
-                    CrossJoinRightColumnSource.this.innerSource.reinterpret(alternateDataType), rightIsLive);
-        }
-
-        @Override
-        public <INNER_ALTERNATIVE_DATA_TYPE> boolean allowsReinterpret(
-                @NotNull Class<INNER_ALTERNATIVE_DATA_TYPE> alternateDataType) {
-            return alternateDataType == CrossJoinRightColumnSource.this.getType();
-        }
-
-        @Override
-        protected <ORIGINAL_TYPE> ColumnSource<ORIGINAL_TYPE> doReinterpret(
-                @NotNull Class<ORIGINAL_TYPE> alternateDataType) {
-            // noinspection unchecked
-            return (ColumnSource<ORIGINAL_TYPE>) CrossJoinRightColumnSource.this;
-        }
+        return new CrossJoinRightColumnSource<>(
+                crossJoinManager, innerSource.reinterpret(alternateDataType), rightIsLive);
     }
 
     @Override
@@ -369,14 +376,14 @@ public class CrossJoinRightColumnSource<T> extends AbstractColumnSource<T> imple
 
     private long redirect(long outerKey) {
         final long leftKey = crossJoinManager.getShifted(outerKey);
-        final RowSet rowSet = crossJoinManager.getRightRowSetFromLeftIndex(leftKey);
+        final RowSet rowSet = crossJoinManager.getRightRowSetFromLeftRow(leftKey);
         final long rightKey = crossJoinManager.getMasked(outerKey);
         return rowSet.get(rightKey);
     }
 
     private long redirectPrev(long outerKey) {
         final long leftKey = crossJoinManager.getPrevShifted(outerKey);
-        final TrackingRowSet rowSet = crossJoinManager.getRightRowSetFromPrevLeftIndex(leftKey);
+        final TrackingRowSet rowSet = crossJoinManager.getRightRowSetFromPrevLeftRow(leftKey);
         final long rightKey = crossJoinManager.getPrevMasked(outerKey);
         return rightIsLive ? rowSet.getPrev(rightKey) : rowSet.get(rightKey);
     }
@@ -395,9 +402,10 @@ public class CrossJoinRightColumnSource<T> extends AbstractColumnSource<T> imple
         effectiveContext.shareable.ensureMappedKeysInitialized(crossJoinManager, usePrev, rowSequence);
 
         if (FillUnordered.providesFillUnordered(innerSource)) {
-            effectiveContext.doUnorderedFill((FillUnordered) innerSource, usePrev, destination);
+            // noinspection unchecked
+            effectiveContext.doUnorderedFill((FillUnordered<Values>) innerSource, usePrev, destination);
         } else {
-            effectiveContext.doOrderedFillAndPermute(innerSource, usePrev, destination);
+            effectiveContext.doOrderedFillAndPermute(crossJoinManager, innerSource, usePrev, destination);
         }
 
         destination.setSize(size);
@@ -472,6 +480,8 @@ public class CrossJoinRightColumnSource<T> extends AbstractColumnSource<T> imple
 
             private boolean mappedKeysReusable;
             private int totalKeyCount;
+            private int uniqueLeftCount;
+            private boolean permuteRequired;
 
             private boolean sortedFillContextReusable;
             private int uniqueKeyCount;
@@ -512,25 +522,25 @@ public class CrossJoinRightColumnSource<T> extends AbstractColumnSource<T> imple
                 final MutableLong lastLeftIndex = new MutableLong(RowSequence.NULL_ROW_KEY);
 
                 final Runnable flush = () -> {
-                    if (lastLeftIndex.longValue() == RowSequence.NULL_ROW_KEY) {
+                    if (lastLeftIndex.get() == RowSequence.NULL_ROW_KEY) {
                         return;
                     }
 
                     RowSet rightGroup;
                     if (usePrev) {
                         final TrackingRowSet fromTable =
-                                crossJoinManager.getRightRowSetFromPrevLeftIndex(lastLeftIndex.getValue());
+                                crossJoinManager.getRightRowSetFromPrevLeftRow(lastLeftIndex.get());
                         rightGroup = rightIsLive ? fromTable.copyPrev() : fromTable;
                     } else {
-                        rightGroup = crossJoinManager.getRightRowSetFromLeftIndex(lastLeftIndex.getValue());
+                        rightGroup = crossJoinManager.getRightRowSetFromLeftRow(lastLeftIndex.get());
                     }
 
-                    final int alreadyWritten = postMapOffset.intValue();
-                    final int inRightGroup = preMapOffset.intValue();
+                    final int alreadyWritten = postMapOffset.get();
+                    final int inRightGroup = preMapOffset.get();
                     rightGroup.getKeysForPositions(
                             ChunkStream.of(mappedKeys, alreadyWritten, inRightGroup - alreadyWritten).iterator(),
                             destKey -> {
-                                mappedKeys.set(postMapOffset.intValue(), destKey);
+                                mappedKeys.set(postMapOffset.get(), destKey);
                                 postMapOffset.increment();
                             });
                     if (usePrev && rightIsLive) {
@@ -538,24 +548,44 @@ public class CrossJoinRightColumnSource<T> extends AbstractColumnSource<T> imple
                     }
                 };
 
+                final MutableInt uniqueLeftSideValues = new MutableInt(0);
                 rowSequence.forAllRowKeys(ii -> {
                     final long leftIndex =
                             usePrev ? crossJoinManager.getPrevShifted(ii) : crossJoinManager.getShifted(ii);
-                    if (leftIndex != lastLeftIndex.longValue()) {
+                    if (leftIndex != lastLeftIndex.get()) {
                         flush.run();
-                        lastLeftIndex.setValue(leftIndex);
+                        lastLeftIndex.set(leftIndex);
+                        uniqueLeftSideValues.increment();
                     }
-                    mappedKeys.set(preMapOffset.intValue(),
+                    mappedKeys.set(preMapOffset.get(),
                             usePrev ? crossJoinManager.getPrevMasked(ii) : crossJoinManager.getMasked(ii));
                     preMapOffset.increment();
                 });
                 flush.run();
+                uniqueLeftCount = uniqueLeftSideValues.get();
 
                 mappedKeysReusable = shared;
             }
 
-            private void ensureSortedFillContextInitialized() {
+            private void ensureSortedFillContextInitialized(final CrossJoinStateManager crossJoinManager) {
                 if (sortedFillContextReusable) {
+                    return;
+                }
+
+                // if we only had one left side value, then we must be exactly
+                permuteRequired = uniqueLeftCount > 1;
+                if (!permuteRequired) {
+                    uniqueKeyCount = mappedKeys.size();
+                    hasNulls = mappedKeys.get(0) == RowSequence.NULL_ROW_KEY;
+                    if (hasNulls) {
+                        Assert.assertion(crossJoinManager.leftOuterJoin(), "crossJoinManager.leftOuterJoin()");
+                        innerRowSequence = RowSequenceFactory.EMPTY;
+                        Assert.eq(mappedKeys.size(), "mappedKeys.size()", 1);
+                    } else {
+                        innerRowSequence = RowSequenceFactory.wrapRowKeysChunkAsRowSequence(
+                                LongChunk.downcast(mappedKeys));
+                    }
+                    sortedFillContextReusable = shared;
                     return;
                 }
 
@@ -563,10 +593,8 @@ public class CrossJoinRightColumnSource<T> extends AbstractColumnSource<T> imple
                 if (shared) {
                     sortedMappedKeys.copyFromTypedChunk(mappedKeys, 0, 0, mappedKeys.size());
                 }
-                for (int ki = 0; ki < totalKeyCount; ++ki) {
-                    mappedKeysOrder.set(ki, ki);
-                }
                 mappedKeysOrder.setSize(totalKeyCount);
+                ChunkUtils.fillInOrder(mappedKeysOrder);
                 LongIntTimsortKernel.sort(sortKernelContext, mappedKeysOrder, sortedMappedKeys);
 
                 // Compact out duplicates while calculating run lengths
@@ -593,6 +621,9 @@ public class CrossJoinRightColumnSource<T> extends AbstractColumnSource<T> imple
                 runLengths.setSize(uniqueKeyCount);
 
                 hasNulls = compactedMappedKeys.get(0) == RowSequence.NULL_ROW_KEY;
+                if (hasNulls) {
+                    Assert.eqTrue(crossJoinManager.leftOuterJoin(), "crossJoinManager.leftOuterJoin()");
+                }
                 final int keysToSkip = hasNulls ? 1 : 0;
                 innerRowSequence = RowSequenceFactory.wrapRowKeysChunkAsRowSequence(
                         LongChunk.downcast(nonNullCompactedMappedKeys.resetFromTypedChunk(compactedMappedKeys,
@@ -639,7 +670,7 @@ public class CrossJoinRightColumnSource<T> extends AbstractColumnSource<T> imple
             }
         }
 
-        private void doUnorderedFill(@NotNull final FillUnordered innerSource, final boolean usePrev,
+        private void doUnorderedFill(@NotNull final FillUnordered<Values> innerSource, final boolean usePrev,
                 @NotNull final WritableChunk<? super Values> destination) {
             if (usePrev) {
                 innerSource.fillPrevChunkUnordered(innerFillContext, destination, shareable.mappedKeys);
@@ -649,19 +680,32 @@ public class CrossJoinRightColumnSource<T> extends AbstractColumnSource<T> imple
             destination.setSize(shareable.totalKeyCount);
         }
 
-        private void doOrderedFillAndPermute(@NotNull final ColumnSource<?> innerSource, final boolean usePrev,
+        private void doOrderedFillAndPermute(
+                @NotNull final CrossJoinStateManager crossJoinManager,
+                @NotNull final ColumnSource<?> innerSource,
+                final boolean usePrev,
                 @NotNull final WritableChunk<? super Values> destination) {
-            shareable.ensureSortedFillContextInitialized();
+            shareable.ensureSortedFillContextInitialized(crossJoinManager);
 
             innerOrderedValues.setSize(shareable.uniqueKeyCount);
 
-            final WritableChunk<Values> compactedOrderedValuesDestination;
+            final WritableChunk<? super Values> compactedOrderedValuesDestination;
             if (shareable.hasNulls) {
-                innerOrderedValues.fillWithNullValue(0, 1);
-                compactedOrderedValuesDestination =
-                        innerOrderedValuesSlice.resetFromChunk(innerOrderedValues, 1, shareable.uniqueKeyCount - 1);
-            } else {
+                if (shareable.permuteRequired) {
+                    innerOrderedValues.fillWithNullValue(0, 1);
+                    compactedOrderedValuesDestination = innerOrderedValuesSlice.resetFromChunk(
+                            innerOrderedValues, 1, shareable.uniqueKeyCount - 1);
+                } else {
+                    // this can be the only thing we care about
+                    Assert.assertion(shareable.innerRowSequence.isEmpty(), "shareable.innerRowSequence.isEmpty()");
+                    destination.setSize(shareable.totalKeyCount);
+                    destination.fillWithNullValue(0, shareable.totalKeyCount);
+                    return;
+                }
+            } else if (shareable.permuteRequired) {
                 compactedOrderedValuesDestination = innerOrderedValues;
+            } else {
+                compactedOrderedValuesDestination = destination;
             }
 
             // Read compacted, ordered keys
@@ -672,15 +716,22 @@ public class CrossJoinRightColumnSource<T> extends AbstractColumnSource<T> imple
                 innerSource.fillChunk(innerFillContext, compactedOrderedValuesDestination, shareable.innerRowSequence);
             }
 
-            // Expand unique values if necessary
-            if (shareable.uniqueKeyCount != shareable.totalKeyCount) {
-                dupExpandKernel.expandDuplicates(shareable.totalKeyCount, innerOrderedValues, shareable.runLengths);
-                innerOrderedValues.setSize(shareable.totalKeyCount);
-            }
+            if (shareable.permuteRequired) {
+                // Expand unique values if necessary
+                if (shareable.uniqueKeyCount != shareable.totalKeyCount) {
+                    dupExpandKernel.expandDuplicates(shareable.totalKeyCount, innerOrderedValues, shareable.runLengths);
+                    innerOrderedValues.setSize(shareable.totalKeyCount);
+                }
 
-            // Permute expanded, ordered result into destination
-            destination.setSize(shareable.totalKeyCount);
-            permuteKernel.permute(innerOrderedValues, shareable.mappedKeysOrder, destination);
+                // Permute expanded, ordered result into destination
+                destination.setSize(shareable.totalKeyCount);
+                permuteKernel.permute(innerOrderedValues, shareable.mappedKeysOrder, destination);
+            }
         }
+    }
+
+    @Override
+    public boolean isStateless() {
+        return innerSource.isStateless();
     }
 }

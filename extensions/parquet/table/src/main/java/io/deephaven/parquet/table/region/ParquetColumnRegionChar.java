@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.parquet.table.region;
 
 import io.deephaven.engine.table.impl.locations.TableDataException;
@@ -18,14 +21,16 @@ public final class ParquetColumnRegionChar<ATTR extends Any> extends ParquetColu
         super(columnChunkPageStore.mask(), columnChunkPageStore);
     }
 
+    // region getBytes
+    // endregion getBytes
+
     @Override
-    public char getChar(final long elementIndex) {
-        final ChunkPage<ATTR> page = getChunkPageContaining(elementIndex);
+    public char getChar(final long rowKey) {
+        final ChunkPage<ATTR> page = getChunkPageContaining(rowKey);
         try {
-            return page.asCharChunk().get(page.getChunkOffset(elementIndex));
+            return page.asCharChunk().get(page.getChunkOffset(rowKey));
         } catch (Exception e) {
-            throw new TableDataException("Error retrieving char at table char rowSet " + elementIndex
-                    + ", from a parquet table", e);
+            throw new TableDataException("Error retrieving char at row key " + rowKey + " from a parquet table", e);
         }
     }
 }

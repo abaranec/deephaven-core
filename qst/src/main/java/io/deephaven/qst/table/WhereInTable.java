@@ -1,7 +1,10 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.qst.table;
 
-import io.deephaven.api.JoinMatch;
 import io.deephaven.annotations.NodeStyle;
+import io.deephaven.api.JoinMatch;
 import io.deephaven.api.TableOperations;
 import org.immutables.value.Value.Check;
 import org.immutables.value.Value.Immutable;
@@ -11,6 +14,7 @@ import java.util.List;
 
 /**
  * @see TableOperations#whereIn(Object, Collection)
+ * @see TableOperations#whereNotIn(Object, Collection)
  */
 @Immutable
 @NodeStyle
@@ -26,10 +30,11 @@ public abstract class WhereInTable extends TableBase {
 
     public abstract List<JoinMatch> matches();
 
+    public abstract boolean inverted();
+
     @Override
-    public final <V extends Visitor> V walk(V visitor) {
-        visitor.visit(this);
-        return visitor;
+    public final <T> T walk(Visitor<T> visitor) {
+        return visitor.visit(this);
     }
 
     @Check
@@ -50,6 +55,8 @@ public abstract class WhereInTable extends TableBase {
         Builder addMatches(JoinMatch... elements);
 
         Builder addAllMatches(Iterable<? extends JoinMatch> elements);
+
+        Builder inverted(boolean inverted);
 
         WhereInTable build();
     }

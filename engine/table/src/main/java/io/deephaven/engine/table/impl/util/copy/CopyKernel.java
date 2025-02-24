@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.util.copy;
 
 import io.deephaven.chunk.*;
@@ -60,7 +63,7 @@ public interface CopyKernel {
          * @param flipWords if true return first false bit set instead of the first true bit set
          * @return the index of the next set bit, any value {@code >= endIndex} is returned if no such bit exists
          */
-        static int nextSetBit(long[] words, int fromIndex, int endIndex, boolean flipWords) {
+        public static int nextSetBit(long[] words, int fromIndex, int endIndex, boolean flipWords) {
             if (fromIndex >= endIndex) {
                 return endIndex;
             }

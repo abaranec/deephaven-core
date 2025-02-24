@@ -1,14 +1,28 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.web.client.api.widget.plot;
 
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.console_pb.figuredescriptor.AxisDescriptor;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.console_pb.figuredescriptor.BusinessCalendarDescriptor;
+import com.vertispan.tsdefs.annotations.TsInterface;
+import com.vertispan.tsdefs.annotations.TsName;
+import com.vertispan.tsdefs.annotations.TsTypeRef;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.console_pb.figuredescriptor.AxisDescriptor;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.console_pb.figuredescriptor.BusinessCalendarDescriptor;
 import io.deephaven.web.client.api.i18n.JsDateTimeFormat;
 import io.deephaven.web.client.api.widget.calendar.JsBusinessCalendar;
+import io.deephaven.web.client.api.widget.plot.enums.JsAxisFormatType;
+import io.deephaven.web.client.api.widget.plot.enums.JsAxisPosition;
+import io.deephaven.web.client.api.widget.plot.enums.JsAxisType;
 import io.deephaven.web.client.fu.JsLog;
 import jsinterop.annotations.*;
 import jsinterop.base.Js;
 
-@JsType
+/**
+ * Defines one axis used with by series. These instances will be found both on the Chart and the Series instances, and
+ * may be shared between Series instances.
+ */
+@TsInterface
+@TsName(namespace = "dh.plot", name = "Axis")
 public class JsAxis {
     private final AxisDescriptor axis;
     private final JsFigure jsFigure;
@@ -18,7 +32,6 @@ public class JsAxis {
     private Long min;
     private Long max;
 
-    @JsIgnore
     public JsAxis(AxisDescriptor descriptor, JsFigure jsFigure) {
         this.axis = descriptor;
         this.jsFigure = jsFigure;
@@ -31,30 +44,57 @@ public class JsAxis {
         }
     }
 
+    /**
+     * The calendar with the business hours and holidays to transform plot data against. Defaults to null, or no
+     * transform.
+     * 
+     * @return dh.calendar.BusinessCalendar
+     *
+     */
     @JsProperty
     public JsBusinessCalendar getBusinessCalendar() {
         return businessCalendar;
     }
 
+    /**
+     * The unique id for this axis.
+     * 
+     * @return String
+     */
     @JsProperty
     public String getId() {
         return axis.getId();
     }
 
+    /**
+     * The type for this axis. See <b>AxisFormatType</b> enum for more details.
+     * 
+     * @return int
+     */
     @JsProperty
-    @SuppressWarnings("unusable-by-js")
+    @TsTypeRef(JsAxisFormatType.class)
     public int getFormatType() {
         return axis.getFormatType();
     }
 
+    /**
+     * The type for this axis, indicating how it will be drawn. See <b>AxisType</b> enum for more details.
+     * 
+     * @return int
+     */
     @JsProperty
-    @SuppressWarnings("unusable-by-js")
+    @TsTypeRef(JsAxisType.class)
     public int getType() {
         return axis.getType();
     }
 
+    /**
+     * The position for this axis. See <b>AxisPosition</b> enum for more details.
+     * 
+     * @return int
+     */
     @JsProperty
-    @SuppressWarnings("unusable-by-js")
+    @TsTypeRef(JsAxisPosition.class)
     public int getPosition() {
         return axis.getPosition();
     }
@@ -64,6 +104,11 @@ public class JsAxis {
         return axis.getLog();
     }
 
+    /**
+     * The label for this axis.
+     * 
+     * @return String
+     */
     @JsProperty
     public String getLabel() {
         return axis.getLabel();
@@ -85,7 +130,13 @@ public class JsAxis {
     // return axis.getFormat();
     // }
 
+    /**
+     * The format pattern to use with this axis. Use the type to determine which type of formatter to use.
+     * 
+     * @return String
+     */
     @JsProperty
+    @JsNullable
     public String getFormatPattern() {
         if (axis.hasFormatPattern()) {
             return axis.getFormatPattern();
@@ -124,8 +175,12 @@ public class JsAxis {
     }
 
     @JsProperty
-    public double getGapBetweenMajorTicks() {
-        return axis.getGapBetweenMajorTicks();
+    @JsNullable
+    public Double getGapBetweenMajorTicks() {
+        if (axis.hasGapBetweenMajorTicks()) {
+            return axis.getGapBetweenMajorTicks();
+        }
+        return null;
     }
 
     @JsProperty
@@ -154,8 +209,20 @@ public class JsAxis {
         return axis.getIsTimeAxis();
     }
 
+    /**
+     * Indicates that this axis is only `widthInPixels` wide, so any extra data can be downsampled out, if this can be
+     * done losslessly. The second two arguments represent the current zoom range of this axis, and if provided, most of
+     * the data outside of this range will be filtered out automatically and the visible width mapped to that range.
+     * When the UI zooms, pans, or resizes, this method should be called again to update these three values to ensure
+     * that data is correct and current.
+     *
+     * @param pixelCount
+     * @param min
+     * @param max
+     */
     @JsMethod
-    public void range(@JsOptional Double pixelCount, @JsOptional Object min, @JsOptional Object max) {
+    public void range(@JsOptional @JsNullable Double pixelCount, @JsOptional @JsNullable Object min,
+            @JsOptional @JsNullable Object max) {
         if (pixelCount == null || !Js.typeof(Js.asAny(pixelCount)).equals("number")) {
             if (this.pixels != null) {
                 JsLog.warn("Turning off downsampling on a chart where it is running is not currently supported");
@@ -190,7 +257,6 @@ public class JsAxis {
         jsFigure.updateDownsampleRange(axis, this.pixels, this.min, this.max);
     }
 
-    @JsIgnore
     public AxisDescriptor getDescriptor() {
         return this.axis;
     }

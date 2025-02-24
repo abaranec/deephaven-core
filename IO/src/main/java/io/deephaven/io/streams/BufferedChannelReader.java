@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.io.streams;
 
 import io.deephaven.base.verify.Require;
@@ -21,8 +20,8 @@ public class BufferedChannelReader {
     private int limit;
 
     /**
-     * Guarantees that each buffer from readNext() will have remaining() >= blockSize [that is, until it starts winding
-     * down on the end of the file] When it needs to refresh, it will read <= readSize from the channel
+     * Guarantees that each buffer from readNext() will have remaining() &gt;= blockSize [that is, until it starts
+     * winding down on the end of the file] When it needs to refresh, it will read &lt;= readSize from the channel
      */
     public BufferedChannelReader(final String filename, int blockSize, int readSize) {
         Require.leq(blockSize, "blockSize", readSize, "readSize");

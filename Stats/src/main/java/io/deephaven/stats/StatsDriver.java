@@ -1,27 +1,31 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.stats;
 
 import io.deephaven.base.clock.Clock;
-import io.deephaven.net.CommBase;
-import io.deephaven.util.formatters.ISO8601;
+import io.deephaven.engine.context.ExecutionContext;
+import io.deephaven.util.SafeCloseable;
 import io.deephaven.base.stats.*;
 import io.deephaven.base.text.TimestampBuffer;
 import io.deephaven.configuration.Configuration;
 import io.deephaven.io.log.*;
-import io.deephaven.io.sched.TimedJob;
-import io.deephaven.io.log.impl.LogBufferPoolImpl;
 import io.deephaven.io.log.impl.LogEntryPoolImpl;
 import io.deephaven.io.log.impl.LogSinkImpl;
+import io.deephaven.util.annotations.ReferentialIntegrity;
+import io.deephaven.util.thread.NamingThreadFactory;
 
 import java.util.Properties;
+import java.util.TimeZone;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Drives the collection of statistics on a 1-second timer task.
  */
-public class StatsDriver extends TimedJob {
+public class StatsDriver {
     public interface StatusAdapter {
         void sendAlert(String alertText);
 
@@ -39,11 +43,11 @@ public class StatsDriver extends TimedJob {
     }
 
     private final LogEntryPool entryPool;
-    private final LogSink sink;
+    private final LogSink<?> sink;
     private final LogEntry[] entries;
 
     private final LogEntryPool entryPoolHisto;
-    private final LogSink sinkHisto;
+    private final LogSink<?> sinkHisto;
     private final LogEntry[] entriesHisto;
 
     private final TimestampBuffer systemTimestamp;
@@ -52,9 +56,8 @@ public class StatsDriver extends TimedJob {
     public final static String header =
             "Stat,IntervalName,NowSec,NowString,AppNowSec,AppNowString,TypeTag,Name,N,Sum,Last,Min,Max,Avg,Sum2,Stdev";
 
-    private long nextInvocation = System.currentTimeMillis();
-    private long nextCpuUpdate = nextInvocation + CPU_INTERVAL;
-    private long nextMemUpdate = nextInvocation + MEM_INTERVAL;
+    private long nextCpuUpdate;
+    private long nextMemUpdate;
 
     private static final long STEP = 1000;
     private static final long MEM_INTERVAL = 1000;
@@ -70,9 +73,15 @@ public class StatsDriver extends TimedJob {
     private final Clock clock;
     private final StatsIntradayLogger intraday;
     private final Value clockValue;
+    private final ExecutionContext executionContext;
+    @ReferentialIntegrity
+    private final ScheduledExecutorService scheduler;
+    @ReferentialIntegrity
+    private final ScheduledFuture<?> updateJobFuture;
 
     private final StatsMemoryCollector memStats;
     private final StatsCPUCollector cpuStats;
+    @ReferentialIntegrity
     private ObjectAllocationCollector objectAllocation;
 
     public StatsDriver(Clock clock) {
@@ -115,15 +124,16 @@ public class StatsDriver extends TimedJob {
             }
         }
 
-        this.systemTimestamp = new TimestampBuffer(ISO8601.serverTimeZone());
-        this.appTimestamp = new TimestampBuffer(ISO8601.serverTimeZone());
+        final TimeZone serverTimeZone = Configuration.getInstance().getServerTimezone();
+        this.systemTimestamp = new TimestampBuffer(serverTimeZone);
+        this.appTimestamp = new TimestampBuffer(serverTimeZone);
 
         if (path == null) {
             this.entryPool = null;
             this.sink = null;
             this.entries = null;
         } else {
-            LogBufferPool bufferPool = new LogBufferPoolImpl(History.INTERVALS.length * 20, BUFFER_SIZE);
+            LogBufferPool bufferPool = LogBufferPool.ofStrict(History.INTERVALS.length * 20, BUFFER_SIZE);
             this.entryPool = new LogEntryPoolImpl(History.INTERVALS.length * 20, bufferPool);
             this.sink = new LogSinkImpl<>(path, 3600 * 1000, entryPool, true);
             this.entries = new LogEntry[History.INTERVALS.length];
@@ -134,7 +144,7 @@ public class StatsDriver extends TimedJob {
             this.sinkHisto = null;
             this.entriesHisto = null;
         } else {
-            LogBufferPool bufferPool = new LogBufferPoolImpl(History.INTERVALS.length * 20, BUFFER_SIZE);
+            LogBufferPool bufferPool = LogBufferPool.ofStrict(History.INTERVALS.length * 20, BUFFER_SIZE);
             this.entryPoolHisto = new LogEntryPoolImpl(History.INTERVALS.length * 20, bufferPool);
             this.sinkHisto = new LogSinkImpl<>(histoPath, 3600 * 1000, entryPoolHisto, true);
             this.entriesHisto = new LogEntry[History.INTERVALS.length];
@@ -149,20 +159,30 @@ public class StatsDriver extends TimedJob {
             clockValue = null;
         }
 
-        long now = System.currentTimeMillis();
-        long delay = STEP - (now % STEP);
-        nextInvocation = now + delay;
+        final long now = System.currentTimeMillis();
+        final long delay = STEP - (now % STEP);
+        nextCpuUpdate = now + delay + CPU_INTERVAL;
+        nextMemUpdate = now + delay + MEM_INTERVAL;
+
         cpuStats = new StatsCPUCollector(CPU_INTERVAL, getFdStats);
         memStats = new StatsMemoryCollector(MEM_INTERVAL, statusAdapter::sendAlert, statusAdapter::cmsAlertEnabled);
         if (Configuration.getInstance().getBoolean("allocation.stats.enabled")) {
             objectAllocation = new ObjectAllocationCollector();
         }
+        executionContext = ExecutionContext.getContext();
+
+        // now that the StatsDriver is completely constructed, we can schedule the update job
         if (Configuration.getInstance().getBoolean("statsdriver.enabled")) {
-            schedule();
+            scheduler = Executors.newSingleThreadScheduledExecutor(
+                    new NamingThreadFactory(StatsDriver.class, "updateScheduler", true));
+            updateJobFuture = scheduler.scheduleAtFixedRate(this::update, delay, STEP, TimeUnit.MILLISECONDS);
+        } else {
+            scheduler = null;
+            updateJobFuture = null;
         }
     }
 
-    public void timedOut() {
+    private void update() {
         long t0 = System.nanoTime();
         long now = System.currentTimeMillis();
         long appNow = clock == null ? now : clock.currentTimeMillis();
@@ -182,7 +202,9 @@ public class StatsDriver extends TimedJob {
         }
 
         if (this.entries == null) {
-            Stats.update(LISTENER, now, appNow, REPORT_INTERVAL);
+            try (final SafeCloseable ignored = executionContext.open()) {
+                Stats.update(LISTENER, now, appNow, REPORT_INTERVAL);
+            }
         } else {
             for (int i = 0; i < History.INTERVALS.length; ++i) {
                 entries[i] = entryPool.take().start(sink, LogLevel.INFO, now * 1000);
@@ -190,7 +212,9 @@ public class StatsDriver extends TimedJob {
                     entriesHisto[i] = entryPoolHisto.take().start(sinkHisto, LogLevel.INFO, now * 1000);
                 }
             }
-            Stats.update(LISTENER, now, appNow, REPORT_INTERVAL);
+            try (final SafeCloseable ignored = executionContext.open()) {
+                Stats.update(LISTENER, now, appNow, REPORT_INTERVAL);
+            }
             for (int i = 0; i < History.INTERVALS.length; ++i) {
                 entries[i].end();
                 if (entriesHisto != null) {
@@ -199,138 +223,69 @@ public class StatsDriver extends TimedJob {
             }
         }
 
-        schedule();
-
         statsTiming.sample((System.nanoTime() - t0 + 500) / 1000);
-    }
-
-    private void schedule() {
-        CommBase.getScheduler().installJob(this, nextInvocation);
-        long steps = Math.max(1L, (((System.currentTimeMillis() - nextInvocation) / STEP) + 1));
-        nextInvocation += steps * STEP;
     }
 
     private final ItemUpdateListener LISTENER = new ItemUpdateListener() {
         @Override
-        public void handleItemUpdated(Item item, long now, long appNow, int intervalIndex, long intervalMillis,
+        public void handleItemUpdated(Item<?> item, long now, long appNow, int intervalIndex, long intervalMillis,
                 String intervalName) {
+            if (entries == null && intraday == StatsIntradayLogger.NULL) {
+                return;
+            }
+
             final Value v = item.getValue();
             final History history = v.getHistory();
-            final char typeTag = v.getTypeTag();
             LogEntry e;
-            switch (typeTag) { // it's either a HistogramPower2 or a Value
-                case 'N': {
-                    if (entriesHisto == null && intraday == StatsIntradayLogger.NULL) {
-                        return;
-                    }
-                    final long n = history.getN(intervalIndex, 1);
-                    final long sum = history.getSum(intervalIndex, 1);
-                    final long last = history.getLast(intervalIndex, 1);
-                    final long min = history.getMin(intervalIndex, 1);
-                    final long max = history.getMax(intervalIndex, 1);
-                    final long avg = history.getAvg(intervalIndex, 1);
-                    final long sum2 = history.getSum2(intervalIndex, 1);
-                    final long stdev = history.getStdev(intervalIndex, 1);
-                    final HistogramPower2 nh = (HistogramPower2) v;
-                    if (entriesHisto != null) {
-                        e = entriesHisto[intervalIndex];
-                        if (e.size() > BUFFER_SIZE - GUESS_ENTRY_SIZE) {
-                            e.end();
-                            e = entriesHisto[intervalIndex] =
-                                    entryPoolHisto.take().start(sinkHisto, LogLevel.INFO, now * 1000);
-                        }
-                        e.append("HISTOGRAM")
-                                .append(',').append(intervalName)
-                                .append(',').append(now / 1000)
-                                .append(',').appendTimestamp(now, systemTimestamp)
-                                .append(',').append(appNow / 1000)
-                                .append(',').appendTimestamp(appNow, appTimestamp)
-                                .append(',').append(v.getTypeTag())
-                                .append(',').append(item.getGroupName())
-                                .append('.').append(item.getName())
-                                .append(',').append(n)
-                                .append(',').append(sum)
-                                .append(',').append(last)
-                                .append(',').append(min)
-                                .append(',').append(max)
-                                .append(',').append(avg)
-                                .append(',').append(sum2)
-                                .append(',').append(stdev)
-                                .append(',').append(nh.getHistogramString())
-                                .nl();
-                    }
-                    intraday.log(
-                            intervalName,
-                            now,
-                            appNow,
-                            v.getTypeTag(),
-                            item.getCompactName(),
-                            n,
-                            sum,
-                            last,
-                            min,
-                            max,
-                            avg,
-                            sum2,
-                            stdev,
-                            nh.getHistogram());
-                    break;
-                }
-                default: {
-                    if (entries == null && intraday == StatsIntradayLogger.NULL) {
-                        return;
-                    }
-                    final long n = history.getN(intervalIndex, 1);
-                    final long sum = history.getSum(intervalIndex, 1);
-                    final long last = history.getLast(intervalIndex, 1);
-                    final long min = history.getMin(intervalIndex, 1);
-                    final long max = history.getMax(intervalIndex, 1);
-                    final long avg = history.getAvg(intervalIndex, 1);
-                    final long sum2 = history.getSum2(intervalIndex, 1);
-                    final long stdev = history.getStdev(intervalIndex, 1);
-                    if (entries != null) {
-                        e = entries[intervalIndex];
-                        if (e.size() > BUFFER_SIZE - GUESS_ENTRY_SIZE) {
-                            e.end();
-                            e = entries[intervalIndex] = entryPool.take().start(sink, LogLevel.INFO, now * 1000);
-                        }
 
-                        e.append("STAT")
-                                .append(',').append(intervalName)
-                                .append(',').append(now / 1000)
-                                .append(',').appendTimestamp(now, systemTimestamp)
-                                .append(',').append(appNow / 1000)
-                                .append(',').appendTimestamp(appNow, appTimestamp)
-                                .append(',').append(v.getTypeTag())
-                                .append(',').append(item.getGroupName())
-                                .append('.').append(item.getName())
-                                .append(',').append(n)
-                                .append(',').append(sum)
-                                .append(',').append(last)
-                                .append(',').append(min)
-                                .append(',').append(max)
-                                .append(',').append(avg)
-                                .append(',').append(sum2)
-                                .append(',').append(stdev)
-                                .nl();
-                    }
-                    intraday.log(
-                            intervalName,
-                            now,
-                            appNow,
-                            v.getTypeTag(),
-                            item.getCompactName(),
-                            n,
-                            sum,
-                            last,
-                            min,
-                            max,
-                            avg,
-                            sum2,
-                            stdev);
-                    break;
+            final long n = history.getN(intervalIndex, 1);
+            final long sum = history.getSum(intervalIndex, 1);
+            final long last = history.getLast(intervalIndex, 1);
+            final long min = history.getMin(intervalIndex, 1);
+            final long max = history.getMax(intervalIndex, 1);
+            final long avg = history.getAvg(intervalIndex, 1);
+            final long sum2 = history.getSum2(intervalIndex, 1);
+            final long stdev = history.getStdev(intervalIndex, 1);
+            if (entries != null) {
+                e = entries[intervalIndex];
+                if (e.size() > BUFFER_SIZE - GUESS_ENTRY_SIZE) {
+                    e.end();
+                    e = entries[intervalIndex] = entryPool.take().start(sink, LogLevel.INFO, now * 1000);
                 }
+
+                e.append("STAT")
+                        .append(',').append(intervalName)
+                        .append(',').append(now / 1000)
+                        .append(',').appendTimestamp(now, systemTimestamp)
+                        .append(',').append(appNow / 1000)
+                        .append(',').appendTimestamp(appNow, appTimestamp)
+                        .append(',').append(v.getTypeTag())
+                        .append(',').append(item.getGroupName())
+                        .append('.').append(item.getName())
+                        .append(',').append(n)
+                        .append(',').append(sum)
+                        .append(',').append(last)
+                        .append(',').append(min)
+                        .append(',').append(max)
+                        .append(',').append(avg)
+                        .append(',').append(sum2)
+                        .append(',').append(stdev)
+                        .nl();
             }
+            intraday.log(
+                    intervalName,
+                    now,
+                    appNow,
+                    v.getTypeTag(),
+                    item.getCompactName(),
+                    n,
+                    sum,
+                    last,
+                    min,
+                    max,
+                    avg,
+                    sum2,
+                    stdev);
         }
     };
 }

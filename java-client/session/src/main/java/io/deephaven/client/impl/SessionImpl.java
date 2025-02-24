@@ -1,33 +1,31 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.client.impl;
 
-import com.google.protobuf.ByteString;
 import io.deephaven.client.impl.script.Changes;
-import io.deephaven.client.impl.script.VariableDefinition;
+import io.deephaven.proto.DeephavenChannel;
 import io.deephaven.proto.backplane.grpc.AddTableRequest;
-import io.deephaven.proto.backplane.grpc.AddTableResponse;
-import io.deephaven.proto.backplane.grpc.ApplicationServiceGrpc.ApplicationServiceStub;
-import io.deephaven.proto.backplane.grpc.CloseSessionResponse;
+import io.deephaven.proto.backplane.grpc.AuthenticationConstantsRequest;
+import io.deephaven.proto.backplane.grpc.AuthenticationConstantsResponse;
+import io.deephaven.proto.backplane.grpc.ConfigValue;
+import io.deephaven.proto.backplane.grpc.ConfigurationConstantsRequest;
+import io.deephaven.proto.backplane.grpc.ConfigurationConstantsResponse;
+import io.deephaven.proto.backplane.grpc.ConnectRequest;
 import io.deephaven.proto.backplane.grpc.DeleteTableRequest;
-import io.deephaven.proto.backplane.grpc.DeleteTableResponse;
+import io.deephaven.proto.backplane.grpc.ExportRequest;
 import io.deephaven.proto.backplane.grpc.FieldsChangeUpdate;
 import io.deephaven.proto.backplane.grpc.HandshakeRequest;
-import io.deephaven.proto.backplane.grpc.HandshakeResponse;
-import io.deephaven.proto.backplane.grpc.InputTableServiceGrpc.InputTableServiceStub;
 import io.deephaven.proto.backplane.grpc.ListFieldsRequest;
+import io.deephaven.proto.backplane.grpc.PublishRequest;
 import io.deephaven.proto.backplane.grpc.ReleaseRequest;
-import io.deephaven.proto.backplane.grpc.ReleaseResponse;
-import io.deephaven.proto.backplane.grpc.SessionServiceGrpc.SessionServiceStub;
+import io.deephaven.proto.backplane.grpc.StreamRequest;
+import io.deephaven.proto.backplane.grpc.StreamResponse;
 import io.deephaven.proto.backplane.grpc.Ticket;
 import io.deephaven.proto.backplane.script.grpc.BindTableToVariableRequest;
-import io.deephaven.proto.backplane.script.grpc.BindTableToVariableResponse;
-import io.deephaven.proto.backplane.script.grpc.ConsoleServiceGrpc.ConsoleServiceStub;
 import io.deephaven.proto.backplane.script.grpc.ExecuteCommandRequest;
-import io.deephaven.proto.backplane.script.grpc.ExecuteCommandResponse;
 import io.deephaven.proto.backplane.script.grpc.StartConsoleRequest;
-import io.deephaven.proto.backplane.script.grpc.StartConsoleResponse;
-import io.grpc.CallCredentials;
-import io.grpc.Metadata;
-import io.grpc.Metadata.Key;
+import io.deephaven.qst.table.TableSpec;
 import io.grpc.stub.ClientCallStreamObserver;
 import io.grpc.stub.ClientResponseObserver;
 import io.grpc.stub.StreamObserver;
@@ -41,13 +39,17 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Function;
 
 /**
  * A {@link Session} implementation that uses {@link io.deephaven.proto.backplane.grpc.BatchTableRequest batch requests}
@@ -59,180 +61,130 @@ import java.util.concurrent.TimeoutException;
 public final class SessionImpl extends SessionBase {
     private static final Logger log = LoggerFactory.getLogger(SessionImpl.class);
 
-    private static final int REFRESH_RETRIES = 5;
-
-    public interface Handler {
-        void onRefreshSuccess();
-
-        void onRefreshTokenError(Throwable t, Runnable invokeForRetry);
-
-        void onCloseSessionError(Throwable t);
-
-        void onClosed();
+    /**
+     * Creates a session. Closing the session does <b>not</b> close the underlying channel.
+     *
+     * @param config the config
+     * @return the session
+     * @throws InterruptedException if the thread is interrupted
+     */
+    public static SessionImpl create(SessionImplConfig config) throws InterruptedException {
+        final Authentication authentication =
+                Authentication.authenticate(config.channel(), config.authenticationTypeAndValue());
+        authentication.awaitOrCancel();
+        return create(config, authentication);
     }
 
-    private static class Retrying implements Handler {
-        private static final Logger log = LoggerFactory.getLogger(Retrying.class);
-
-        private final int maxRefreshes;
-        private int remainingRefreshes;
-
-        Retrying(int maxRefreshes) {
-            this.maxRefreshes = maxRefreshes;
+    public static SessionImpl create(SessionImplConfig config, Authentication authentication) {
+        authentication.throwOnError();
+        final DeephavenChannel bearerChannel = authentication.bearerChannel().orElseThrow(IllegalStateException::new);
+        final ConfigurationConstantsResponse response =
+                authentication.configurationConstants().orElseThrow(IllegalStateException::new);
+        final Optional<Duration> httpSessionDuration = parseHttpSessionDuration(response);
+        if (!httpSessionDuration.isPresent()) {
+            log.warn(
+                    "Server did not return an 'http.session.durationMs', defaulting to pinging the server every minute.");
         }
-
-        @Override
-        public void onRefreshSuccess() {
-            remainingRefreshes = maxRefreshes;
-        }
-
-        @Override
-        public void onRefreshTokenError(Throwable t, Runnable invokeForRetry) {
-            if (remainingRefreshes > 0) {
-                remainingRefreshes--;
-                log.warn("Error refreshing token, trying again", t);
-                invokeForRetry.run();
-                return;
-            }
-            log.error("Error refreshing token, giving up", t);
-        }
-
-        @Override
-        public void onCloseSessionError(Throwable t) {
-            log.error("onCloseSessionError", t);
-        }
-
-        @Override
-        public void onClosed() {
-
-        }
+        final Duration pingFrequency = httpSessionDuration.map(d -> d.dividedBy(3)).orElse(Duration.ofMinutes(1));
+        return new SessionImpl(config, bearerChannel, pingFrequency, authentication.bearerHandler());
     }
 
-    public static SessionImpl create(SessionImplConfig config) {
-        final HandshakeRequest request = initialHandshake();
-        final HandshakeResponse response = config.channel().sessionBlocking().newSession(request);
-        final AuthenticationInfo initialAuth = AuthenticationInfo.of(response);
-        final SessionImpl session =
-                new SessionImpl(config, new Retrying(REFRESH_RETRIES), initialAuth);
-
-
-        session.scheduleRefreshSessionToken(response);
-        return session;
+    private static Optional<Duration> parseHttpSessionDuration(ConfigurationConstantsResponse response) {
+        return getHttpSessionDurationMs(response).map(SessionImpl::stringValue).flatMap(SessionImpl::parseMillis);
     }
 
-    public static CompletableFuture<SessionImpl> createFuture(SessionImplConfig config) {
-        final HandshakeRequest request = initialHandshake();
-        final SessionObserver sessionObserver = new SessionObserver(config);
-        config.channel().session().newSession(request, sessionObserver);
-        return sessionObserver.future;
+    private static String stringValue(ConfigValue value) {
+        if (!value.hasStringValue()) {
+            throw new IllegalArgumentException("Expected string value");
+        }
+        return value.getStringValue();
     }
 
-    private static HandshakeRequest initialHandshake() {
-        return HandshakeRequest.newBuilder().setAuthProtocol(1).build();
+    private static Optional<ConfigValue> getHttpSessionDurationMs(ConfigurationConstantsResponse response) {
+        return Optional.ofNullable(response.getConfigValuesMap().get("http.session.durationMs"));
     }
 
-    private static class SessionObserver
-            implements ClientResponseObserver<HandshakeRequest, HandshakeResponse> {
-
-        private final SessionImplConfig config;
-        private final CompletableFuture<SessionImpl> future = new CompletableFuture<>();
-
-        SessionObserver(SessionImplConfig config) {
-            this.config = Objects.requireNonNull(config);
-        }
-
-        @Override
-        public void beforeStart(ClientCallStreamObserver<HandshakeRequest> requestStream) {
-            future.whenComplete((session, throwable) -> {
-                if (future.isCancelled()) {
-                    requestStream.cancel("User cancelled", null);
-                }
-            });
-        }
-
-        @Override
-        public void onNext(HandshakeResponse response) {
-            AuthenticationInfo initialAuth = AuthenticationInfo.of(response);
-            SessionImpl session =
-                    new SessionImpl(config, new Retrying(REFRESH_RETRIES), initialAuth);
-            if (future.complete(session)) {
-                session.scheduleRefreshSessionToken(response);
-            } else {
-                // Make sure we don't leak a session if we aren't able to pass it off to the user
-                session.close();
-            }
-        }
-
-        @Override
-        public void onError(Throwable t) {
-            future.completeExceptionally(t);
-        }
-
-        @Override
-        public void onCompleted() {
-            if (!future.isDone()) {
-                future.completeExceptionally(
-                        new IllegalStateException("Observer completed without response"));
-            }
+    private static Optional<Duration> parseMillis(String x) {
+        try {
+            return Optional.of(Duration.ofMillis(Long.parseLong(x)));
+        } catch (NumberFormatException e) {
+            return Optional.empty();
         }
     }
 
-    private final ScheduledExecutorService executor;
-    private final SessionServiceStub sessionService;
-    private final ConsoleServiceStub consoleService;
-    private final InputTableServiceStub inputTableService;
-    private final ApplicationServiceStub applicationServiceStub;
-    private final Handler handler;
+    private final SessionImplConfig config;
+    private final DeephavenChannel bearerChannel;
+    // Needed for downstream flight workarounds
+    private final BearerHandler bearerHandler;
     private final ExportTicketCreator exportTicketCreator;
-    private final ExportStates states;
+    private final ScheduledFuture<?> pingJob;
 
-    private volatile AuthenticationInfo auth;
+    /** Cache the close future, so we only close once. */
+    private CompletableFuture<Void> closeFuture;
 
-    private final boolean delegateToBatch;
-    private final boolean mixinStacktrace;
-    private final Duration executeTimeout;
-    private final Duration closeTimeout;
-    private final TableHandleManagerSerial serialManager;
-    private final TableHandleManagerBatch batchManager;
-
-    private SessionImpl(SessionImplConfig config, Handler handler, AuthenticationInfo auth) {
-
-        CallCredentials credentials = new SessionCallCredentials();
-        this.auth = Objects.requireNonNull(auth);
-        this.handler = Objects.requireNonNull(handler);
-        this.executor = config.executor();
-        this.sessionService = config.channel().session().withCallCredentials(credentials);
-        this.consoleService = config.channel().console().withCallCredentials(credentials);
-        this.inputTableService = config.channel().inputTable().withCallCredentials(credentials);
-        this.applicationServiceStub = config.channel().application().withCallCredentials(credentials);
+    private SessionImpl(SessionImplConfig config, DeephavenChannel bearerChannel, Duration pingFrequency,
+            BearerHandler bearerHandler) {
+        this.config = Objects.requireNonNull(config);
+        this.bearerChannel = Objects.requireNonNull(bearerChannel);
+        this.bearerHandler = Objects.requireNonNull(bearerHandler);
         this.exportTicketCreator = new ExportTicketCreator();
-        this.states = new ExportStates(this, sessionService, config.channel().table().withCallCredentials(credentials),
-                exportTicketCreator);
-        this.delegateToBatch = config.delegateToBatch();
-        this.mixinStacktrace = config.mixinStacktrace();
-        this.executeTimeout = config.executeTimeout();
-        this.closeTimeout = config.closeTimeout();
-        this.serialManager = TableHandleManagerSerial.of(this);
-        this.batchManager = TableHandleManagerBatch.of(this, mixinStacktrace);
+        this.pingJob = config.executor().scheduleAtFixedRate(
+                () -> bearerChannel.config().getConfigurationConstants(
+                        ConfigurationConstantsRequest.getDefaultInstance(), PingObserverNoOp.INSTANCE),
+                pingFrequency.toNanos(), pingFrequency.toNanos(), TimeUnit.NANOSECONDS);
     }
 
-    public AuthenticationInfo auth() {
-        return auth;
+    // exposed for Flight and testing
+    public BearerHandler _hackBearerHandler() {
+        return bearerHandler;
+    }
+
+    private ExportStates newExportStates() {
+        return new ExportStates(this, bearerChannel.session(), bearerChannel.table(), exportTicketCreator);
     }
 
     @Override
-    public List<Export> export(ExportsRequest request) {
-        return states.export(request);
+    public TableService newStatefulTableService() {
+        return new TableServiceImpl(newExportStates());
+    }
+
+    @Override
+    public TableHandleManager batch() {
+        return batch(config.mixinStacktrace());
+    }
+
+    @Override
+    public TableHandleManager batch(boolean mixinStacktraces) {
+        return new TableHandleManagerBatch(mixinStacktraces) {
+            @Override
+            protected ExportService exportService() {
+                return newExportStates();
+            }
+        };
+    }
+
+    @Override
+    public TableHandleManager serial() {
+        return new TableHandleManagerSerial() {
+            @Override
+            protected ExportService exportService() {
+                return newExportStates();
+            }
+
+            @Override
+            protected TableHandle handle(TableSpec table) {
+                return io.deephaven.client.impl.TableServiceImpl.executeUnchecked(exportService(), table, null);
+            }
+        };
     }
 
     @Override
     public CompletableFuture<? extends ConsoleSession> console(String type) {
-        final ExportId consoleId = new ExportId(exportTicketCreator.createExportId());
+        final ExportId consoleId = new ExportId("Console", exportTicketCreator.createExportId());
         final StartConsoleRequest request = StartConsoleRequest.newBuilder().setSessionType(type)
-                .setResultId(consoleId.ticketId().ticket()).build();
-        final ConsoleHandler handler = new ConsoleHandler(request);
-        consoleService.startConsole(request, handler);
-        return handler.future();
+                .setResultId(consoleId.ticketId().proto()).build();
+        return UnaryGrpcFuture.of(request, channel().console()::startConsole,
+                response -> new ConsoleSessionImpl(request));
     }
 
     @Override
@@ -240,16 +192,118 @@ public final class SessionImpl extends SessionBase {
         if (!SourceVersion.isName(name)) {
             throw new IllegalArgumentException("Invalid name");
         }
-        PublishObserver observer = new PublishObserver();
-        consoleService.bindTableToVariable(BindTableToVariableRequest.newBuilder()
-                .setVariableName(name).setTableId(ticketId.ticketId().ticket()).build(), observer);
-        return observer.future;
+        BindTableToVariableRequest request = BindTableToVariableRequest.newBuilder()
+                .setVariableName(name)
+                .setTableId(ticketId.ticketId().proto())
+                .build();
+        return UnaryGrpcFuture.ignoreResponse(request, channel().console()::bindTableToVariable);
+    }
+
+    @Override
+    public CompletableFuture<Void> publish(HasTicketId resultId, HasTicketId sourceId) {
+        final PublishRequest request = PublishRequest.newBuilder()
+                .setSourceId(sourceId.ticketId().proto())
+                .setResultId(resultId.ticketId().proto())
+                .build();
+        return UnaryGrpcFuture.ignoreResponse(request, channel().session()::publishFromTicket);
+    }
+
+    @Override
+    public CompletableFuture<ServerData> fetch(HasTypedTicket typedTicket) {
+        final TypedTicket tt = typedTicket.typedTicket();
+        if (!tt.type().isPresent()) {
+            throw new IllegalArgumentException("Type must be present to fetch an object");
+        }
+        final StreamRequest connectRequest = StreamRequest.newBuilder()
+                .setConnect(ConnectRequest.newBuilder().setSourceId(tt.proto()))
+                .build();
+        return UnaryGrpcFuture.of(connectRequest, this::messageStreamConnectOnly, this::toDataAndExports);
+    }
+
+    private void messageStreamConnectOnly(
+            io.deephaven.proto.backplane.grpc.StreamRequest request,
+            io.grpc.stub.StreamObserver<io.deephaven.proto.backplane.grpc.StreamResponse> responseObserver) {
+        final StreamObserver<StreamRequest> observer = channel().object().messageStream(responseObserver);
+        observer.onNext(request);
+        observer.onCompleted();
+    }
+
+    private ServerData toDataAndExports(StreamResponse value) {
+        // noinspection SwitchStatementWithTooFewBranches
+        switch (value.getMessageCase()) {
+            case DATA:
+                return ServerData.of(this, value.getData());
+            default:
+                throw new IllegalStateException(
+                        String.format("Unexpected stream response message type, %s", value.getMessageCase()));
+        }
+    }
+
+    @Override
+    public MessageStream<ClientData> connect(HasTypedTicket typedTicket,
+            MessageStream<ServerData> receiveStream) {
+        final TypedTicket tt = typedTicket.typedTicket();
+        if (!tt.type().isPresent()) {
+            throw new IllegalArgumentException("Type must be present to open messageStream with an object");
+        }
+        final StreamRequest connectRequest = StreamRequest.newBuilder()
+                .setConnect(ConnectRequest.newBuilder()
+                        .setSourceId(tt.proto())
+                        .build())
+                .build();
+        final StreamObserver<StreamRequest> serverObserver =
+                channel().object().messageStream(new MessageStreamObserver(receiveStream));
+        serverObserver.onNext(connectRequest);
+        return new MessageStreamImpl(serverObserver);
+    }
+
+    @Override
+    public CompletableFuture<? extends ServerObject> export(HasTypedTicket typedTicket) {
+        return export(typedTicket, this::toServerObject);
+    }
+
+    @Override
+    public CompletableFuture<? extends Fetchable> fetchable(HasTypedTicket typedTicket) {
+        return export(typedTicket, this::toFetchableObject);
+    }
+
+    @Override
+    public CompletableFuture<? extends Bidirectional> bidirectional(HasTypedTicket typedTicket) {
+        return export(typedTicket, this::toBidirectionalObject);
+    }
+
+    private <T extends ServerObject> CompletableFuture<T> export(HasTypedTicket typedTicket, Function<ExportId, T> f) {
+        final TypedTicket tt = typedTicket.typedTicket();
+        final ExportId exportId = newExportId(tt.type().orElse(null));
+        // Doesn't need to be closed unless it makes it back to the user
+        // noinspection resource
+        final T serverObject = f.apply(exportId);
+        final ExportRequest exportRequest = ExportRequest.newBuilder()
+                .setSourceId(tt.ticketId().proto())
+                .setResultId(exportId.ticketId().proto())
+                .build();
+        return UnaryGrpcFuture.ignoreResponse(exportRequest, channel().session()::exportFromTicket)
+                .thenApply(x -> serverObject);
+    }
+
+    private ServerObject toServerObject(ExportId exportId) {
+        return exportId.toServerObject(this);
+    }
+
+    private Fetchable toFetchableObject(ExportId exportId) {
+        // all fetchable objects are custom objects atm
+        return new CustomObject(this, exportId);
+    }
+
+    private Bidirectional toBidirectionalObject(ExportId exportId) {
+        // all bidirectional objects are custom objects atm
+        return new CustomObject(this, exportId);
     }
 
     @Override
     public void close() {
         try {
-            closeFuture().get(closeTimeout.toNanos(), TimeUnit.NANOSECONDS);
+            closeFuture().get(config.closeTimeout().toNanos(), TimeUnit.NANOSECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("Interrupted waiting for session close");
@@ -257,286 +311,100 @@ public final class SessionImpl extends SessionBase {
             log.warn("Timed out waiting for session close");
         } catch (ExecutionException e) {
             log.error("Exception waiting for session close", e);
+        } catch (CancellationException e) {
+            log.warn("Close cancelled", e);
         }
     }
 
     @Override
-    public CompletableFuture<Void> closeFuture() {
-        HandshakeRequest handshakeRequest = HandshakeRequest.newBuilder().setAuthProtocol(0)
-                .setPayload(ByteString.copyFromUtf8(auth.session())).build();
-        CloseSessionHandler handler = new CloseSessionHandler();
-        sessionService.closeSession(handshakeRequest, handler);
-        return handler.future;
-    }
-
-    @Override
-    protected TableHandleManager delegate() {
-        return delegateToBatch ? batchManager : serialManager;
-    }
-
-    @Override
-    public TableHandleManager batch() {
-        return batchManager;
-    }
-
-    @Override
-    public TableHandleManager batch(boolean mixinStacktrace) {
-        if (this.mixinStacktrace == mixinStacktrace) {
-            return batchManager;
+    public synchronized CompletableFuture<Void> closeFuture() {
+        if (closeFuture == null) {
+            pingJob.cancel(false);
+            HandshakeRequest handshakeRequest = HandshakeRequest.getDefaultInstance();
+            closeFuture = UnaryGrpcFuture.ignoreResponse(handshakeRequest, channel().session()::closeSession);
         }
-        return TableHandleManagerBatch.of(this, mixinStacktrace);
+        return closeFuture;
     }
 
     @Override
-    public TableHandleManager serial() {
-        return serialManager;
+    protected TableService delegate() {
+        // This allows Session to implement an un-cached TableService.
+        // Each respective execution (Session.execute(), Session.executeAsync(), Session.serial().execute(), etc)
+        // will create new states for that specific execution.
+        return newStatefulTableService();
     }
 
     @Override
     public ExportId newExportId() {
-        return new ExportId(exportTicketCreator.createExportId());
+        return newExportId(TableObject.TYPE);
+    }
+
+    private ExportId newExportId(String type) {
+        return new ExportId(type, exportTicketCreator.createExportId());
     }
 
     @Override
     public CompletableFuture<Void> release(ExportId exportId) {
-        final ReleaseTicketObserver observer = new ReleaseTicketObserver();
-        sessionService.release(
-                ReleaseRequest.newBuilder().setId(exportId.ticketId().ticket()).build(), observer);
-        return observer.future;
+        ReleaseRequest request = ReleaseRequest.newBuilder()
+                .setId(exportId.ticketId().proto())
+                .build();
+        return UnaryGrpcFuture.ignoreResponse(request, channel().session()::release);
+    }
+
+    @Override
+    public DeephavenChannel channel() {
+        return bearerChannel;
     }
 
     @Override
     public CompletableFuture<Void> addToInputTable(HasTicketId destination, HasTicketId source) {
         final AddTableRequest request = AddTableRequest.newBuilder()
-                .setInputTable(destination.ticketId().ticket())
-                .setTableToAdd(source.ticketId().ticket())
+                .setInputTable(destination.ticketId().proto())
+                .setTableToAdd(source.ticketId().proto())
                 .build();
-        final AddToInputTableObserver observer = new AddToInputTableObserver();
-        inputTableService.addTableToInputTable(request, observer);
-        return observer.future;
+        return UnaryGrpcFuture.ignoreResponse(request, channel().inputTable()::addTableToInputTable);
     }
 
     @Override
     public CompletableFuture<Void> deleteFromInputTable(HasTicketId destination, HasTicketId source) {
         final DeleteTableRequest request = DeleteTableRequest.newBuilder()
-                .setInputTable(destination.ticketId().ticket())
-                .setTableToRemove(source.ticketId().ticket())
+                .setInputTable(destination.ticketId().proto())
+                .setTableToRemove(source.ticketId().proto())
                 .build();
-        final DeleteFromInputTableObserver observer = new DeleteFromInputTableObserver();
-        inputTableService.deleteTableFromInputTable(request, observer);
-        return observer.future;
+        return UnaryGrpcFuture.ignoreResponse(request,
+                channel().inputTable()::deleteTableFromInputTable);
     }
 
     @Override
     public Cancel subscribeToFields(Listener listener) {
         final ListFieldsRequest request = ListFieldsRequest.newBuilder().build();
         final ListFieldsObserver observer = new ListFieldsObserver(listener);
-        applicationServiceStub.listFields(request, observer);
+        bearerChannel.application().listFields(request, observer);
         return observer;
     }
 
-    public long batchCount() {
-        return states.batchCount();
+    ScheduledExecutorService executor() {
+        return config.executor();
     }
 
-    public long releaseCount() {
-        return states.releaseCount();
+    @Override
+    public CompletableFuture<Map<String, ConfigValue>> getAuthenticationConstants() {
+        return UnaryGrpcFuture.of(AuthenticationConstantsRequest.getDefaultInstance(),
+                channel().config()::getAuthenticationConstants, AuthenticationConstantsResponse::getConfigValuesMap);
     }
 
-    private void scheduleRefreshSessionToken(HandshakeResponse response) {
-        final long now = System.currentTimeMillis();
-        final long targetRefreshTime = Math.min(
-                now + response.getTokenExpirationDelayMillis() / 3,
-                response.getTokenDeadlineTimeMillis() - response.getTokenExpirationDelayMillis() / 10);
-        final long refreshDelayMs = Math.max(targetRefreshTime - now, 0);
-        executor.schedule(SessionImpl.this::refreshSessionToken, refreshDelayMs, TimeUnit.MILLISECONDS);
-    }
-
-    private void scheduleRefreshSessionTokenNow() {
-        executor.schedule(SessionImpl.this::refreshSessionToken, 0, TimeUnit.MILLISECONDS);
-    }
-
-    private void refreshSessionToken() {
-        HandshakeRequest handshakeRequest = HandshakeRequest.newBuilder().setAuthProtocol(0)
-                .setPayload(ByteString.copyFromUtf8(auth.session())).build();
-        HandshakeHandler handler = new HandshakeHandler();
-        sessionService.refreshSessionToken(handshakeRequest, handler);
-    }
-
-    private static class PublishObserver
-            implements ClientResponseObserver<BindTableToVariableRequest, BindTableToVariableResponse> {
-        private final CompletableFuture<Void> future = new CompletableFuture<>();
-
-        @Override
-        public void beforeStart(
-                ClientCallStreamObserver<BindTableToVariableRequest> requestStream) {
-            future.whenComplete((session, throwable) -> {
-                if (future.isCancelled()) {
-                    requestStream.cancel("User cancelled", null);
-                }
-            });
-        }
-
-        @Override
-        public void onNext(BindTableToVariableResponse value) {
-            future.complete(null);
-        }
-
-        @Override
-        public void onError(Throwable t) {
-            future.completeExceptionally(t);
-        }
-
-        @Override
-        public void onCompleted() {
-            if (!future.isDone()) {
-                future.completeExceptionally(
-                        new IllegalStateException("Observer completed without response"));
-            }
-        }
-    }
-
-    private class SessionCallCredentials extends CallCredentials {
-
-        @Override
-        public void applyRequestMetadata(RequestInfo requestInfo, Executor appExecutor,
-                MetadataApplier applier) {
-            AuthenticationInfo localAuth = auth;
-            Metadata metadata = new Metadata();
-            metadata.put(Key.of(localAuth.sessionHeaderKey(), Metadata.ASCII_STRING_MARSHALLER),
-                    localAuth.session());
-            applier.apply(metadata);
-        }
-
-        @Override
-        public void thisUsesUnstableApi() {
-
-        }
-    }
-
-    private class HandshakeHandler implements StreamObserver<HandshakeResponse> {
-
-        @Override
-        public void onNext(HandshakeResponse value) {
-            auth = AuthenticationInfo.of(value);
-            scheduleRefreshSessionToken(value);
-            handler.onRefreshSuccess();
-        }
-
-        @Override
-        public void onError(Throwable t) {
-            handler.onRefreshTokenError(t, SessionImpl.this::scheduleRefreshSessionTokenNow);
-        }
-
-        @Override
-        public void onCompleted() {
-            // ignore
-        }
-    }
-
-    private class CloseSessionHandler implements StreamObserver<CloseSessionResponse> {
-
-        private final CompletableFuture<Void> future = new CompletableFuture<>();
-
-        @Override
-        public void onNext(CloseSessionResponse value) {
-            handler.onClosed();
-        }
-
-        @Override
-        public void onError(Throwable t) {
-            handler.onCloseSessionError(t);
-            future.completeExceptionally(t);
-        }
-
-        @Override
-        public void onCompleted() {
-            future.complete(null);
-        }
-    }
-
-    private static class ExecuteCommandHandler implements StreamObserver<ExecuteCommandResponse> {
-
-        private final CompletableFuture<Changes> future = new CompletableFuture<>();
-
-        private static VariableDefinition of(io.deephaven.proto.backplane.script.grpc.VariableDefinition d) {
-            return VariableDefinition.of(d.getType(), d.getTitle());
-        }
-
-        private static Changes of(ExecuteCommandResponse value) {
-            Changes.Builder builder = Changes.builder();
-            if (!value.getErrorMessage().isEmpty()) {
-                builder.errorMessage(value.getErrorMessage());
-            }
-            for (io.deephaven.proto.backplane.script.grpc.VariableDefinition d : value.getCreatedList()) {
-                builder.addCreated(of(d));
-            }
-            for (io.deephaven.proto.backplane.script.grpc.VariableDefinition d : value.getUpdatedList()) {
-                builder.addUpdated(of(d));
-            }
-            for (io.deephaven.proto.backplane.script.grpc.VariableDefinition d : value.getRemovedList()) {
-                builder.addRemoved(of(d));
-            }
-            return builder.build();
-        }
-
-        @Override
-        public void onNext(ExecuteCommandResponse value) {
-            future.complete(of(value));
-        }
-
-        @Override
-        public void onError(Throwable t) {
-            future.completeExceptionally(t);
-        }
-
-        @Override
-        public void onCompleted() {
-            if (!future.isDone()) {
-                future.completeExceptionally(new IllegalStateException("ExecuteCommandHandler.onNext not called"));
-            }
-        }
-    }
-
-    private class ConsoleHandler implements StreamObserver<StartConsoleResponse> {
-        private final StartConsoleRequest request;
-        private final CompletableFuture<ConsoleSession> future;
-
-        public ConsoleHandler(StartConsoleRequest request) {
-            this.request = Objects.requireNonNull(request);
-            this.future = new CompletableFuture<>();
-        }
-
-        CompletableFuture<ConsoleSession> future() {
-            return future;
-        }
-
-        @Override
-        public void onNext(StartConsoleResponse response) {
-            future.complete(new ConsoleSessionImpl(request, response));
-        }
-
-        @Override
-        public void onError(Throwable t) {
-            future.completeExceptionally(t);
-        }
-
-        @Override
-        public void onCompleted() {
-            if (!future.isDone()) {
-                future.completeExceptionally(new IllegalStateException("ConsoleHandler.onNext not called"));
-            }
-        }
+    @Override
+    public CompletableFuture<Map<String, ConfigValue>> getConfigurationConstants() {
+        return UnaryGrpcFuture.of(ConfigurationConstantsRequest.getDefaultInstance(),
+                channel().config()::getConfigurationConstants, ConfigurationConstantsResponse::getConfigValuesMap);
     }
 
     private class ConsoleSessionImpl implements ConsoleSession {
 
         private final StartConsoleRequest request;
-        private final StartConsoleResponse response;
 
-        public ConsoleSessionImpl(StartConsoleRequest request, StartConsoleResponse response) {
+        public ConsoleSessionImpl(StartConsoleRequest request) {
             this.request = Objects.requireNonNull(request);
-            this.response = Objects.requireNonNull(response);
         }
 
         @Override
@@ -550,42 +418,58 @@ public final class SessionImpl extends SessionBase {
         }
 
         @Override
-        public Changes executeCode(String code) throws InterruptedException, ExecutionException, TimeoutException {
-            return executeCodeFuture(code).get(executeTimeout.toNanos(), TimeUnit.NANOSECONDS);
+        public Changes executeCode(String code, ExecuteCodeOptions options)
+                throws InterruptedException, ExecutionException, TimeoutException {
+            return executeCodeFuture(code, options).get(config.executeTimeout().toNanos(), TimeUnit.NANOSECONDS);
         }
 
         @Override
-        public Changes executeScript(Path path)
+        public Changes executeScript(Path path, ExecuteCodeOptions options)
                 throws IOException, InterruptedException, ExecutionException, TimeoutException {
-            return executeScriptFuture(path).get(executeTimeout.toNanos(), TimeUnit.NANOSECONDS);
+            return executeScriptFuture(path, options).get(config.executeTimeout().toNanos(), TimeUnit.NANOSECONDS);
         }
 
         @Override
-        public CompletableFuture<Changes> executeCodeFuture(String code) {
-            final ExecuteCommandRequest request =
-                    ExecuteCommandRequest.newBuilder().setConsoleId(ticket()).setCode(code).build();
-            final ExecuteCommandHandler handler = new ExecuteCommandHandler();
-            consoleService.executeCommand(request, handler);
-            return handler.future;
+        public CompletableFuture<Changes> executeCodeFuture(String code, ExecuteCodeOptions options) {
+            final ExecuteCommandRequest.Builder requestBuilder =
+                    ExecuteCommandRequest.newBuilder().setConsoleId(ticket()).setCode(code);
+
+            final ExecuteCodeOptions.SystemicType systemicOption = options.executeSystemic();
+            if (systemicOption != ExecuteCodeOptions.SystemicType.ServerDefault) {
+                requestBuilder.setSystemic(systemicOption == ExecuteCodeOptions.SystemicType.Systemic
+                        ? ExecuteCommandRequest.SystemicType.EXECUTE_SYSTEMIC
+                        : ExecuteCommandRequest.SystemicType.EXECUTE_NOT_SYSTEMIC);
+            }
+
+            return UnaryGrpcFuture.of(requestBuilder.build(), channel().console()::executeCommand,
+                    response -> {
+                        Changes.Builder builder = Changes.builder().changes(new FieldChanges(response.getChanges()));
+                        if (!response.getErrorMessage().isEmpty()) {
+                            builder.errorMessage(response.getErrorMessage());
+                        }
+                        return builder.build();
+                    });
         }
 
         @Override
-        public CompletableFuture<Changes> executeScriptFuture(Path path) throws IOException {
+        public CompletableFuture<Changes> executeScriptFuture(Path path, ExecuteCodeOptions options)
+                throws IOException {
             final String code = String.join(System.lineSeparator(), Files.readAllLines(path, StandardCharsets.UTF_8));
-            return executeCodeFuture(code);
+            return executeCodeFuture(code, options);
         }
 
         @Override
         public CompletableFuture<Void> closeFuture() {
-            final ConsoleCloseHandler handler = new ConsoleCloseHandler();
-            sessionService.release(ReleaseRequest.newBuilder().setId(request.getResultId()).build(), handler);
-            return handler.future();
+            ReleaseRequest request = ReleaseRequest.newBuilder()
+                    .setId(this.request.getResultId())
+                    .build();
+            return UnaryGrpcFuture.ignoreResponse(request, channel().session()::release);
         }
 
         @Override
         public void close() {
             try {
-                closeFuture().get(closeTimeout.toNanos(), TimeUnit.NANOSECONDS);
+                closeFuture().get(config.closeTimeout().toNanos(), TimeUnit.NANOSECONDS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 log.warn("Interrupted waiting for console close");
@@ -593,130 +477,6 @@ public final class SessionImpl extends SessionBase {
                 log.warn("Timed out waiting for console close");
             } catch (ExecutionException e) {
                 log.error("Exception waiting for console close", e);
-            }
-        }
-    }
-
-    private static class ConsoleCloseHandler implements StreamObserver<ReleaseResponse> {
-        private final CompletableFuture<Void> future = new CompletableFuture<>();
-
-        CompletableFuture<Void> future() {
-            return future;
-        }
-
-        @Override
-        public void onNext(ReleaseResponse value) {
-            future.complete(null);
-        }
-
-        @Override
-        public void onError(Throwable t) {
-            future.completeExceptionally(t);
-        }
-
-        @Override
-        public void onCompleted() {
-            if (!future.isDone()) {
-                future.completeExceptionally(new IllegalStateException("ConsoleCloseHandler.onNext not called"));
-            }
-        }
-    }
-
-    private static class ReleaseTicketObserver
-            implements ClientResponseObserver<ReleaseRequest, ReleaseResponse> {
-        private final CompletableFuture<Void> future = new CompletableFuture<>();
-
-        @Override
-        public void beforeStart(
-                ClientCallStreamObserver<ReleaseRequest> requestStream) {
-            future.whenComplete((session, throwable) -> {
-                if (future.isCancelled()) {
-                    requestStream.cancel("User cancelled", null);
-                }
-            });
-        }
-
-        @Override
-        public void onNext(ReleaseResponse value) {
-            future.complete(null);
-        }
-
-        @Override
-        public void onError(Throwable t) {
-            future.completeExceptionally(t);
-        }
-
-        @Override
-        public void onCompleted() {
-            if (!future.isDone()) {
-                future.completeExceptionally(
-                        new IllegalStateException("Observer completed without response"));
-            }
-        }
-    }
-
-    private static class AddToInputTableObserver
-            implements ClientResponseObserver<AddTableRequest, AddTableResponse> {
-        private final CompletableFuture<Void> future = new CompletableFuture<>();
-
-        @Override
-        public void beforeStart(
-                ClientCallStreamObserver<AddTableRequest> requestStream) {
-            future.whenComplete((session, throwable) -> {
-                if (future.isCancelled()) {
-                    requestStream.cancel("User cancelled", null);
-                }
-            });
-        }
-
-        @Override
-        public void onNext(AddTableResponse value) {
-            future.complete(null);
-        }
-
-        @Override
-        public void onError(Throwable t) {
-            future.completeExceptionally(t);
-        }
-
-        @Override
-        public void onCompleted() {
-            if (!future.isDone()) {
-                future.completeExceptionally(
-                        new IllegalStateException("Observer completed without response"));
-            }
-        }
-    }
-
-    private static class DeleteFromInputTableObserver
-            implements ClientResponseObserver<DeleteTableRequest, DeleteTableResponse> {
-        private final CompletableFuture<Void> future = new CompletableFuture<>();
-
-        @Override
-        public void beforeStart(
-                ClientCallStreamObserver<DeleteTableRequest> requestStream) {
-            future.whenComplete((session, throwable) -> {
-                if (future.isCancelled()) {
-                    requestStream.cancel("User cancelled", null);
-                }
-            });
-        }
-
-        @Override
-        public void onNext(DeleteTableResponse value) {
-            future.complete(null);
-        }
-
-        @Override
-        public void onError(Throwable t) {
-            future.completeExceptionally(t);
-        }
-
-        @Override
-        public void onCompleted() {
-            if (!future.isDone()) {
-                future.completeExceptionally(
-                        new IllegalStateException("Observer completed without response"));
             }
         }
     }
@@ -743,7 +503,7 @@ public final class SessionImpl extends SessionBase {
 
         @Override
         public void onNext(FieldsChangeUpdate value) {
-            listener.onNext(value);
+            listener.onNext(new FieldChanges(value));
         }
 
         @Override
@@ -754,6 +514,124 @@ public final class SessionImpl extends SessionBase {
         @Override
         public void onCompleted() {
             listener.onCompleted();
+        }
+    }
+
+    private enum PingObserverNoOp implements StreamObserver<ConfigurationConstantsResponse> {
+        INSTANCE;
+
+        @Override
+        public void onNext(ConfigurationConstantsResponse value) {
+
+        }
+
+        @Override
+        public void onError(Throwable t) {
+
+        }
+
+        @Override
+        public void onCompleted() {
+
+        }
+    }
+
+    private class MessageStreamObserver implements StreamObserver<StreamResponse> {
+        private final MessageStream<ServerData> clientStream;
+
+        public MessageStreamObserver(MessageStream<ServerData> clientStream) {
+            this.clientStream = Objects.requireNonNull(clientStream);
+        }
+
+        @Override
+        public void onNext(StreamResponse value) {
+            clientStream.onData(toDataAndExports(value));
+        }
+
+        @Override
+        public void onError(Throwable t) {
+            clientStream.onClose();
+        }
+
+        @Override
+        public void onCompleted() {
+            clientStream.onClose();
+        }
+    }
+
+    private static class MessageStreamImpl implements MessageStream<ClientData> {
+        private final StreamObserver<StreamRequest> serverObserver;
+
+        public MessageStreamImpl(StreamObserver<StreamRequest> serverObserver) {
+            this.serverObserver = Objects.requireNonNull(serverObserver);
+        }
+
+        @Override
+        public void onData(ClientData message) {
+            serverObserver.onNext(StreamRequest.newBuilder().setData(message.proto()).build());
+        }
+
+        @Override
+        public void onClose() {
+            serverObserver.onCompleted();
+        }
+    }
+
+    private class TableServiceImpl extends TableHandleManagerDelegate implements TableService {
+
+        private final ExportStates exportStates;
+
+        TableServiceImpl(ExportStates exportStates) {
+            this.exportStates = Objects.requireNonNull(exportStates);
+        }
+
+        // ---------------------------------------------------
+
+        @Override
+        public TableHandleFuture executeAsync(TableSpec table) {
+            return TableServiceAsyncImpl.executeAsync(exportStates, table);
+        }
+
+        @Override
+        public List<? extends TableHandleFuture> executeAsync(Iterable<? extends TableSpec> tables) {
+            return TableServiceAsyncImpl.executeAsync(exportStates, tables);
+        }
+
+        // ---------------------------------------------------
+
+        @Override
+        protected TableHandleManager delegate() {
+            return config.delegateToBatch() ? batch() : serial();
+        }
+
+        @Override
+        public TableHandleManager batch() {
+            return batch(config.mixinStacktrace());
+        }
+
+        @Override
+        public TableHandleManager batch(boolean mixinStacktrace) {
+            return new TableHandleManagerBatch(mixinStacktrace) {
+                @Override
+                protected ExportService exportService() {
+                    return exportStates;
+                }
+            };
+        }
+
+        @Override
+        public TableHandleManager serial() {
+            return new TableHandleManagerSerial() {
+                @Override
+                protected ExportService exportService() {
+                    return exportStates;
+                }
+
+                @Override
+                protected TableHandle handle(TableSpec table) {
+                    return io.deephaven.client.impl.TableServiceImpl.executeUnchecked(exportService(), table, null);
+                }
+            };
         }
     }
 }

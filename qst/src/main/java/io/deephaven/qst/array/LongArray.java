@@ -1,6 +1,10 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.qst.array;
 
 import io.deephaven.qst.type.LongType;
+import io.deephaven.util.QueryConstants;
 
 import java.util.Arrays;
 import java.util.Collection;
@@ -58,19 +62,29 @@ public final class LongArray extends PrimitiveArrayBase<Long> {
     }
 
     @Override
+    public Long value(int index) {
+        long value = values[index];
+        return value == QueryConstants.NULL_LONG ? null : value;
+    }
+
+    @Override
+    public boolean isNull(int index) {
+        return values[index] == QueryConstants.NULL_LONG;
+    }
+
+    @Override
     public final int size() {
         return values().length;
     }
 
     @Override
     public final LongType componentType() {
-        return LongType.instance();
+        return LongType.of();
     }
 
     @Override
-    public final <V extends PrimitiveArray.Visitor> V walk(V visitor) {
-        visitor.visit(this);
-        return visitor;
+    public final <R> R walk(PrimitiveArray.Visitor<R> visitor) {
+        return visitor.visit(this);
     }
 
     @Override

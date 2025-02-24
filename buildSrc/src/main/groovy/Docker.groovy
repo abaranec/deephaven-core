@@ -13,6 +13,7 @@ import com.github.dockerjava.api.command.InspectImageResponse
 import com.github.dockerjava.api.exception.DockerException
 import groovy.transform.CompileStatic
 import io.deephaven.tools.docker.Architecture
+import io.deephaven.tools.docker.CombinedDockerRunTask
 import org.gradle.api.Action
 import org.gradle.api.GradleException
 import org.gradle.api.Project
@@ -21,7 +22,6 @@ import org.gradle.api.file.CopySpec
 import org.gradle.api.file.FileCollection
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.TaskProvider
-import org.gradle.util.ConfigureUtil
 
 /**
  * Tools to make some common tasks in docker easier to use in gradle
@@ -71,13 +71,18 @@ class Docker {
     /**
      * DSL object to describe a docker task
      */
-    static class DockerTaskConfig {
+    abstract static class DockerTaskConfig {
 
         private Action<? super CopySpec> copyIn;
         private Action<? super Sync> copyOut;
         private File dockerfileFile;
         private Action<? super Dockerfile> dockerfileAction;
-        private TaskDependencies containerDependencies = new TaskDependencies();
+
+        /**
+         * Declares tasks that this group of tasks should depend on or be
+         * finalized by.
+         */
+        TaskDependencies containerDependencies = new TaskDependencies();
 
         /**
          * Files that need to be copied in to the image.
@@ -86,12 +91,6 @@ class Docker {
             copyIn = action;
             return this;
         }
-        /**
-         * Files that need to be copied in to the image.
-         */
-        DockerTaskConfig copyIn(Closure closure) {
-            return copyIn(ConfigureUtil.configureUsing(closure))
-        }
 
         /**
          * Resulting files to copy out from the containerOutPath.
@@ -99,12 +98,6 @@ class Docker {
         DockerTaskConfig copyOut(Action<? super Sync> action) {
             copyOut = action;
             return this;
-        }
-        /**
-         * Resulting files to copy out from the containerOutPath.
-         */
-        DockerTaskConfig copyOut(Closure closure) {
-            return copyOut(ConfigureUtil.configureUsing(closure))
         }
 
         /**
@@ -120,12 +113,6 @@ class Docker {
         DockerTaskConfig dockerfile(Action<? super Dockerfile> action) {
             this.dockerfileAction = action;
             return this;
-        }
-        /**
-         * Dockerfile to use. If not set, it is assumed that a dockerfile will be included in copyIn.
-         */
-        DockerTaskConfig dockerfile(Closure closure) {
-            dockerfile(ConfigureUtil.configureUsing(closure));
         }
 
         /**
@@ -167,8 +154,16 @@ class Docker {
         /**
          * Logs are always printed from the build task when it runs, but entrypoint logs are only printed
          * when it fails. Set this flag to always show logs, even when entrypoint is successful.
+         * <p />
+         * Only intended for debugging, as this will often cause extra work during builds.
          */
         boolean showLogsOnSuccess;
+
+        /**
+         * How long in minutes to wait for the docker container's entrypoint to run. Defaults to
+         * 15 minutes.
+         */
+        int waitTimeMinutes = 15;
     }
     /**
      * Describes relationships between this set of tasks and other external tasks.
@@ -199,7 +194,12 @@ class Docker {
      * @return a task provider for the Sync task that will produce the requested output
      */
     static TaskProvider<? extends Task> registerDockerTask(Project project, String taskName, Closure closure) {
-        return registerDockerTask(project, taskName, ConfigureUtil.configureUsing(closure))
+        return registerDockerTask(project, taskName, new Action<DockerTaskConfig>() {
+            @Override
+            void execute(DockerTaskConfig dockerTaskConfig) {
+                project.configure(dockerTaskConfig, closure)
+            }
+        })
     }
 
     /**
@@ -212,8 +212,8 @@ class Docker {
      */
     static TaskProvider<? extends Task> registerDockerTask(Project project, String taskName, Action<? super DockerTaskConfig> action) {
         // create instance, assign defaults
-        DockerTaskConfig cfg = new DockerTaskConfig();
-        cfg.imageName = "deephaven/${taskName.replaceAll(/\B[A-Z]/) { String str -> '-' + str }.toLowerCase()}:${LOCAL_BUILD_TAG}"
+        DockerTaskConfig cfg = project.objects.newInstance(DockerTaskConfig);
+        cfg.imageName = localImageName(taskName.replaceAll(/\B[A-Z]/) { String str -> '-' + str }.toLowerCase())
 
         // ask for more configuration
         action.execute(cfg)
@@ -234,13 +234,14 @@ class Docker {
         }
 
         if (cfg.dockerfileAction) {
+            // Keep this task, it has explicit inputs and outputs
             dockerfileTask = project.tasks.register("${taskName}Dockerfile", Dockerfile) { dockerfile ->
                 cfg.dockerfileAction.execute(dockerfile)
                 dockerfile.destFile.set new File(dockerWorkspaceContents.path + 'file', 'Dockerfile')
             }
         }
 
-        // Copy the requested files into build/docker
+        // Copy the requested files into build/docker for use in the image creation/runner
         def prepareDocker = project.tasks.register("${taskName}PrepareDocker", Sync) { sync ->
             // First, apply the provided spec
             cfg.copyIn.execute(sync)
@@ -249,9 +250,13 @@ class Docker {
             sync.into dockerWorkspaceContents
 
             if (cfg.dockerfileFile) {
-                sync.from cfg.dockerfileFile
+                sync.from(cfg.dockerfileFile) { CopySpec dockerfileCopy ->
+                    dockerfileCopy.include(cfg.dockerfileFile.name)
+                }
             } else if (cfg.dockerfileAction) {
-                sync.from dockerfileTask.get().outputs.files
+                sync.from(dockerfileTask.get().outputs.files) { CopySpec dockerfileCopy ->
+                    dockerfileCopy.include('Dockerfile')
+                }
             }
         }
 
@@ -283,6 +288,108 @@ class Docker {
                 }
             }
         }
+
+        if (cfg.copyOut && !cfg.showLogsOnSuccess) {
+            // Single task with explicit inputs and outputs, to let gradle detect if it is up to date, and let docker
+            // cache what it can. While far more efficient for gradle to run (or rather, know when it does not need to
+            // run), it is also more bug-prone while we try to get various competing features working.
+            //
+            // To handle these use cases, we're not using dependsOn as we typically would do, but instead using
+            // finalizedBy and onlyIf. Here's a mermaid diagram:
+            //
+            // graph LR;
+            //     MakeImage -. finalizedBy .-> Run
+            //     Sync -- dependsOn --> MakeImage
+            //     Run -. finalizedBy .-> Sync
+            //
+            //
+            // Unlike "A dependsOn B", "B finalized A" will let B run if A failed, and will not run A if B must run.
+            // Combining the chain of finalizedBys between MakeImage <- Run <- Sync with the dependsOn from
+            // Sync -> MakeImage lets us handle the following cases:
+            // * Successful run, output is sync'd afterwards, final task succeeds
+            // * Failed run, output is sync'd afterwards, final task fails
+            // * Failed image creation, no run, no sync, no final task
+            // * Previously successful run with no source changes, no tasks run (all "UP-TO-DATE")
+            //
+            // Tests to run to confirm functionality:
+            // * After changes, confirm that :web:assemble runs (isn't all "UP-TO-DATE")
+            // * Then run again with no changes, confirm all are UP-TO-DATE, roughly 2s build time
+            // * Edit a test that uses deephavenDocker to fail, confirm that the test fails, that the test-reports
+            //   are copied out, and that server logs are written to console
+            // * Ensure that if the test is set to pass that the test-reports are copied out, and server logs are
+            //   not written.
+            // Note that at this time integration tests using the deephavenDocker plugin are never UP-TO-DATE.
+
+            // Note that if "showLogsOnSuccess" is true, we don't run this way, since that would omit logs when cached.
+            def buildAndRun = project.tasks.register("${taskName}Run", CombinedDockerRunTask) { cacheableDockerTask ->
+                cacheableDockerTask.with {
+                    // mark inputs, depend on dockerfile task and input sync task
+                    inputs.files(makeImage.get().outputs.files)
+
+                    // mark internal output directory, Sync output will depend on this still
+                    outputs.dir(dockerCopyLocation)
+
+                    imageId.set(makeImage.get().getImageId())
+
+                    if (cfg.network) {
+                        hostConfig.network.set(cfg.network)
+                    }
+
+                    if (cfg.containerDependencies.dependsOn) {
+                        dependsOn(cfg.containerDependencies.dependsOn)
+                    }
+
+                    if (cfg.containerDependencies.finalizedBy) {
+                        finalizedBy(cfg.containerDependencies.finalizedBy)
+                    }
+
+                    if (cfg.entrypoint) {
+                        // if provided, set a run command that we'll use each time it starts
+                        entrypoint.set(cfg.entrypoint)
+                    }
+
+                    awaitStatusTimeoutSeconds.set cfg.waitTimeMinutes * 60
+
+                    remotePath.set(cfg.containerOutPath)
+                    outputDir.set(project.file(dockerCopyLocation))
+                }
+            }
+
+            // Specify that makeImage is finalized by buildAndRun - that is, in this configuration buildAndRun
+            // must run after makeImage finishes
+            makeImage.configure {it ->
+                it.finalizedBy(buildAndRun)
+            }
+
+            // Handle copying output from the docker task to the user-controlled location
+            def syncOutput = project.tasks.register(taskName, Sync) { sync ->
+                sync.with {
+                    dependsOn(makeImage)
+                    // run the provided closure first
+                    cfg.copyOut.execute(sync)
+
+                    // then set the from location
+                    from dockerCopyLocation
+
+                    doLast {
+                        // If the actual task has already failed, we need to fail this task to signal to any downstream
+                        // tasks to not continue. Under normal circumstances, we might just not run this Sync task at
+                        // all to signal this, however in our case we want to copy out artifacts of failure for easier
+                        // debugging.
+                        if (buildAndRun.get().state.failure != null) {
+                            throw new GradleException('Docker task failed, see earlier task failures for details')
+                        }
+                    }
+                }
+            }
+            buildAndRun.configure {t ->
+                t.finalizedBy syncOutput
+            }
+
+            return syncOutput
+        }
+        // With no outputs, we can use the standard individual containers, and gradle will have to re-run each time
+        // the task is invoked, can never be marked as up to date.
 
         // Create a new container from the image above, as a workaround to extract the output from the dockerfile's
         // build steps
@@ -339,6 +446,7 @@ class Docker {
             waitContainer.with {
                 dependsOn startContainer
                 containerId.set(dockerContainerName)
+                awaitStatusTimeout.set cfg.waitTimeMinutes * 60
             }
         }
         TaskProvider<DockerLogsContainer> containerLogs = project.tasks.register("${taskName}LogsContainer", DockerLogsContainer) { logsContainer ->
@@ -403,6 +511,25 @@ class Docker {
                     // we must manually delete this first, since docker cp will error if trying to overwrite
                     project.delete(dockerCopyLocation)
                 }
+                doLast {
+                    if (cfg.entrypoint && containerFinished.get().exitCode != 0) {
+                        // The entrypoing existed and failed. Since we rely on the Sync task (right after this one,
+                        // returned from this method) to communicate that failure, we need to create some noop file
+                        // if no other file was copied.
+
+                        // since we rely on the Sync task to communicate failure (as it is returned), we need to
+                        // make some noop file if no other files were copied
+                        def copyLoc = new File(dockerCopyLocation)
+                        if (!copyLoc.exists() || copyLoc.list().length == 0) {
+                            copyLoc.mkdirs()
+                            // make a new file, ensure it is always fresh
+                            def nonce = new File(copyLoc, 'no-contents.txt')
+                            nonce.createNewFile()
+                            nonce.write("Empty marker file, since no output was copied from the entrypoint's failure (${new Date()})")
+                        }
+
+                    }
+                }
             }
         }
 
@@ -440,7 +567,12 @@ class Docker {
     }
 
     static TaskProvider<? extends DockerBuildImage> registerDockerTwoPhaseImage(Project project, String baseName, String intermediate, Closure closure) {
-        return registerDockerTwoPhaseImage(project, baseName, intermediate, ConfigureUtil.configureUsing(closure))
+        return registerDockerTwoPhaseImage(project, baseName, intermediate, new Action<DockerBuildImage>() {
+            @Override
+            void execute(DockerBuildImage dockerBuildImage) {
+                project.configure(dockerBuildImage, closure)
+            }
+        })
     }
 
     static TaskProvider<? extends DockerBuildImage> registerDockerTwoPhaseImage(Project project, String baseName, String intermediate, Action<? super DockerBuildImage> action) {
@@ -450,19 +582,24 @@ class Docker {
             action.execute(buildImage)
             checkValidTwoPhase(buildImage)
             buildImage.target.set(intermediate)
-            buildImage.images.add("deephaven/${baseName}-${intermediate}:local-build".toString())
+            buildImage.images.add(localImageName("${baseName}-${intermediate}".toString()))
         }
 
         return registerDockerImage(project, "buildDocker-${baseName}") { DockerBuildImage buildImage ->
             action.execute(buildImage)
             checkValidTwoPhase(buildImage)
             buildImage.dependsOn(intermediateTask)
-            buildImage.images.add("deephaven/${baseName}:local-build".toString())
+            buildImage.images.add(localImageName(baseName))
         }
     }
 
     static TaskProvider<? extends DockerBuildImage> registerDockerImage(Project project, String taskName, Closure closure) {
-        return registerDockerImage(project, taskName, ConfigureUtil.configureUsing(closure))
+        return registerDockerImage(project, taskName, new Action<DockerBuildImage>() {
+            @Override
+            void execute(DockerBuildImage dockerBuildImage) {
+                project.configure(dockerBuildImage, closure)
+            }
+        })
     }
 
     static TaskProvider<? extends DockerBuildImage> registerDockerImage(Project project, String taskName, Action<? super DockerBuildImage> action) {
@@ -506,43 +643,20 @@ class Docker {
         return makeImage;
     }
 
-    static TaskProvider<? extends Task> buildPyWheel(Project project, String taskName, String imgName, String sourcePath) {
-        project.evaluationDependsOn(registryProject('python'))
-        return registerDockerTask(project, taskName) { DockerTaskConfig config ->
-            config.copyIn { Sync sync ->
-                sync.from(sourcePath) { CopySpec copySpec ->
-                    copySpec.into 'src'
-                }
-            }
-            config.imageName = "${imgName}:local-build"
-            config.dockerfile { Dockerfile action ->
-                // set up the container, env vars - things that aren't likely to change
-                action.from 'deephaven/python:local-build as sources'
-                action.arg 'DEEPHAVEN_VERSION'
-                action.environmentVariable 'DEEPHAVEN_VERSION', project.version.toString()
-                action.workingDir '/usr/src/app'
-                action.copyFile '/src', '.'
-                action.from 'sources as build'
-                action.runCommand '''set -eux; \\
-                      test -n "${DEEPHAVEN_VERSION}";\\
-                      python setup.py bdist_wheel'''
-            }
-            config.parentContainers = [ registryTask(project, 'python') ]
-            config.containerOutPath='/usr/src/app/dist'
-            config.copyOut { Sync sync ->
-                sync.into "build/wheel${taskName}"
-            }
-        }
-    }
-
-
     static TaskProvider<? extends DockerBuildImage> registryRegister(Project project) {
 
         String imageName = project.property('deephaven.registry.imageName')
         String imageId = project.property('deephaven.registry.imageId')
+        String platform = project.findProperty('deephaven.registry.platform')
         boolean ignoreOutOfDate = project.hasProperty('deephaven.registry.ignoreOutOfDate') ?
                 'true' == project.property('deephaven.registry.ignoreOutOfDate') :
                 false
+
+        project.tasks.register('showImageId') {
+            it.doLast {
+                println(imageId)
+            }
+        }
 
         def pullImage = project.tasks.register('pullImage', DockerPullImage) { pull ->
             pull.group = 'Docker Registry'
@@ -556,19 +670,21 @@ class Docker {
             inspect.imageId.set imageName
             inspect.mustRunAfter pullImage
             inspect.onNext { InspectImageResponse message ->
-                if (message.repoDigests.isEmpty()) {
+                def m = (InspectImageResponse) message
+                if (m.repoDigests.isEmpty()) {
                     throw new RuntimeException("Image '${imageName}' from the (local) repository does not have a repo digest. " +
                             "This is an unexpected situation, unless you are manually building the image.")
                 }
-                if (message.repoDigests.size() > 1) {
-                    throw new RuntimeException("Unable to bump the imageId for '${imageName}' since there are mulitple digests: '${message.repoDigests}'.\n" +
+                if (m.repoDigests.size() > 1) {
+                    throw new RuntimeException("Unable to bump the imageId for '${imageName}' since there are mulitple digests: '${m.repoDigests}'.\n" +
                             "Please update the property `deephaven.registry.imageId` in the file '${project.projectDir}/gradle.properties' manually.")
                 }
-                def repoDigest = message.repoDigests.get(0)
+                def repoDigest = m.repoDigests.get(0)
 
                 if (repoDigest != imageId) {
                     new File(project.projectDir, 'gradle.properties').text =
-                            "deephaven.registry.imageName=${imageName}\n" +
+                            "io.deephaven.project.ProjectType=DOCKER_REGISTRY\n" +
+                                    "deephaven.registry.imageName=${imageName}\n" +
                                     "deephaven.registry.imageId=${repoDigest}\n"
                     inspect.logger.quiet("Updated imageId for '${imageName}' to '${repoDigest}' from '${imageId}'.")
                 } else {
@@ -583,13 +699,14 @@ class Docker {
             inspect.imageId.set imageName
             inspect.mustRunAfter pullImage
             inspect.onNext { InspectImageResponse message ->
-                if (message.repoDigests.isEmpty()) {
+                def m = (InspectImageResponse) message
+                if (m.repoDigests.isEmpty()) {
                     throw new RuntimeException("Image '${imageName}' from the (local) repository does not have a repo digest. " +
                             "This is an unexpected situation, unless you are manually building the image.")
                 }
-                if (!(imageId in message.repoDigests)) {
+                if (!(imageId in m.repoDigests)) {
                     String text = "The imageId for '${imageName}' appears to be out-of-sync with the (local) repository. " +
-                            "Possible repo digests are '${message.repoDigests}'.\n" +
+                            "Possible repo digests are '${m.repoDigests}'.\n" +
                             "Consider running one of the following, and retrying the compare, to see if the issue persists:\n" +
                             "\t`./gradlew ${project.name}:${pullImage.get().name}`, or\n" +
                             "\t`docker pull ${imageName}`\n\n" +
@@ -617,7 +734,7 @@ class Docker {
         }
 
         def dockerfile = project.tasks.register('dockerfile', Dockerfile) { dockerfile ->
-            dockerfile.description = "Internal task: creates a dockerfile, to be (built) tagged as 'deephaven/${project.projectDir.name}:local-build'."
+            dockerfile.description = "Internal task: creates a dockerfile, to be (built) tagged as '${localImageName(project.projectDir.name)}'."
             dockerfile.from(imageId)
         }
 
@@ -636,10 +753,13 @@ class Docker {
             def dockerFileTask = dockerfile.get()
 
             build.group = 'Docker Registry'
-            build.description = "Creates 'deephaven/${project.projectDir.name}:local-build'."
+            build.description = "Creates '${localImageName(project.projectDir.name)}'."
             build.inputs.files dockerFileTask.outputs.files
             build.dockerFile.set dockerFileTask.outputs.files.singleFile
-            build.images.add("deephaven/${project.projectDir.name}:local-build".toString())
+            build.images.add(localImageName(project.projectDir.name))
+            if (platform != null) {
+                build.platform.set platform
+            }
         }
     }
 
@@ -649,6 +769,10 @@ class Docker {
 
     static Task registryTask(Project project, String name) {
         project.project(":docker-${name}").tasks.findByName('tagLocalBuild')
+    }
+
+    static String localImageName(String name) {
+        return "deephaven/${name}:${LOCAL_BUILD_TAG}".toString()
     }
 
     static FileCollection registryFiles(Project project, String name) {

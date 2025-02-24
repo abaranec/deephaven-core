@@ -1,11 +1,10 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.plot.util;
 
 import io.deephaven.base.verify.Require;
-import io.deephaven.configuration.Configuration;
+import io.deephaven.gen.GenUtils;
 
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -22,6 +21,7 @@ import java.util.stream.IntStream;
 public class GenerateAxesPlotMethods {
 
     private static final Logger log = Logger.getLogger(GenerateAxesPlotMethods.class.toString());
+    private static final String GRADLE_TASK = ":Generators:generateAxesPlotMethods";
 
     private static final String PLOT_INFO_ID = "new PlotInfo(this, seriesName)";
 
@@ -173,7 +173,7 @@ public class GenerateAxesPlotMethods {
             }
         });
 
-        types.put("DateTime", new Type() {
+        types.put("Instant", new Type() {
             @Override
             public String getGenericSignature(int index) {
                 return null;
@@ -181,12 +181,12 @@ public class GenerateAxesPlotMethods {
 
             @Override
             public String getVariableType(int index) {
-                return "DateTime[]";
+                return "Instant[]";
             }
 
             @Override
             public String getIndexableDataCode(String variableName) {
-                return "new IndexableNumericDataArrayDateTime(" + variableName + ", " + PLOT_INFO_ID + ")";
+                return "new IndexableNumericDataArrayInstant(" + variableName + ", " + PLOT_INFO_ID + ")";
             }
 
             @Override
@@ -570,7 +570,7 @@ public class GenerateAxesPlotMethods {
 
     private static final String[] timeTypes = {
             "Date",
-            "DateTime"
+            "Instant"
     };
 
     private static final String[] numberTypes = {
@@ -604,7 +604,10 @@ public class GenerateAxesPlotMethods {
         final String header3 =
                 headerSpace + headerComment + " AND THEN RUN GeneratePlottingConvenience " + headerComment;
 
-        StringBuilder code = new StringBuilder(header + "\n" + header2 + "\n" + header3 + "\n\n\n");
+        StringBuilder code = new StringBuilder().append(header).append("\n")
+                .append(header2).append("\n")
+                .append(header3).append("\n// @formatter:off\n\n\n");
+
 
         code.append(
                 codeFunction(isInterface, new String[] {"x", "y"}, new String[][] {numberTimeTypes, numberTimeTypes},
@@ -679,15 +682,15 @@ public class GenerateAxesPlotMethods {
                         "     *\n" +
                         "     * @param seriesName name of the created dataset\n" +
                         "     * @param x data\n" +
-                        "     * @param rangeMin minimum of the range\n" +
-                        "     * @param rangeMax maximum of the range\n" +
+                        "     * @param xmin minimum of the range\n" +
+                        "     * @param xmax maximum of the range\n" +
                         "     * @param nbins number of bins\n" +
                         "$JAVADOCS$" +
                         "     * @return dataset created by the plot\n" +
                         "     */\n" +
-                        "    public $GENERIC$ $RETURNTYPE$ histPlot(final Comparable seriesName, $ARGS$, final double rangeMin, final double rangeMax, final int nbins) {\n"
+                        "    public $GENERIC$ $RETURNTYPE$ histPlot(final Comparable seriesName, $ARGS$, final double xmin, final double xmax, final int nbins) {\n"
                         +
-                        "        return histPlot(seriesName, PlotUtils.doubleTable(x, \"Y\"), \"Y\", rangeMin, rangeMax, nbins);\n"
+                        "        return histPlot(seriesName, PlotUtils.doubleTable(x, \"Y\"), \"Y\", xmin, xmax, nbins);\n"
                         +
                         "    }\n",
                 new String[] {
@@ -776,14 +779,14 @@ public class GenerateAxesPlotMethods {
 
 
         code.append(codeFunctionRestrictedNumericalVariableTypes(isInterface,
-                new String[] {"categories", "values", "yLow", "yHigh"}, new String[] {"Comparable", "List<Comparable>"},
+                new String[] {"categories", "y", "yLow", "yHigh"}, new String[] {"Comparable", "List<Comparable>"},
                 1,
                 "    /**\n" +
                         "     * Creates a category error bar plot with whiskers in the y direction.\n" +
                         "     *\n" +
                         "     * @param seriesName name of the created dataset\n" +
                         "     * @param categories discrete data\n" +
-                        "     * @param values numeric data\n" +
+                        "     * @param y y-values\n" +
                         "     * @param yLow low value in y dimension\n" +
                         "     * @param yHigh high value in y dimension\n" +
                         "$JAVADOCS$" +
@@ -801,7 +804,7 @@ public class GenerateAxesPlotMethods {
                         "     * @param $GENERIC$ type of the numeric data\n"
                 }, "CategoryDataSeries", "CategoryDataSeriesInternal"));
 
-        code.append(codeFunction(isInterface, new String[] {"categories", "values"},
+        code.append(codeFunction(isInterface, new String[] {"categories", "y"},
                 new String[][] {{"Comparable", "List<Comparable>"}, numberTimeTypes},
                 "    /**\n" +
                         "     * Creates a plot with discrete axis.\n" +
@@ -809,7 +812,7 @@ public class GenerateAxesPlotMethods {
                         "     *\n" +
                         "     * @param seriesName name of the created dataset\n" +
                         "     * @param categories discrete data\n" +
-                        "     * @param values numeric data\n" +
+                        "     * @param y y-values\n" +
                         "$JAVADOCS$" +
                         "     * @return dataset created for plot\n" +
                         "     */\n" +
@@ -822,7 +825,7 @@ public class GenerateAxesPlotMethods {
                 }, "CategoryDataSeries", "CategoryDataSeriesInternal"));
 
 
-        code.append(codeFunction(isInterface, new String[] {"categories", "values"},
+        code.append(codeFunction(isInterface, new String[] {"categories", "y"},
                 new String[][] {{"Comparable", "List<Comparable>"}, numberTypes},
                 "    /**\n" +
                         "     * Creates a pie plot.\n" +
@@ -830,7 +833,7 @@ public class GenerateAxesPlotMethods {
                         "     *\n" +
                         "     * @param seriesName name of the created dataset\n" +
                         "     * @param categories categories\n" +
-                        "     * @param values data values\n" +
+                        "     * @param y y-values\n" +
                         "$JAVADOCS$" +
                         "     * @return dataset created for plot\n" +
                         "     */\n" +
@@ -865,17 +868,14 @@ public class GenerateAxesPlotMethods {
 
         if (assertNoChange) {
             String oldCode = new String(Files.readAllBytes(Paths.get(file)));
-            if (!newcode.equals(oldCode)) {
-                throw new RuntimeException(
-                        "Change in generated code.  Run GenerateAxesPlotMethods or \"./gradlew :Generators:generateAxesPlotMethods\" to regenerate\n");
-            }
+            GenUtils.assertGeneratedCodeSame(GenerateAxesPlotMethods.class, GRADLE_TASK, oldCode, newcode);
         } else {
 
             PrintWriter out = new PrintWriter(file);
             out.print(newcode);
             out.close();
 
-            log.warning(file + " written");
+            log.info(file + " written");
         }
     }
 
@@ -883,20 +883,18 @@ public class GenerateAxesPlotMethods {
 
         String devroot = null;
         boolean assertNoChange = false;
-        if (args.length == 0) {
-            devroot = Configuration.getInstance().getDevRootPath();
-        } else if (args.length == 1) {
+        if (args.length == 1) {
             devroot = args[0];
         } else if (args.length == 2) {
             devroot = args[0];
             assertNoChange = Boolean.parseBoolean(args[1]);
         } else {
-            System.out.println("Usage: [<devroot> [assertNoChange]]");
+            System.out.println("Usage: <devroot> [assertNoChange]");
             System.exit(-1);
         }
 
         log.setLevel(Level.WARNING);
-        log.warning("Running GenerateAxesPlotMethods assertNoChange=" + assertNoChange);
+        log.info("Running GenerateAxesPlotMethods assertNoChange=" + assertNoChange);
 
         final String fileIface = devroot + "/Plot/src/main/java/io/deephaven/plot/Axes.java";
         final String fileImpl = devroot + "/Plot/src/main/java/io/deephaven/plot/AxesImpl.java";

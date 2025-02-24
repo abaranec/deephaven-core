@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.server.session;
 
 import io.grpc.stub.ServerCallStreamObserver;
@@ -5,7 +8,7 @@ import io.grpc.stub.StreamObserver;
 
 import java.io.Closeable;
 
-import static io.deephaven.extensions.barrage.util.GrpcUtil.safelyExecuteLocked;
+import static io.deephaven.extensions.barrage.util.GrpcUtil.safelyComplete;
 
 public abstract class SessionCloseableObserver<T> implements Closeable {
     protected final SessionState session;
@@ -33,13 +36,13 @@ public abstract class SessionCloseableObserver<T> implements Closeable {
         }
 
         onClose();
-        safelyExecuteLocked(responseObserver, responseObserver::onCompleted);
+        safelyComplete(responseObserver);
     }
 
     /**
      * Override this to perform any additional specific clean up that must be performed.
      */
-    void onClose() {
+    protected void onClose() {
 
     }
 }

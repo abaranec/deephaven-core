@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.chunk;
 
 import io.deephaven.chunk.attributes.Any;
@@ -90,14 +93,14 @@ public interface WritableChunk<ATTR extends Any> extends Chunk<ATTR>, PoolableCh
 
     /**
      * Sort this chunk in-place using Java's primitive defined ordering.
-     *
+     * <p>
      * Of note is that nulls or NaNs are not sorted according to Deephaven ordering rules.
      */
     void sort();
 
     /**
      * Sort this chunk in-place using Java's primitive defined ordering.
-     *
+     * <p>
      * Of note is that nulls or NaNs are not sorted according to Deephaven ordering rules.
      */
     default void sort(int start, int length) {
@@ -142,8 +145,8 @@ public interface WritableChunk<ATTR extends Any> extends Chunk<ATTR>, PoolableCh
 
     /**
      * Upcast the attribute.
-     *
-     * When you know the data you will receive in this chunk from another source is a more specific suptype than the
+     * <p>
+     * When you know the data you will receive in this chunk from another source is a more specific sub-type than the
      * source provides, you can upcast the attribute with this helper method (such as reading RowKeys from a
      * ColumnSource which thinks they are just Values.)
      *

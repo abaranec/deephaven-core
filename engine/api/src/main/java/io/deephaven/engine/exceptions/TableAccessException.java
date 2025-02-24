@@ -1,6 +1,9 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.exceptions;
 
-import io.deephaven.util.auth.AuthContext;
+import io.deephaven.auth.AuthContext;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -27,7 +30,7 @@ public class TableAccessException extends UncheckedPermissionException {
             @NotNull AuthContext authContext, @Nullable String reason) {
         final StringBuilder sb = new StringBuilder();
 
-        sb.append(authContext.getLogRepresentation()).append(" may not access: ");
+        sb.append(authContext).append(" may not access: ");
         sb.append(tableDescription);
 
         if (reason != null && !reason.isEmpty()) {

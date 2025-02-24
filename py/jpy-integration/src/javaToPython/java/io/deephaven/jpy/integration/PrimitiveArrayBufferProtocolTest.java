@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.jpy.integration;
 
 import io.deephaven.jpy.BuiltinsModule;
@@ -26,7 +29,7 @@ public class PrimitiveArrayBufferProtocolTest extends PythonTest {
 
     @Before
     public void setUp() {
-        ref = ReferenceCounting.create();
+        ref = ReferenceCounting.create(getCreateModule());
         builtins = BuiltinsModule.create();
         noop = NoopModule.create(getCreateModule());
         jpy = JpyModule.create();

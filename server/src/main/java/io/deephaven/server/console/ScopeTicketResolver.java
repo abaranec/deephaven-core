@@ -1,23 +1,26 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.server.console;
 
 import com.google.protobuf.ByteStringAccess;
 import com.google.rpc.Code;
 import io.deephaven.base.string.EncodingInfo;
+import io.deephaven.engine.context.ExecutionContext;
+import io.deephaven.engine.context.QueryScope;
 import io.deephaven.engine.table.Table;
-import io.deephaven.engine.updategraph.UpdateGraphProcessor;
-import io.deephaven.engine.util.ScriptSession;
-import io.deephaven.extensions.barrage.util.GrpcUtil;
 import io.deephaven.proto.backplane.grpc.Ticket;
 import io.deephaven.proto.flight.util.TicketRouterHelper;
+import io.deephaven.proto.util.ByteHelper;
+import io.deephaven.proto.util.Exceptions;
 import io.deephaven.proto.util.ScopeTicketHelper;
+import io.deephaven.server.auth.AuthorizationProvider;
 import io.deephaven.server.session.SessionState;
 import io.deephaven.server.session.TicketResolverBase;
 import io.deephaven.server.session.TicketRouter;
+import io.grpc.StatusRuntimeException;
 import org.apache.arrow.flight.impl.Flight;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.inject.Inject;
@@ -33,12 +36,10 @@ import static io.deephaven.proto.util.ScopeTicketHelper.TICKET_PREFIX;
 @Singleton
 public class ScopeTicketResolver extends TicketResolverBase {
 
-    private final GlobalSessionProvider globalSessionProvider;
-
     @Inject
-    public ScopeTicketResolver(final GlobalSessionProvider globalSessionProvider) {
-        super((byte) TICKET_PREFIX, FLIGHT_DESCRIPTOR_ROUTE);
-        this.globalSessionProvider = globalSessionProvider;
+    public ScopeTicketResolver(
+            final AuthorizationProvider authProvider) {
+        super(authProvider, (byte) TICKET_PREFIX, FLIGHT_DESCRIPTOR_ROUTE);
     }
 
     @Override
@@ -52,30 +53,36 @@ public class ScopeTicketResolver extends TicketResolverBase {
         // there is no mechanism to wait for a scope variable to resolve; require that the scope variable exists now
         final String scopeName = nameForDescriptor(descriptor, logId);
 
-        final Flight.FlightInfo flightInfo = UpdateGraphProcessor.DEFAULT.sharedLock().computeLocked(() -> {
-            final ScriptSession gss = globalSessionProvider.getGlobalSession();
-            Object scopeVar = gss.getVariable(scopeName, null);
-            if (scopeVar == null) {
-                throw GrpcUtil.statusRuntimeException(Code.NOT_FOUND,
-                        "Could not resolve '" + logId + ": no variable exists with name '" + scopeName + "'");
-            }
-            if (scopeVar instanceof Table) {
-                return TicketRouter.getFlightInfo((Table) scopeVar, descriptor, flightTicketForName(scopeName));
-            }
+        final QueryScope queryScope = ExecutionContext.getContext().getQueryScope();
+        final Object scopeVar = queryScope.unwrapObject(queryScope.readParamValue(scopeName, null));
+        if (scopeVar == null) {
+            throw newNotFoundSRE(logId, scopeName);
+        }
+        if (!(scopeVar instanceof Table)) {
+            throw newNotFoundSRE(logId, scopeName);
+        }
 
-            throw GrpcUtil.statusRuntimeException(Code.NOT_FOUND,
-                    "Could not resolve '" + logId + "': no variable exists with name '" + scopeName + "'");
-        });
+        final Table transformed = authorization.transform((Table) scopeVar);
+        if (transformed == null) {
+            throw newNotFoundSRE(logId, scopeName);
+        }
+        final Flight.FlightInfo flightInfo =
+                TicketRouter.getFlightInfo(transformed, descriptor, flightTicketForName(scopeName));
 
         return SessionState.wrapAsExport(flightInfo);
     }
 
     @Override
     public void forAllFlightInfo(@Nullable final SessionState session, final Consumer<Flight.FlightInfo> visitor) {
-        globalSessionProvider.getGlobalSession().getVariables().forEach((varName, varObj) -> {
-            if (varObj instanceof Table) {
-                visitor.accept(TicketRouter.getFlightInfo((Table) varObj, descriptorForName(varName),
-                        flightTicketForName(varName)));
+        if (session == null) {
+            return;
+        }
+        final QueryScope queryScope = ExecutionContext.getContext().getQueryScope();
+        queryScope.toMap(queryScope::unwrapObject, (n, t) -> t instanceof Table).forEach((name, table) -> {
+            final Table transformedTable = authorization.transform((Table) table);
+            if (transformedTable != null) {
+                visitor.accept(TicketRouter.getFlightInfo(
+                        transformedTable, descriptorForName(name), flightTicketForName(name)));
             }
         });
     }
@@ -83,50 +90,57 @@ public class ScopeTicketResolver extends TicketResolverBase {
     @Override
     public <T> SessionState.ExportObject<T> resolve(
             @Nullable final SessionState session, final ByteBuffer ticket, final String logId) {
-        return resolve(session, nameForTicket(ticket, logId), logId);
+        return resolve(nameForTicket(ticket, logId), logId);
     }
 
     @Override
     public <T> SessionState.ExportObject<T> resolve(
             @Nullable final SessionState session, final Flight.FlightDescriptor descriptor, final String logId) {
-        return resolve(session, nameForDescriptor(descriptor, logId), logId);
+        return resolve(nameForDescriptor(descriptor, logId), logId);
     }
 
-    private <T> SessionState.ExportObject<T> resolve(
-            @Nullable final SessionState session, final String scopeName, final String logId) {
-        // if we are not attached to a session, check the scope for a variable right now
-        final T export = UpdateGraphProcessor.DEFAULT.sharedLock().computeLocked(() -> {
-            final ScriptSession gss = globalSessionProvider.getGlobalSession();
+    private <T> SessionState.ExportObject<T> resolve(final String scopeName, final String logId) {
+        // fetch the variable from the scope right now
+        T export = null;
+        try {
+            QueryScope queryScope = ExecutionContext.getContext().getQueryScope();
             // noinspection unchecked
-            T scopeVar = (T) gss.unwrapObject(gss.getVariable(scopeName));
-            if (scopeVar == null) {
-                throw GrpcUtil.statusRuntimeException(Code.FAILED_PRECONDITION,
-                        "Could not resolve '" + logId + "': no variable exists with name '" + scopeName + "'");
-            }
-            return scopeVar;
-        });
+            export = (T) queryScope.unwrapObject(queryScope.readParamValue(scopeName));
+        } catch (QueryScope.MissingVariableException ignored) {
+        }
+
+        export = authorization.transform(export);
 
         if (export == null) {
-            throw GrpcUtil.statusRuntimeException(Code.FAILED_PRECONDITION,
-                    "Could not resolve '" + logId + "': no variable exists with name '" + scopeName + "'");
+            return SessionState.wrapAsFailedExport(newNotFoundSRE(logId, scopeName));
         }
+
         return SessionState.wrapAsExport(export);
     }
 
     @Override
     public <T> SessionState.ExportBuilder<T> publish(
-            final SessionState session, final ByteBuffer ticket, final String logId) {
-        return publish(session, nameForTicket(ticket, logId), logId);
+            final SessionState session,
+            final ByteBuffer ticket,
+            final String logId,
+            @Nullable final Runnable onPublish) {
+        return publish(session, nameForTicket(ticket, logId), logId, onPublish);
     }
 
     @Override
     public <T> SessionState.ExportBuilder<T> publish(
-            final SessionState session, final Flight.FlightDescriptor descriptor, final String logId) {
-        return publish(session, nameForDescriptor(descriptor, logId), logId);
+            final SessionState session,
+            final Flight.FlightDescriptor descriptor,
+            final String logId,
+            @Nullable final Runnable onPublish) {
+        return publish(session, nameForDescriptor(descriptor, logId), logId, onPublish);
     }
 
     private <T> SessionState.ExportBuilder<T> publish(
-            final SessionState session, final String varName, final String logId) {
+            final SessionState session,
+            final String varName,
+            final String logId,
+            @Nullable final Runnable onPublish) {
         // We publish to the query scope after the client finishes publishing their result. We accomplish this by
         // directly depending on the result of this export builder.
         final SessionState.ExportBuilder<T> resultBuilder = session.nonExport();
@@ -137,8 +151,12 @@ public class ScopeTicketResolver extends TicketResolverBase {
                 .requiresSerialQueue()
                 .require(resultExport)
                 .submit(() -> {
-                    final ScriptSession gss = globalSessionProvider.getGlobalSession();
-                    gss.setVariable(varName, resultExport.get());
+                    T value = resultExport.get();
+                    ExecutionContext.getContext().getQueryScope().putParam(varName, value);
+
+                    if (onPublish != null) {
+                        onPublish.run();
+                    }
                 });
 
         return resultBuilder;
@@ -190,27 +208,25 @@ public class ScopeTicketResolver extends TicketResolverBase {
      */
     public static String nameForTicket(final ByteBuffer ticket, final String logId) {
         if (ticket == null || ticket.remaining() == 0) {
-            throw GrpcUtil.statusRuntimeException(Code.FAILED_PRECONDITION,
+            throw Exceptions.statusRuntimeException(Code.FAILED_PRECONDITION,
                     "Could not resolve '" + logId + "': no ticket supplied");
         }
         if (ticket.remaining() < 3 || ticket.get(ticket.position()) != TICKET_PREFIX
                 || ticket.get(ticket.position() + 1) != '/') {
-            throw GrpcUtil.statusRuntimeException(Code.FAILED_PRECONDITION,
-                    "Could not resolve '" + logId + "': found 0x" + byteBufToHex(ticket) + "' (hex)");
+            throw Exceptions.statusRuntimeException(Code.FAILED_PRECONDITION,
+                    "Could not resolve '" + logId + "': found 0x" + ByteHelper.byteBufToHex(ticket) + "' (hex)");
         }
 
-        final int initialLimit = ticket.limit();
         final int initialPosition = ticket.position();
         final CharsetDecoder decoder = EncodingInfo.UTF_8.getDecoder().reset();
         try {
             ticket.position(initialPosition + 2);
             return decoder.decode(ticket).toString();
         } catch (CharacterCodingException e) {
-            throw GrpcUtil.statusRuntimeException(Code.FAILED_PRECONDITION,
+            throw Exceptions.statusRuntimeException(Code.FAILED_PRECONDITION,
                     "Could not resolve '" + logId + "': failed to decode: " + e.getMessage());
         } finally {
             ticket.position(initialPosition);
-            ticket.limit(initialLimit);
         }
     }
 
@@ -223,13 +239,19 @@ public class ScopeTicketResolver extends TicketResolverBase {
      */
     public static String nameForDescriptor(final Flight.FlightDescriptor descriptor, final String logId) {
         if (descriptor.getType() != Flight.FlightDescriptor.DescriptorType.PATH) {
-            throw GrpcUtil.statusRuntimeException(Code.FAILED_PRECONDITION,
+            throw Exceptions.statusRuntimeException(Code.FAILED_PRECONDITION,
                     "Could not resolve descriptor '" + logId + "': only paths are supported");
         }
         if (descriptor.getPathCount() != 2) {
-            throw GrpcUtil.statusRuntimeException(Code.FAILED_PRECONDITION,
+            throw Exceptions.statusRuntimeException(Code.FAILED_PRECONDITION,
                     "Could not resolve descriptor '" + logId + "': unexpected path length (found: "
                             + TicketRouterHelper.getLogNameFor(descriptor) + ", expected: 2)");
+        }
+        if (!descriptor.getPath(0).equals(FLIGHT_DESCRIPTOR_ROUTE)) {
+            throw Exceptions.statusRuntimeException(Code.FAILED_PRECONDITION,
+                    "Could not resolve descriptor '" + logId + "': unexpected path (found: "
+                            + TicketRouterHelper.getLogNameFor(descriptor) + ", expected: " + FLIGHT_DESCRIPTOR_ROUTE
+                            + ")");
         }
 
         return descriptor.getPath(1);
@@ -255,5 +277,10 @@ public class ScopeTicketResolver extends TicketResolverBase {
      */
     public static Flight.Ticket descriptorToTicket(final Flight.FlightDescriptor descriptor, final String logId) {
         return flightTicketForName(nameForDescriptor(descriptor, logId));
+    }
+
+    private static @NotNull StatusRuntimeException newNotFoundSRE(String logId, String scopeName) {
+        return Exceptions.statusRuntimeException(Code.NOT_FOUND,
+                "Could not resolve '" + logId + ": variable '" + scopeName + "' not found");
     }
 }

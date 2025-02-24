@@ -1,19 +1,17 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.qst.table;
 
 import io.deephaven.api.TableOperations;
+import io.deephaven.api.TableOperationsDefaults;
 import io.deephaven.qst.TableCreationLogic;
 import io.deephaven.qst.TableCreator;
 import io.deephaven.qst.TableCreator.OperationsToTable;
 import io.deephaven.qst.TableCreator.TableToOperations;
 import org.immutables.value.Value.Derived;
 
-import java.io.BufferedInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.ObjectInputStream;
-import java.io.Serializable;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 
 /**
@@ -30,7 +28,7 @@ import java.util.Collection;
  * @see TableCreator
  * @see io.deephaven.api.TableOperations
  */
-public interface TableSpec extends TableOperations<TableSpec, TableSpec>, TableSchema, Serializable {
+public interface TableSpec extends TableOperationsDefaults<TableSpec, TableSpec>, TableSchema {
 
     static EmptyTable empty(long size) {
         return EmptyTable.of(size);
@@ -54,31 +52,26 @@ public interface TableSpec extends TableOperations<TableSpec, TableSpec>, TableS
         return logic.create(TableCreatorImpl.INSTANCE);
     }
 
+    /**
+     * Create a ticket table with the UTF-8 bytes from the {@code ticket} string.
+     *
+     * @param ticket the ticket
+     * @return the ticket table
+     * @deprecated prefer {@link #ticket(byte[])}
+     */
+    @Deprecated
     static TicketTable ticket(String ticket) {
-        return TicketTable.of(ticket);
-    }
-
-    static TicketTable ticket(byte[] ticket) {
-        return TicketTable.of(ticket);
+        return TicketTable.of(ticket.getBytes(StandardCharsets.UTF_8));
     }
 
     /**
-     * Create a table via java deserialization.
+     * Create a ticket table with the {@code ticket} bytes.
      *
-     * <p>
-     * Note: stability of the format is not guaranteed.
-     *
-     * @param path the path to the file
-     * @return the table
-     * @throws IOException if an I/O error occurs
-     * @throws ClassNotFoundException Class of a serialized object cannot be found.
+     * @param ticket the ticket
+     * @return the ticket table
      */
-    static TableSpec file(Path path) throws IOException, ClassNotFoundException {
-        try (InputStream in = Files.newInputStream(path);
-                BufferedInputStream buf = new BufferedInputStream(in);
-                ObjectInputStream oIn = new ObjectInputStream(buf)) {
-            return (TableSpec) oIn.readObject();
-        }
+    static TicketTable ticket(byte[] ticket) {
+        return TicketTable.of(ticket);
     }
 
     TableCreationLogic logic();
@@ -94,61 +87,71 @@ public interface TableSpec extends TableOperations<TableSpec, TableSpec>, TableS
         return ParentsVisitor.getParents(this).mapToInt(TableSpec::depth).max().orElse(-1) + 1;
     }
 
-    <V extends Visitor> V walk(V visitor);
+    <T> T walk(Visitor<T> visitor);
 
-    interface Visitor {
-        void visit(EmptyTable emptyTable);
+    interface Visitor<T> {
+        T visit(EmptyTable emptyTable);
 
-        void visit(NewTable newTable);
+        T visit(NewTable newTable);
 
-        void visit(TimeTable timeTable);
+        T visit(TimeTable timeTable);
 
-        void visit(MergeTable mergeTable);
+        T visit(MergeTable mergeTable);
 
-        void visit(HeadTable headTable);
+        T visit(HeadTable headTable);
 
-        void visit(TailTable tailTable);
+        T visit(TailTable tailTable);
 
-        void visit(ReverseTable reverseTable);
+        T visit(SliceTable sliceTable);
 
-        void visit(SortTable sortTable);
+        T visit(ReverseTable reverseTable);
 
-        void visit(SnapshotTable snapshotTable);
+        T visit(SortTable sortTable);
 
-        void visit(WhereTable whereTable);
+        T visit(SnapshotTable snapshotTable);
 
-        void visit(WhereInTable whereInTable);
+        T visit(SnapshotWhenTable snapshotWhenTable);
 
-        void visit(WhereNotInTable whereNotInTable);
+        T visit(WhereTable whereTable);
 
-        void visit(NaturalJoinTable naturalJoinTable);
+        T visit(WhereInTable whereInTable);
 
-        void visit(ExactJoinTable exactJoinTable);
+        T visit(NaturalJoinTable naturalJoinTable);
 
-        void visit(JoinTable joinTable);
+        T visit(ExactJoinTable exactJoinTable);
 
-        void visit(AsOfJoinTable aj);
+        T visit(JoinTable joinTable);
 
-        void visit(ReverseAsOfJoinTable raj);
+        T visit(AsOfJoinTable aj);
 
-        void visit(ViewTable viewTable);
+        T visit(RangeJoinTable rangeJoinTable);
 
-        void visit(SelectTable selectTable);
+        T visit(ViewTable viewTable);
 
-        void visit(UpdateViewTable updateViewTable);
+        T visit(SelectTable selectTable);
 
-        void visit(UpdateTable updateTable);
+        T visit(UpdateViewTable updateViewTable);
 
-        void visit(AggregationTable aggregationTable);
+        T visit(UpdateTable updateTable);
 
-        void visit(AggregateAllByTable aggAllByTable);
+        T visit(LazyUpdateTable lazyUpdateTable);
 
-        void visit(TicketTable ticketTable);
+        T visit(AggregateTable aggregateTable);
 
-        void visit(InputTable inputTable);
+        T visit(AggregateAllTable aggregateAllTable);
 
-        void visit(SelectDistinctTable selectDistinctTable);
+        T visit(TicketTable ticketTable);
 
-        void visit(CountByTable countByTable);
+        T visit(InputTable inputTable);
+
+        T visit(SelectDistinctTable selectDistinctTable);
+
+        T visit(UpdateByTable updateByTable);
+
+        T visit(UngroupTable ungroupTable);
+
+        T visit(DropColumnsTable dropColumnsTable);
+
+        T visit(MultiJoinTable multiJoinTable);
     }
 }

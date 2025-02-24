@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources.regioned;
 
 import io.deephaven.engine.rowset.RowSequence;
@@ -15,15 +18,15 @@ abstract class RegionedColumnSourceObject<DATA_TYPE, ATTR extends Values>
         implements ColumnSourceGetDefaults.ForObject<DATA_TYPE> {
 
     private RegionedColumnSourceObject(@NotNull final ColumnRegionObject<DATA_TYPE, ATTR> nullRegion,
-                                       @NotNull final Class<DATA_TYPE> dataType,
-                                       @Nullable final Class<?> componentType,
-                                       @NotNull final MakeDeferred<ATTR, ColumnRegionObject<DATA_TYPE, ATTR>> makeDeferred) {
+            @NotNull final Class<DATA_TYPE> dataType,
+            @Nullable final Class<?> componentType,
+            @NotNull final MakeDeferred<ATTR, ColumnRegionObject<DATA_TYPE, ATTR>> makeDeferred) {
         super(nullRegion, dataType, componentType, makeDeferred);
     }
 
     @Override
-    public final DATA_TYPE get(final long elementIndex) {
-        return (elementIndex == RowSequence.NULL_ROW_KEY ? getNullRegion() : lookupRegion(elementIndex)).getObject(elementIndex);
+    public final DATA_TYPE get(final long rowKey) {
+        return (rowKey == RowSequence.NULL_ROW_KEY ? getNullRegion() : lookupRegion(rowKey)).getObject(rowKey);
     }
 
     public static class AsValues<DATA_TYPE> extends RegionedColumnSourceObject<DATA_TYPE, Values> {
@@ -33,14 +36,15 @@ abstract class RegionedColumnSourceObject<DATA_TYPE, ATTR extends Values>
         }
 
         public AsValues(@NotNull final Class<DATA_TYPE> dataType, @Nullable final Class<?> componentType) {
-            super(ColumnRegionObject.createNull(PARAMETERS.regionMask), dataType, componentType, DeferredColumnRegionObject::new);
+            super(ColumnRegionObject.createNull(PARAMETERS.regionMask), dataType, componentType,
+                    DeferredColumnRegionObject::new);
         }
 
         public ColumnRegionObject<DATA_TYPE, Values> makeRegion(@NotNull final ColumnDefinition<?> columnDefinition,
-                                                                @NotNull final ColumnLocation columnLocation,
-                                                                final int regionIndex) {
+                @NotNull final ColumnLocation columnLocation,
+                final int regionIndex) {
             if (columnLocation.exists()) {
-                //noinspection unchecked
+                // noinspection unchecked
                 return (ColumnRegionObject<DATA_TYPE, Values>) columnLocation.makeColumnRegionObject(columnDefinition);
             }
             return null;
@@ -57,15 +61,16 @@ abstract class RegionedColumnSourceObject<DATA_TYPE, ATTR extends Values>
 
         @Override
         public ColumnRegionObject<DATA_TYPE, Values> makeRegion(@NotNull final ColumnDefinition<?> columnDefinition,
-                                                                @NotNull final ColumnLocation columnLocation,
-                                                                final int regionIndex) {
+                @NotNull final ColumnLocation columnLocation,
+                final int regionIndex) {
             final TableLocationKey locationKey = columnLocation.getTableLocation().getKey();
             final Object partitioningColumnValue = locationKey.getPartitionValue(columnDefinition.getName());
             if (partitioningColumnValue != null && !getType().isAssignableFrom(partitioningColumnValue.getClass())) {
-                throw new TableDataException("Unexpected partitioning column value type for " + columnDefinition.getName()
+                throw new TableDataException("Unexpected partitioning column value type for "
+                        + columnDefinition.getName()
                         + ": " + partitioningColumnValue + " is not a " + getType() + " at location " + locationKey);
             }
-            //noinspection unchecked
+            // noinspection unchecked
             return new ColumnRegionObject.Constant<>(PARAMETERS.regionMask, (DATA_TYPE) partitioningColumnValue);
         }
     }

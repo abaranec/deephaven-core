@@ -1,0 +1,60 @@
+plugins {
+    id 'io.deephaven.project.register'
+    id 'java'
+}
+
+configurations {
+    combinedJavadoc
+}
+
+String javaDocOverviewLocation = 'build/docs/overview.html'
+
+// TODO(deephaven-core#2000): Ensure build work from zipped source
+def gitHash
+gitHash = "${-> gitHash = 'git rev-list --max-count=1 HEAD'.execute([], rootDir).text.trim()}"
+def writeJavadocVersion = tasks.register 'writeJavadocVersion', {
+    Task t ->
+        t.description "Write $version to $javaDocOverviewLocation"
+        File versionFile = file(javaDocOverviewLocation)
+        t.inputs.property('version', version)
+        t.inputs.property('gitHash', gitHash)
+        t.outputs.file(versionFile)
+        t.doLast {
+            versionFile.text = '<body>Deephaven Javadoc for ' + version + '\n<!-- VCS hash: ' + gitHash + ' --></body>\n'
+        }
+}
+
+def allJavadoc = tasks.register 'allJavadoc', Javadoc, {
+    Javadoc jdoc ->
+        jdoc.inputs.file javaDocOverviewLocation
+        jdoc.options.overview = new File(javaDocOverviewLocation)
+
+        // Fail on warnings to ensure correctness for our published docs
+        jdoc.options.addBooleanOption('Xwerror', true)
+
+        def isForJavadocs = { Project p -> return io.deephaven.project.util.CombinedJavadoc.includeProject(p) }
+
+        jdoc.source = rootProject.subprojects
+                .findAll {  it -> isForJavadocs(it) }
+                .collect { it.sourceSets.main.allJava }
+
+        jdoc.classpath = files(rootProject.subprojects
+                .findAll {  it -> isForJavadocs(it) }
+                .collect { it.sourceSets.main.compileClasspath })
+
+        // https://github.com/gradle/gradle/issues/19869
+        def sourcepath = files()
+        rootProject.subprojects.findAll{ it -> isForJavadocs(it) } .each {
+            sourcepath = sourcepath + (FileCollection) it.sourceSets.main.allJava.getSourceDirectories()
+        }
+        options.addStringOption('sourcepath', sourcepath.getAsPath())
+
+        jdoc.destinationDir = file("${buildDir}/docs/javadoc")
+        jdoc.dependsOn(writeJavadocVersion)
+}
+
+apply plugin: 'io.deephaven.javadoc-conventions'
+
+artifacts {
+    combinedJavadoc allJavadoc
+}

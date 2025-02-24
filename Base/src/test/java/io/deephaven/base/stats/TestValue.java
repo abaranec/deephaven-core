@@ -1,11 +1,12 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.base.stats;
 
-import io.deephaven.base.Function;
 import junit.framework.TestCase;
+
+import java.util.concurrent.Semaphore;
+import java.util.function.LongFunction;
 
 // --------------------------------------------------------------------
 /**
@@ -17,7 +18,7 @@ public class TestValue extends TestCase {
 
     // ----------------------------------------------------------------
     public void testState() {
-        State state = State.FACTORY.call(0L);
+        State state = State.FACTORY.apply(0L);
         assertEquals('S', state.getTypeTag());
         for (int nSample : SAMPLES) {
             state.sampleFromIncrement(nSample); // 3, 4, 9, 11, 15
@@ -34,7 +35,7 @@ public class TestValue extends TestCase {
 
     // ----------------------------------------------------------------
     public void testCounter() {
-        Counter counter = Counter.FACTORY.call(0L);
+        Counter counter = Counter.FACTORY.apply(0L);
         assertEquals('C', counter.getTypeTag());
         for (int nSample : SAMPLES) {
             counter.incrementFromSample(nSample); // -2, 4, -3, 2
@@ -49,9 +50,47 @@ public class TestValue extends TestCase {
         checkValue(Counter.FACTORY);
     }
 
+    public void testToString() {
+        // this is purposefully a heisentest, this should make it fail if it is really broken
+        for (int ii = 0; ii < 10; ++ii) {
+            doTestToString();
+        }
+    }
+
+    public void doTestToString() {
+        // we are testing toString, but also creating a pile of threads to exercise some of the AtomicFieldUpdater
+        // behavior of the value
+        final Value counter = ThreadSafeCounter.FACTORY.apply(0L);
+
+        final String emptyString = counter.toString();
+        assertEquals("Value{n=0}", emptyString);
+
+        final Semaphore semaphore = new Semaphore(0);
+        final Semaphore completion = new Semaphore(0);
+        final int n = 100;
+        for (int ii = 0; ii < n; ++ii) {
+            final int fii = ii;
+            new Thread(() -> {
+                semaphore.acquireUninterruptibly();
+                counter.sample(fii);
+                completion.release();
+            }).start();
+        }
+        semaphore.release(100);
+        completion.acquireUninterruptibly(100);
+
+        assertEquals(n, counter.getN());
+        assertEquals(((n - 1) * n) / 2, counter.getSum());
+        assertEquals(0, counter.getMin());
+        assertEquals(99, counter.getMax());
+
+        final String asString = counter.toString();
+        assertEquals("Value{n=100, sum=4,950, max=99, min=0, avg=49.500, std=29.011}", asString);
+    }
+
     // ----------------------------------------------------------------
-    private void checkValue(Function.Unary<? extends Value, Long> factory) {
-        Value value = factory.call(1000L);
+    private void checkValue(LongFunction<? extends Value> factory) {
+        Value value = factory.apply(1000L);
 
         for (int nSample : SAMPLES) {
             value.sample(nSample);

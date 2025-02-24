@@ -1,22 +1,29 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl;
 
+import io.deephaven.api.JoinMatch;
 import io.deephaven.base.verify.Assert;
-import io.deephaven.engine.table.ModifiedColumnSet;
-import io.deephaven.engine.updategraph.UpdateGraphProcessor;
+import io.deephaven.engine.context.ExecutionContext;
+import io.deephaven.engine.exceptions.OutOfKeySpaceException;
 import io.deephaven.engine.rowset.RowSetFactory;
 import io.deephaven.engine.rowset.RowSetShiftData;
-import io.deephaven.engine.exceptions.OutOfKeySpaceException;
+import io.deephaven.engine.table.ModifiedColumnSet;
+import io.deephaven.engine.testutil.ControlledUpdateGraph;
+import io.deephaven.engine.testutil.EvalNugget;
+import io.deephaven.engine.testutil.TstUtils;
 import io.deephaven.test.types.OutOfBandTest;
-import org.apache.commons.lang3.mutable.MutableInt;
-
-import java.util.Arrays;
+import io.deephaven.util.mutable.MutableInt;
 import org.junit.experimental.categories.Category;
 
+import java.util.Arrays;
+import java.util.List;
+
+import static io.deephaven.engine.testutil.TstUtils.*;
+import static io.deephaven.engine.util.TableTools.col;
 import static io.deephaven.engine.util.TableTools.intCol;
-import static io.deephaven.engine.table.impl.TstUtils.c;
-import static io.deephaven.engine.table.impl.TstUtils.i;
-import static io.deephaven.engine.table.impl.TstUtils.testRefreshingTable;
-import static io.deephaven.engine.table.impl.TstUtils.testTable;
+import static java.util.Collections.emptyList;
 
 @Category(OutOfBandTest.class)
 public class QueryTableCrossJoinSmallRightBitsTest extends QueryTableCrossJoinTestBase {
@@ -35,10 +42,10 @@ public class QueryTableCrossJoinSmallRightBitsTest extends QueryTableCrossJoinTe
     public void testZeroKeyOutOfKeySpace() {
         // idea here is that left uses LARGE keyspace and the right uses SMALL keyspace.
         // (61-bits on the left, 2-bits on the right)
-        final QueryTable ltTable = testRefreshingTable(i(0, (1L << 61) - 1).toTracking(), c("A", 1, 2));
-        final QueryTable lsTable = testTable(i(0, (1L << 61) - 1).toTracking(), c("A", 1, 2));
-        final QueryTable rtTable = testRefreshingTable(i(0, 1, 2, 3).toTracking(), c("B", 1, 2, 3, 4));
-        final QueryTable rsTable = testTable(i(0, 1, 2, 3).toTracking(), c("B", 1, 2, 3, 4));
+        final QueryTable ltTable = testRefreshingTable(i(0, (1L << 61) - 1).toTracking(), col("A", 1, 2));
+        final QueryTable lsTable = testTable(i(0, (1L << 61) - 1).toTracking(), col("A", 1, 2));
+        final QueryTable rtTable = testRefreshingTable(i(0, 1, 2, 3).toTracking(), col("B", 1, 2, 3, 4));
+        final QueryTable rsTable = testTable(i(0, 1, 2, 3).toTracking(), col("B", 1, 2, 3, 4));
 
         for (final QueryTable left : new QueryTable[] {ltTable, lsTable}) {
             for (final QueryTable right : new QueryTable[] {rtTable, rsTable}) {
@@ -52,7 +59,7 @@ public class QueryTableCrossJoinSmallRightBitsTest extends QueryTableCrossJoinTe
                     Assert.eqTrue(thrown, "thrown");
 
                     // we can fit if we use min right bits
-                    left.join(right, 1);
+                    left.join(right, emptyList(), emptyList(), 1);
                 } else {
                     left.join(right); // static - static should be OK because it always uses min right bits
                 }
@@ -63,10 +70,10 @@ public class QueryTableCrossJoinSmallRightBitsTest extends QueryTableCrossJoinTe
     public void testKeyColumnOutOfKeySpace() {
         // idea here is that left uses LARGE keyspace and the right uses SMALL keyspace.
         // (62-bits on the left, 1-bit on the right (per group))
-        final QueryTable ltTable = testRefreshingTable(i(0, (1L << 62) - 1).toTracking(), c("A", 1, 2));
-        final QueryTable lsTable = testTable(i(0, (1L << 62) - 1).toTracking(), c("A", 1, 2));
-        final QueryTable rtTable = testRefreshingTable(i(0, 1, 2, 3).toTracking(), c("B", 1, 2, 3, 4));
-        final QueryTable rsTable = testTable(i(0, 1, 2, 3).toTracking(), c("B", 1, 2, 3, 4));
+        final QueryTable ltTable = testRefreshingTable(i(0, (1L << 62) - 1).toTracking(), col("A", 1, 2));
+        final QueryTable lsTable = testTable(i(0, (1L << 62) - 1).toTracking(), col("A", 1, 2));
+        final QueryTable rtTable = testRefreshingTable(i(0, 1, 2, 3).toTracking(), col("B", 1, 2, 3, 4));
+        final QueryTable rsTable = testTable(i(0, 1, 2, 3).toTracking(), col("B", 1, 2, 3, 4));
 
         for (final QueryTable left : new QueryTable[] {ltTable, lsTable}) {
             for (final QueryTable right : new QueryTable[] {rtTable, rsTable}) {
@@ -80,7 +87,7 @@ public class QueryTableCrossJoinSmallRightBitsTest extends QueryTableCrossJoinTe
                     Assert.eqTrue(thrown, "thrown");
 
                     // we can fit if we use min right bits
-                    left.join(right, "A=B", 1);
+                    left.join(right, List.of(JoinMatch.parse("A=B")), emptyList(), 1);
                 } else {
                     left.join(right, "A=B"); // static - static should be OK because it always uses min right bits
                 }
@@ -95,7 +102,7 @@ public class QueryTableCrossJoinSmallRightBitsTest extends QueryTableCrossJoinTe
         // - one row to change groups to another of same size (grp 2 -> 3)
         // - one row to change groups to another of larger size (grp 2 -> 4)
         // - one row to not change groups, but group gets larger (grp 5)
-        final QueryTable lTable = testRefreshingTable(i(0, 1, 2, 3, 4).toTracking(), c("A", 0, 2, 2, 2, 5));
+        final QueryTable lTable = testRefreshingTable(i(0, 1, 2, 3, 4).toTracking(), col("A", 0, 2, 2, 2, 5));
         final QueryTable rTable = testRefreshingTable(i().toTracking(), intCol("A"));
         int numRightBitsToReserve = 1;
 
@@ -108,17 +115,20 @@ public class QueryTableCrossJoinSmallRightBitsTest extends QueryTableCrossJoinTe
         }
 
         final EvalNugget[] en = new EvalNugget[] {
-                EvalNugget.from(() -> lTable.join(rTable, "A", numRightBitsToReserve)),
+                EvalNugget.from(
+                        () -> lTable.join(rTable, List.of(JoinMatch.parse("A")), emptyList(), numRightBitsToReserve)),
         };
         TstUtils.validate(en);
 
-        final QueryTable jt = (QueryTable) lTable.join(rTable, "A", numRightBitsToReserve);
+        final QueryTable jt =
+                (QueryTable) lTable.join(rTable, List.of(JoinMatch.parse("A")), emptyList(), numRightBitsToReserve);
         final io.deephaven.engine.table.impl.SimpleListener listener =
                 new io.deephaven.engine.table.impl.SimpleListener(jt);
-        jt.listenForUpdates(listener);
+        jt.addUpdateListener(listener);
 
-        UpdateGraphProcessor.DEFAULT.runWithinUnitTestCycle(() -> {
-            TstUtils.addToTable(lTable, i(1, 2, 3), c("A", 1, 3, 4));
+        final ControlledUpdateGraph updateGraph = ExecutionContext.getContext().getUpdateGraph().cast();
+        updateGraph.runWithinUnitTestCycle(() -> {
+            TstUtils.addToTable(lTable, i(1, 2, 3), col("A", 1, 3, 4));
 
             final TableUpdateImpl lUpdate = new TableUpdateImpl();
             lUpdate.modified = i(1, 2, 3);
@@ -129,7 +139,7 @@ public class QueryTableCrossJoinSmallRightBitsTest extends QueryTableCrossJoinTe
             lTable.notifyListeners(lUpdate);
 
             TstUtils.removeRows(rTable, i(1));
-            TstUtils.addToTable(rTable, i(54), c("A", 5));
+            TstUtils.addToTable(rTable, i(54), col("A", 5));
 
             final TableUpdateImpl rUpdate = new TableUpdateImpl();
             rUpdate.added = i(54);
@@ -152,7 +162,7 @@ public class QueryTableCrossJoinSmallRightBitsTest extends QueryTableCrossJoinTe
         // - one row to change groups to another of same size (grp 2 -> 3)
         // - one row to change groups to another of larger size (grp 2 -> 4)
         // - one row to not change groups, but group gets larger (grp 5)
-        final QueryTable lTable = testRefreshingTable(i(0, 1, 2, 3, 4).toTracking(), c("A", 0, 2, 2, 2, 5));
+        final QueryTable lTable = testRefreshingTable(i(0, 1, 2, 3, 4).toTracking(), col("A", 0, 2, 2, 2, 5));
         final QueryTable rTable = testRefreshingTable(i().toTracking(), intCol("A"));
         int numRightBitsToReserve = 1;
 
@@ -165,17 +175,20 @@ public class QueryTableCrossJoinSmallRightBitsTest extends QueryTableCrossJoinTe
         }
 
         final EvalNugget[] en = new EvalNugget[] {
-                EvalNugget.from(() -> lTable.join(rTable, "A", numRightBitsToReserve)),
+                EvalNugget.from(
+                        () -> lTable.join(rTable, List.of(JoinMatch.parse("A")), emptyList(), numRightBitsToReserve)),
         };
         TstUtils.validate(en);
 
-        final QueryTable jt = (QueryTable) lTable.join(rTable, "A", numRightBitsToReserve);
+        final QueryTable jt =
+                (QueryTable) lTable.join(rTable, List.of(JoinMatch.parse("A")), emptyList(), numRightBitsToReserve);
         final io.deephaven.engine.table.impl.SimpleListener listener =
                 new io.deephaven.engine.table.impl.SimpleListener(jt);
-        jt.listenForUpdates(listener);
+        jt.addUpdateListener(listener);
 
-        UpdateGraphProcessor.DEFAULT.runWithinUnitTestCycle(() -> {
-            TstUtils.addToTable(lTable, i(1, 2, 3), c("A", 1, 3, 4));
+        final ControlledUpdateGraph updateGraph = ExecutionContext.getContext().getUpdateGraph().cast();
+        updateGraph.runWithinUnitTestCycle(() -> {
+            TstUtils.addToTable(lTable, i(1, 2, 3), col("A", 1, 3, 4));
 
             final TableUpdateImpl lUpdate = new TableUpdateImpl();
             lUpdate.modified = i(1, 2, 3);
@@ -186,7 +199,7 @@ public class QueryTableCrossJoinSmallRightBitsTest extends QueryTableCrossJoinTe
             lTable.notifyListeners(lUpdate);
 
             TstUtils.removeRows(rTable, i(1, 10));
-            TstUtils.addToTable(rTable, i(21, 31, 41, 51, 54, 55), c("A", 1, 2, 3, 4, 5, 5));
+            TstUtils.addToTable(rTable, i(21, 31, 41, 51, 54, 55), col("A", 1, 2, 3, 4, 5, 5));
 
             final TableUpdateImpl rUpdate = new TableUpdateImpl();
             rUpdate.added = i(54, 55);
@@ -206,7 +219,7 @@ public class QueryTableCrossJoinSmallRightBitsTest extends QueryTableCrossJoinTe
         // - one row to change groups to another of same size (grp 2 -> 3)
         // - one row to change groups to another of larger size (grp 2 -> 4)
         // - one row to not change groups, but group gets larger (grp 5)
-        final QueryTable lTable = testRefreshingTable(i(0, 1, 2, 3, 4).toTracking(), c("A", 0, 2, 2, 2, 5));
+        final QueryTable lTable = testRefreshingTable(i(0, 1, 2, 3, 4).toTracking(), col("A", 0, 2, 2, 2, 5));
         final QueryTable rTable = testRefreshingTable(i().toTracking(), intCol("A"));
         int numRightBitsToReserve = 1;
 
@@ -219,18 +232,21 @@ public class QueryTableCrossJoinSmallRightBitsTest extends QueryTableCrossJoinTe
         }
 
         final EvalNugget[] en = new EvalNugget[] {
-                EvalNugget.from(() -> lTable.join(rTable, "A", numRightBitsToReserve)),
+                EvalNugget.from(
+                        () -> lTable.join(rTable, List.of(JoinMatch.parse("A")), emptyList(), numRightBitsToReserve)),
         };
         TstUtils.validate(en);
 
-        final QueryTable jt = (QueryTable) lTable.join(rTable, "A", numRightBitsToReserve);
+        final QueryTable jt =
+                (QueryTable) lTable.join(rTable, List.of(JoinMatch.parse("A")), emptyList(), numRightBitsToReserve);
         final io.deephaven.engine.table.impl.SimpleListener listener =
                 new io.deephaven.engine.table.impl.SimpleListener(jt);
-        jt.listenForUpdates(listener);
+        jt.addUpdateListener(listener);
 
-        UpdateGraphProcessor.DEFAULT.runWithinUnitTestCycle(() -> {
+        final ControlledUpdateGraph updateGraph = ExecutionContext.getContext().getUpdateGraph().cast();
+        updateGraph.runWithinUnitTestCycle(() -> {
             TstUtils.removeRows(lTable, i(0));
-            TstUtils.addToTable(lTable, i(1, 2, 3, 4, 5), c("A", 0, 1, 3, 4, 5));
+            TstUtils.addToTable(lTable, i(1, 2, 3, 4, 5), col("A", 0, 1, 3, 4, 5));
 
             final TableUpdateImpl lUpdate = new TableUpdateImpl();
             lUpdate.modified = i(2, 3, 4);
@@ -243,7 +259,7 @@ public class QueryTableCrossJoinSmallRightBitsTest extends QueryTableCrossJoinTe
             lTable.notifyListeners(lUpdate);
 
             TstUtils.removeRows(rTable, i(1));
-            TstUtils.addToTable(rTable, i(54), c("A", 5));
+            TstUtils.addToTable(rTable, i(54), col("A", 5));
 
             final TableUpdateImpl rUpdate = new TableUpdateImpl();
             rUpdate.added = i(54);
@@ -266,7 +282,7 @@ public class QueryTableCrossJoinSmallRightBitsTest extends QueryTableCrossJoinTe
         // - one row to change groups to another of same size (grp 2 -> 3)
         // - one row to change groups to another of larger size (grp 2 -> 4)
         // - one row to not change groups, but group gets larger (grp 5)
-        final QueryTable lTable = testRefreshingTable(i(0, 1, 2, 3, 4).toTracking(), c("A", 0, 2, 2, 2, 5));
+        final QueryTable lTable = testRefreshingTable(i(0, 1, 2, 3, 4).toTracking(), col("A", 0, 2, 2, 2, 5));
         final QueryTable rTable = testRefreshingTable(i().toTracking(), intCol("A"));
         int numRightBitsToReserve = 1;
 
@@ -279,18 +295,21 @@ public class QueryTableCrossJoinSmallRightBitsTest extends QueryTableCrossJoinTe
         }
 
         final EvalNugget[] en = new EvalNugget[] {
-                EvalNugget.from(() -> lTable.join(rTable, "A", numRightBitsToReserve)),
+                EvalNugget.from(
+                        () -> lTable.join(rTable, List.of(JoinMatch.parse("A")), emptyList(), numRightBitsToReserve)),
         };
         TstUtils.validate(en);
 
-        final QueryTable jt = (QueryTable) lTable.join(rTable, "A", numRightBitsToReserve);
+        final QueryTable jt =
+                (QueryTable) lTable.join(rTable, List.of(JoinMatch.parse("A")), emptyList(), numRightBitsToReserve);
         final io.deephaven.engine.table.impl.SimpleListener listener =
                 new io.deephaven.engine.table.impl.SimpleListener(jt);
-        jt.listenForUpdates(listener);
+        jt.addUpdateListener(listener);
 
-        UpdateGraphProcessor.DEFAULT.runWithinUnitTestCycle(() -> {
+        final ControlledUpdateGraph updateGraph = ExecutionContext.getContext().getUpdateGraph().cast();
+        updateGraph.runWithinUnitTestCycle(() -> {
             TstUtils.removeRows(lTable, i(0));
-            TstUtils.addToTable(lTable, i(1, 2, 3, 4, 5), c("A", 0, 1, 3, 4, 5));
+            TstUtils.addToTable(lTable, i(1, 2, 3, 4, 5), col("A", 0, 1, 3, 4, 5));
 
             final TableUpdateImpl lUpdate = new TableUpdateImpl();
             lUpdate.modified = i(2, 3, 4);
@@ -303,7 +322,7 @@ public class QueryTableCrossJoinSmallRightBitsTest extends QueryTableCrossJoinTe
             lTable.notifyListeners(lUpdate);
 
             TstUtils.removeRows(rTable, i(1, 10));
-            TstUtils.addToTable(rTable, i(21, 31, 41, 51, 54, 55), c("A", 1, 2, 3, 4, 5, 5));
+            TstUtils.addToTable(rTable, i(21, 31, 41, 51, 54, 55), col("A", 1, 2, 3, 4, 5, 5));
 
             final TableUpdateImpl rUpdate = new TableUpdateImpl();
             rUpdate.added = i(54, 55);

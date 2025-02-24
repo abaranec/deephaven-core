@@ -1,10 +1,13 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.client.examples;
 
 import io.deephaven.api.ColumnName;
 import io.deephaven.api.TableOperations;
-import io.deephaven.api.filter.FilterCondition;
-import io.deephaven.api.filter.FilterOr;
-import io.deephaven.api.value.Value;
+import io.deephaven.api.filter.Filter;
+import io.deephaven.api.filter.FilterComparison;
+import io.deephaven.api.literal.Literal;
 import io.deephaven.qst.TableCreationLogic;
 import io.deephaven.qst.TableCreator;
 import io.deephaven.qst.table.TableSpec;
@@ -24,9 +27,9 @@ class Example1 extends FlightCannedTableBase {
     }
 
     public static <T extends TableOperations<T, T>> T create(TableCreator<T> c) {
-        return c.of(TableSpec.empty(100)).view("I=i").where(Collections.singletonList(FilterOr.of(
-                FilterCondition.lt(ColumnName.of("I"), Value.of(42L)),
-                FilterCondition.eq(ColumnName.of("I"), Value.of(93L)))));
+        return c.of(TableSpec.empty(100)).view("I=i").where(Filter.or(
+                FilterComparison.lt(ColumnName.of("I"), Literal.of(42L)),
+                FilterComparison.eq(ColumnName.of("I"), Literal.of(93L))));
     }
 
     public static void main(String[] args) {

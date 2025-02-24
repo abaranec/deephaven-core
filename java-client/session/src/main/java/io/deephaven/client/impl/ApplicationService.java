@@ -1,11 +1,13 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.client.impl;
-
-import io.deephaven.proto.backplane.grpc.FieldsChangeUpdate;
 
 public interface ApplicationService {
 
     interface Listener {
-        void onNext(FieldsChangeUpdate fields);
+
+        void onNext(FieldChanges fields);
 
         void onError(Throwable t);
 

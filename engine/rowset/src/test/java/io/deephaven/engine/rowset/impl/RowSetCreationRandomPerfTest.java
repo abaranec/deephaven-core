@@ -1,7 +1,11 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.rowset.impl;
 
 import gnu.trove.list.array.TIntArrayList;
 import io.deephaven.engine.rowset.RowSet;
+import io.deephaven.engine.testutil.rowset.PerfStats;
 
 import java.util.Map;
 import java.util.TreeMap;

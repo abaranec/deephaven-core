@@ -1,11 +1,13 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.benchmarking.impl;
 
 import io.deephaven.engine.table.Table;
-import io.deephaven.engine.table.lang.QueryScope;
+import io.deephaven.engine.context.QueryScope;
 import io.deephaven.benchmarking.BenchmarkTable;
 import io.deephaven.benchmarking.generator.ColumnGenerator;
 import io.deephaven.benchmarking.generator.random.ExtendedRandom;
-import io.deephaven.benchmarking.generator.random.NormalExtendedRandom;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
@@ -23,7 +25,7 @@ public abstract class AbstractBenchmarkTable implements BenchmarkTable {
     AbstractBenchmarkTable(@NotNull String name, long rngSeed, @NotNull List<ColumnGenerator<?>> generators) {
         this.name = name;
         this.rngSeed = rngSeed;
-        this.rand = new NormalExtendedRandom(new Random(rngSeed));
+        this.rand = new ExtendedRandom(new Random(rngSeed));
 
         populateAndAddGenerators(generators);
     }
@@ -53,7 +55,7 @@ public abstract class AbstractBenchmarkTable implements BenchmarkTable {
 
     @Override
     public void reset() {
-        rand = new NormalExtendedRandom(new Random(rngSeed));
+        rand = new ExtendedRandom(new Random(rngSeed));
         generatorMap.values().forEach(gen -> gen.init(rand));
     }
 

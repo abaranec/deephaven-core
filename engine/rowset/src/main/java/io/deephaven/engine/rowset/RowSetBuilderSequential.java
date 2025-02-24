@@ -1,6 +1,8 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.rowset;
 
-import gnu.trove.procedure.TLongProcedure;
 import io.deephaven.engine.rowset.chunkattributes.OrderedRowKeyRanges;
 import io.deephaven.engine.rowset.chunkattributes.OrderedRowKeys;
 import io.deephaven.util.datastructures.LongRangeConsumer;
@@ -14,7 +16,7 @@ import java.util.PrimitiveIterator;
 /**
  * Builder interface for {@link RowSet} construction in strict sequential order.
  */
-public interface RowSetBuilderSequential extends TLongProcedure, LongRangeConsumer {
+public interface RowSetBuilderSequential extends LongRangeConsumer {
 
     /**
      * Hint to call, but if called, (a) should be called before providing any values, and (b) no value should be
@@ -40,7 +42,11 @@ public interface RowSetBuilderSequential extends TLongProcedure, LongRangeConsum
     }
 
     default void appendOrderedRowKeysChunk(final LongChunk<OrderedRowKeys> chunk) {
-        appendKeys(new LongChunkIterator(chunk));
+        appendOrderedRowKeysChunk(chunk, 0, chunk.size());
+    }
+
+    default void appendOrderedRowKeysChunk(final LongChunk<OrderedRowKeys> chunk, int offset, int length) {
+        appendKeys(new LongChunkIterator(chunk, offset, length));
     }
 
     default void appendRanges(final LongRangeIterator it) {
@@ -52,12 +58,6 @@ public interface RowSetBuilderSequential extends TLongProcedure, LongRangeConsum
 
     default void appendOrderedRowKeyRangesChunk(final LongChunk<OrderedRowKeyRanges> chunk) {
         appendRanges(new LongChunkRangeIterator(chunk));
-    }
-
-    @Override
-    default boolean execute(final long value) {
-        appendKey(value);
-        return true;
     }
 
     /**

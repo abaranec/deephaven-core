@@ -1,0 +1,17 @@
+plugins {
+    id 'java-library'
+    id 'io.deephaven.project.register'
+}
+
+description 'Deephaven Authorization'
+
+dependencies {
+    api project(':engine-api')
+    api project(':proto:proto-backplane-grpc')
+
+    api platform(libs.grpc.bom)
+    api libs.grpc.services
+    api libs.arrow.flight.core
+
+    implementation project(':log-factory')
+}

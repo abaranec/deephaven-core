@@ -1,7 +1,11 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.extensions;
 
+import com.google.auto.service.AutoService;
 import io.deephaven.engine.table.Table;
-import io.deephaven.engine.table.lang.QueryLibraryImports;
+import io.deephaven.engine.context.QueryLibraryImports;
 import io.deephaven.engine.util.TableTools;
 import io.deephaven.engine.util.GroovyDeephavenSession.InitScript;
 import io.deephaven.util.QueryConstants;
@@ -19,6 +23,7 @@ import javax.inject.Inject;
 
 public class ClassGraphExtension {
 
+    @AutoService(InitScript.class)
     public static class Script implements InitScript {
 
         @Inject
@@ -35,6 +40,7 @@ public class ClassGraphExtension {
         }
     }
 
+    @AutoService(QueryLibraryImports.class)
     public static class Imports implements QueryLibraryImports {
 
         @Override

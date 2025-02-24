@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.parquet.table.location;
 
 import io.deephaven.engine.table.impl.locations.TableKey;
@@ -6,11 +9,13 @@ import io.deephaven.engine.table.impl.locations.impl.NonexistentTableLocation;
 import io.deephaven.engine.table.impl.locations.impl.TableLocationFactory;
 import io.deephaven.engine.table.impl.locations.util.TableDataRefreshService;
 import io.deephaven.parquet.table.ParquetInstructions;
-import io.deephaven.util.Utils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
+import java.net.URI;
+
+import static io.deephaven.parquet.base.ParquetFileReader.FILE_URI_SCHEME;
 
 /**
  * {@link TableLocationFactory} for {@link ParquetTableLocation}s.
@@ -28,8 +33,8 @@ public final class ParquetTableLocationFactory implements TableLocationFactory<T
     public TableLocation makeLocation(@NotNull final TableKey tableKey,
             @NotNull final ParquetTableLocationKey locationKey,
             @Nullable final TableDataRefreshService refreshService) {
-        final File parquetFile = locationKey.getFile();
-        if (Utils.fileExistsPrivileged(parquetFile)) {
+        final URI parquetFileURI = locationKey.getURI();
+        if (!FILE_URI_SCHEME.equals(parquetFileURI.getScheme()) || new File(parquetFileURI).exists()) {
             return new ParquetTableLocation(tableKey, locationKey, readInstructions);
         } else {
             return new NonexistentTableLocation(tableKey, locationKey);

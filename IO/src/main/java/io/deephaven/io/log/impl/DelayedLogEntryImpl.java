@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.io.log.impl;
 
 import io.deephaven.base.array.*;
@@ -118,18 +117,16 @@ public class DelayedLogEntryImpl implements LogEntry {
     }
 
     @Override
-    public LogEntry end() {
+    public void end() {
         // noinspection unchecked
         sink.write(this);
         ends.getAndIncrement();
-        return this;
     }
 
     @Override
-    public LogEntry endl() {
+    public void endl() {
         nl();
         end();
-        return this;
     }
 
     @Override

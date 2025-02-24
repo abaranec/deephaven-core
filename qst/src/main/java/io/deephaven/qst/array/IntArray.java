@@ -1,6 +1,10 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.qst.array;
 
 import io.deephaven.qst.type.IntType;
+import io.deephaven.util.QueryConstants;
 
 import java.util.Arrays;
 import java.util.Collection;
@@ -58,19 +62,29 @@ public final class IntArray extends PrimitiveArrayBase<Integer> {
     }
 
     @Override
+    public Integer value(int index) {
+        int value = values[index];
+        return value == QueryConstants.NULL_INT ? null : value;
+    }
+
+    @Override
+    public boolean isNull(int index) {
+        return values[index] == QueryConstants.NULL_INT;
+    }
+
+    @Override
     public final int size() {
         return values().length;
     }
 
     @Override
     public final IntType componentType() {
-        return IntType.instance();
+        return IntType.of();
     }
 
     @Override
-    public final <V extends PrimitiveArray.Visitor> V walk(V visitor) {
-        visitor.visit(this);
-        return visitor;
+    public final <R> R walk(PrimitiveArray.Visitor<R> visitor) {
+        return visitor.visit(this);
     }
 
     @Override

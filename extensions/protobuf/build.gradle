@@ -1,0 +1,51 @@
+plugins {
+    id 'java-library'
+    id 'io.deephaven.project.register'
+    id 'com.google.protobuf' version '0.9.4'
+}
+
+dependencies {
+    api project(':qst-type')
+    api project(':util-function')
+    api libs.protobuf.java
+    implementation project(':engine-query-constants')
+    implementation project(':engine-time')
+
+    compileOnly project(':util-immutables')
+    annotationProcessor libs.immutables.value
+
+    compileOnly libs.jetbrains.annotations
+
+    testImplementation libs.assertj
+
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit.jupiter
+    testRuntimeOnly libs.junit.jupiter.engine
+    testRuntimeOnly libs.junit.platform.launcher
+
+    testRuntimeOnly project(':log-to-slf4j')
+    testRuntimeOnly project(':configs')
+    testRuntimeOnly project(':test-configs')
+    testRuntimeOnly libs.slf4j.simple
+
+    testCompileOnly libs.autoservice
+    testAnnotationProcessor libs.autoservice.compiler
+}
+
+test {
+    useJUnitPlatform()
+}
+
+spotless {
+    java {
+        targetExclude(
+                'build/generated/source/proto/test/java/**',
+        )
+    }
+}
+
+protobuf {
+    protoc {
+        artifact = "com.google.protobuf:protoc:${libs.versions.protobuf.get()}"
+    }
+}

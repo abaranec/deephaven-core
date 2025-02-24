@@ -1,20 +1,20 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.modelfarm;
 
 import io.deephaven.base.verify.Assert;
 import io.deephaven.base.verify.Require;
+import io.deephaven.engine.context.ExecutionContext;
 import io.deephaven.engine.exceptions.CancellationException;
 import io.deephaven.engine.table.ColumnSource;
 import io.deephaven.engine.table.Table;
-import io.deephaven.engine.updategraph.UpdateGraphProcessor;
+import io.deephaven.engine.updategraph.impl.PeriodicUpdateGraph;
 import io.deephaven.engine.table.impl.NotificationStepSource;
 import io.deephaven.engine.table.impl.remote.ConstructSnapshot;
 import io.deephaven.internal.log.LoggerFactory;
 import io.deephaven.io.logger.Logger;
-import io.deephaven.util.FunctionalInterfaces;
+import io.deephaven.util.function.ThrowingBiConsumer;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -67,17 +67,17 @@ public abstract class ModelFarmBase<DATATYPE> implements ModelFarm {
      */
     public enum GetDataLockType {
         /**
-         * The UGP lock is already held.
+         * The UpdateGraph lock is already held.
          */
-        UGP_LOCK_ALREADY_HELD,
+        UPDATE_GRAPH_LOCK_ALREADY_HELD,
         /**
-         * Acquire the UGP lock.
+         * Acquire the UpdateGraph's exclusive lock.
          */
-        UGP_LOCK,
+        UPDATE_GRAPH_EXCLUSIVE_LOCK,
         /**
-         * Acquire an UGP read lock.
+         * Acquire the UpdateGraph's shared lock.
          */
-        UGP_READ_LOCK,
+        UPDATE_GRAPH_SHARED_LOCK,
         /**
          * Use the (usually) lock-free snapshotting mechanism.
          */
@@ -200,29 +200,35 @@ public abstract class ModelFarmBase<DATATYPE> implements ModelFarm {
 
     /**
      * Returns a {@code ThrowingConsumer} that takes a {@link QueryDataRetrievalOperation}, acquires a
-     * {@link UpdateGraphProcessor} lock based on the specified {@code lockType}, then executes the
+     * {@link PeriodicUpdateGraph} lock based on the specified {@code lockType}, then executes the
      * {@code FitDataPopulator} with the appropriate value for usePrev.
      *
-     * @param lockType The way of acquiring the {@code UpdateGraphProcessor} lock.
-     * @return A function that runs a {@link }
+     * @param lockType The way of acquiring the {@code PeriodicUpdateGraph} lock.
+     * @return A function that runs an operation which accepts a {@link QueryDataRetrievalOperation} and a
+     *         {@link Table}.
      */
     @SuppressWarnings("WeakerAccess")
-    protected static FunctionalInterfaces.ThrowingBiConsumer<QueryDataRetrievalOperation, NotificationStepSource, RuntimeException> getDoLockedConsumer(
+    protected static ThrowingBiConsumer<QueryDataRetrievalOperation, Table, RuntimeException> getDoLockedConsumer(
             final GetDataLockType lockType) {
         switch (lockType) {
-            case UGP_LOCK_ALREADY_HELD:
+            case UPDATE_GRAPH_LOCK_ALREADY_HELD:
                 return (queryDataRetrievalOperation, source) -> queryDataRetrievalOperation.retrieveData(false);
-            case UGP_LOCK:
-                return (queryDataRetrievalOperation, source) -> UpdateGraphProcessor.DEFAULT.exclusiveLock()
-                        .doLocked(() -> queryDataRetrievalOperation.retrieveData(false));
-            case UGP_READ_LOCK:
-                return (queryDataRetrievalOperation, source) -> UpdateGraphProcessor.DEFAULT.sharedLock()
-                        .doLocked(() -> queryDataRetrievalOperation.retrieveData(false));
+            case UPDATE_GRAPH_EXCLUSIVE_LOCK:
+                return (queryDataRetrievalOperation, source) -> {
+                    ExecutionContext.getContext().getUpdateGraph().exclusiveLock().doLocked(
+                            () -> queryDataRetrievalOperation.retrieveData(false));
+                };
+            case UPDATE_GRAPH_SHARED_LOCK:
+                return (queryDataRetrievalOperation, source) -> {
+                    ExecutionContext.getContext().getUpdateGraph().sharedLock().doLocked(
+                            () -> queryDataRetrievalOperation.retrieveData(false));
+                };
             case SNAPSHOT:
                 return (queryDataRetrievalOperation, source) -> {
                     try {
                         ConstructSnapshot.callDataSnapshotFunction("ModelFarmBase.getData(SNAPSHOT)",
-                                ConstructSnapshot.makeSnapshotControl(false, source),
+                                ConstructSnapshot.makeSnapshotControl(false, source.isRefreshing(),
+                                        (NotificationStepSource) source),
                                 (usePrev, beforeClockValue) -> {
                                     queryDataRetrievalOperation.retrieveData(usePrev);
                                     return true; // This indicates that the snapshot ran OK, not that the data is OK.

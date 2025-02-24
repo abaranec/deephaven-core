@@ -1,13 +1,11 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.io.logger;
 
 import io.deephaven.base.ArrayUtil;
 import io.deephaven.base.ClassUtil;
 import io.deephaven.io.log.*;
-import io.deephaven.io.log.impl.LogBufferPoolImpl;
 import io.deephaven.io.log.impl.LogEntryPoolImpl;
 import org.jetbrains.annotations.NotNull;
 
@@ -35,7 +33,7 @@ public class ProcessStreamLoggerImpl extends LoggerImpl {
             @NotNull final LoggerTimeSource timeSource,
             @NotNull final TimeZone tz) {
         final LogEntryPool logEntryPool =
-                new LogEntryPoolImpl(entryCount, new LogBufferPoolImpl(bufferCount, bufferSize));
+                new LogEntryPoolImpl(entryCount, LogBufferPool.ofStrict(bufferCount, bufferSize));
         return new ProcessStreamLoggerImpl(logEntryPool, outputStream, loggingLevel, timeSource, tz);
     }
 

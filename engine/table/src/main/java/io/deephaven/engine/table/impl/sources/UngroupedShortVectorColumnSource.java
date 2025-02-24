@@ -1,12 +1,10 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit UngroupedCharVectorColumnSource and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit UngroupedCharVectorColumnSource and run "./gradlew replicateSourcesAndChunks" to regenerate
+//
+// @formatter:off
 package io.deephaven.engine.table.impl.sources;
 
 import io.deephaven.engine.table.ColumnSource;
@@ -15,7 +13,8 @@ import io.deephaven.vector.ShortVector;
 
 import static io.deephaven.util.QueryConstants.NULL_SHORT;
 
-public class UngroupedShortVectorColumnSource extends UngroupedColumnSource<Short> implements MutableColumnSourceGetDefaults.ForShort {
+public class UngroupedShortVectorColumnSource extends UngroupedColumnSource<Short>
+        implements MutableColumnSourceGetDefaults.ForShort {
     private ColumnSource<ShortVector> innerSource;
     private final boolean isUngroupable;
 
@@ -28,19 +27,20 @@ public class UngroupedShortVectorColumnSource extends UngroupedColumnSource<Shor
     public UngroupedShortVectorColumnSource(ColumnSource<ShortVector> innerSource) {
         super(Short.class);
         this.innerSource = innerSource;
-        this.isUngroupable = innerSource instanceof UngroupableColumnSource && ((UngroupableColumnSource)innerSource).isUngroupable();
+        this.isUngroupable = innerSource instanceof UngroupableColumnSource
+                && ((UngroupableColumnSource) innerSource).isUngroupable();
     }
 
     @Override
-    public Short get(long index) {
-        if (index < 0) {
+    public Short get(long rowKey) {
+        if (rowKey < 0) {
             return null;
         }
-        long segment = index>>base;
-        int offset = (int) (index & ((1<<base) - 1));
+        long segment = rowKey >> base;
+        int offset = (int) (rowKey & ((1 << base) - 1));
         final Short result;
         if (isUngroupable) {
-            result = (Short)((UngroupableColumnSource)innerSource).getUngrouped(segment, offset);
+            result = (Short) ((UngroupableColumnSource) innerSource).getUngrouped(segment, offset);
             if (result == null)
                 return null;
         } else {
@@ -52,15 +52,15 @@ public class UngroupedShortVectorColumnSource extends UngroupedColumnSource<Shor
 
 
     @Override
-    public short getShort(long index) {
-        if (index < 0) {
+    public short getShort(long rowKey) {
+        if (rowKey < 0) {
             return NULL_SHORT;
         }
 
-        long segment = index>>base;
-        int offset = (int) (index & ((1<<base) - 1));
+        long segment = rowKey >> base;
+        int offset = (int) (rowKey & ((1 << base) - 1));
         if (isUngroupable) {
-            return ((UngroupableColumnSource)innerSource).getUngroupedShort(segment, offset);
+            return ((UngroupableColumnSource) innerSource).getUngroupedShort(segment, offset);
         }
 
         final ShortVector segmentArray = innerSource.get(segment);
@@ -69,16 +69,16 @@ public class UngroupedShortVectorColumnSource extends UngroupedColumnSource<Shor
 
 
     @Override
-    public Short getPrev(long index) {
-        if (index < 0) {
+    public Short getPrev(long rowKey) {
+        if (rowKey < 0) {
             return null;
         }
 
-        long segment = index>> getPrevBase();
-        int offset = (int) (index & ((1<< getPrevBase()) - 1));
+        long segment = rowKey >> getPrevBase();
+        int offset = (int) (rowKey & ((1 << getPrevBase()) - 1));
         final Short result;
         if (isUngroupable) {
-            result = (Short)((UngroupableColumnSource)innerSource).getUngroupedPrev(segment, offset);
+            result = (Short) ((UngroupableColumnSource) innerSource).getUngroupedPrev(segment, offset);
             if (result == null) {
                 return null;
             }
@@ -91,16 +91,16 @@ public class UngroupedShortVectorColumnSource extends UngroupedColumnSource<Shor
     }
 
     @Override
-    public short getPrevShort(long index) {
-        if (index < 0) {
+    public short getPrevShort(long rowKey) {
+        if (rowKey < 0) {
             return NULL_SHORT;
         }
 
-        long segment = index>> getPrevBase();
-        int offset = (int) (index & ((1<< getPrevBase()) - 1));
+        long segment = rowKey >> getPrevBase();
+        int offset = (int) (rowKey & ((1 << getPrevBase()) - 1));
 
         if (isUngroupable) {
-            return ((UngroupableColumnSource)innerSource).getUngroupedPrevShort(segment, offset);
+            return ((UngroupableColumnSource) innerSource).getUngroupedPrevShort(segment, offset);
         }
 
         final ShortVector segmentArray = innerSource.getPrev(segment);
@@ -110,5 +110,10 @@ public class UngroupedShortVectorColumnSource extends UngroupedColumnSource<Shor
     @Override
     public boolean isImmutable() {
         return false;
+    }
+
+    @Override
+    public boolean isStateless() {
+        return innerSource.isStateless();
     }
 }

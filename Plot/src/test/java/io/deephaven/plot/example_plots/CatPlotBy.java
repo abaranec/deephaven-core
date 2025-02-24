@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.plot.example_plots;
 
 import io.deephaven.plot.Figure;
@@ -21,7 +20,7 @@ public class CatPlotBy {
                 TableTools.col("Cats", cats),
                 TableTools.doubleCol("Values", values));
 
-        t = t.update("Timestamp = DateTime.now() + (HOUR * i)");
+        t = t.update("Timestamp = DateTimeUtils.now() + (HOUR * i)");
         Figure fig = FigureFactory.figure();
         for (int i = 0; i < 1; i++) {
             fig = fig.newChart()

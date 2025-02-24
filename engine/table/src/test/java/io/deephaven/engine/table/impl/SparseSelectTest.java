@@ -1,16 +1,21 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl;
 
+import io.deephaven.engine.context.ExecutionContext;
 import io.deephaven.engine.liveness.LivenessScope;
 import io.deephaven.engine.liveness.LivenessScopeStack;
 import io.deephaven.engine.rowset.RowSetBuilderSequential;
 import io.deephaven.engine.rowset.RowSetFactory;
 import io.deephaven.engine.table.Table;
 import io.deephaven.engine.table.impl.sources.ArrayBackedColumnSource;
-import io.deephaven.engine.updategraph.UpdateGraphProcessor;
+import io.deephaven.engine.testutil.*;
+import io.deephaven.engine.testutil.generator.*;
+import io.deephaven.engine.testutil.testcase.RefreshingTableTestCase;
 import io.deephaven.engine.util.TableTools;
-import io.deephaven.test.junit4.EngineCleanup;
+import io.deephaven.engine.testutil.junit4.EngineCleanup;
 import io.deephaven.test.types.OutOfBandTest;
-import io.deephaven.time.DateTime;
 import io.deephaven.time.DateTimeUtils;
 import io.deephaven.util.SafeCloseable;
 import junit.framework.TestCase;
@@ -21,8 +26,8 @@ import org.junit.experimental.categories.Category;
 import java.util.Arrays;
 import java.util.Random;
 
-import static io.deephaven.engine.table.impl.TstUtils.*;
-import static io.deephaven.engine.table.impl.TstUtils.i;
+import static io.deephaven.engine.testutil.TstUtils.*;
+import static io.deephaven.engine.testutil.TstUtils.i;
 
 @Category(OutOfBandTest.class)
 public class SparseSelectTest {
@@ -31,41 +36,41 @@ public class SparseSelectTest {
 
     @Test
     public void testSparseSelect() {
-        int size = 1000;
-        for (int seed = 0; seed < 1; ++seed) {
-            System.out.println(DateTime.now() + ": Size = " + size + ", seed=" + seed);
-            try (final SafeCloseable ignored = LivenessScopeStack.open(new LivenessScope(true), true)) {
-                testSparseSelect(size, seed);
-            }
+        final int[] sizes;
+        if (SHORT_TESTS) {
+            sizes = new int[] {20, 4_000};
+        } else {
+            sizes = new int[] {1000, 10_000};
         }
-        size = 10000;
-        for (int seed = 0; seed < 1; ++seed) {
-            System.out.println(DateTime.now() + ": Size = " + size + ", seed=" + seed);
-            try (final SafeCloseable ignored = LivenessScopeStack.open(new LivenessScope(true), true)) {
-                testSparseSelect(size, seed);
+        for (final int size : sizes) {
+            for (int seed = 0; seed < 1; ++seed) {
+                System.out.println(DateTimeUtils.now() + ": Size = " + size + ", seed=" + seed);
+                try (final SafeCloseable ignored = LivenessScopeStack.open(new LivenessScope(true), true)) {
+                    testSparseSelect(size, seed);
+                }
             }
         }
     }
 
     private void testSparseSelect(int size, int seed) {
         final Random random = new Random(seed);
-        final TstUtils.ColumnInfo[] columnInfo;
+        final ColumnInfo[] columnInfo;
 
         final QueryTable queryTable = getTable(size, random,
                 columnInfo = initColumnInfos(
                         new String[] {"Sym", "intCol", "doubleCol", "boolCol", "floatCol", "longCol", "charCol",
-                                "byteCol", "shortCol", "dateTime"},
-                        new TstUtils.SetGenerator<>("a", "b", "c", "d", "e"),
-                        new TstUtils.IntGenerator(10, 100),
-                        new TstUtils.SetGenerator<>(10.1, 20.1, 30.1),
-                        new TstUtils.BooleanGenerator(0.5, 0.1),
-                        new TstUtils.FloatGenerator(-1000.0f, 1000.0f),
-                        new TstUtils.LongGenerator(),
-                        new TstUtils.CharGenerator('a', 'z'),
-                        new TstUtils.ByteGenerator(),
-                        new TstUtils.ShortGenerator(),
-                        new TstUtils.UnsortedDateTimeGenerator(DateTimeUtils.convertDateTime("2019-01-10T00:00:00 NY"),
-                                DateTimeUtils.convertDateTime("2019-01-20T00:00:00 NY"))));
+                                "byteCol", "shortCol", "instant"},
+                        new SetGenerator<>("a", "b", "c", "d", "e"),
+                        new IntGenerator(10, 100),
+                        new SetGenerator<>(10.1, 20.1, 30.1),
+                        new BooleanGenerator(0.5, 0.1),
+                        new FloatGenerator(-1000.0f, 1000.0f),
+                        new LongGenerator(),
+                        new CharGenerator('a', 'z'),
+                        new ByteGenerator(),
+                        new ShortGenerator(),
+                        new UnsortedInstantGenerator(DateTimeUtils.parseInstant("2019-01-10T00:00:00 NY"),
+                                DateTimeUtils.parseInstant("2019-01-20T00:00:00 NY"))));
 
         final Table sortedTable = queryTable.sort("intCol");
 
@@ -87,7 +92,7 @@ public class SparseSelectTest {
                 },
                 new EvalNugget() {
                     public Table e() {
-                        return SparseSelect.sparseSelect(queryTable, "dateTime");
+                        return SparseSelect.sparseSelect(queryTable, "instant");
                     }
                 },
                 new EvalNugget() {
@@ -126,7 +131,7 @@ public class SparseSelectTest {
                                 .groupBy("Sym").sort("Sym").ungroup())),
                 new QueryTableTestBase.TableComparator(queryTable, SparseSelect.sparseSelect(queryTable)),
                 new QueryTableTestBase.TableComparator(queryTable,
-                        SparseSelect.partialSparseSelect(queryTable, Arrays.asList("shortCol", "dateTime"))),
+                        SparseSelect.partialSparseSelect(queryTable, Arrays.asList("shortCol", "instant"))),
                 new QueryTableTestBase.TableComparator(sortedTable, SparseSelect.sparseSelect(sortedTable))
         };
 
@@ -149,8 +154,7 @@ public class SparseSelectTest {
         final QueryTable table = TstUtils.testRefreshingTable(builder.build().toTracking(),
                 TableTools.intCol("Value", intVals));
         final Table selected = SparseSelect.sparseSelect(table);
-        final String diff = TableTools.diff(selected, table, 10);
-        TestCase.assertEquals("", diff);
+        assertTableEquals(selected, table);
     }
 
     @Test
@@ -179,28 +183,22 @@ public class SparseSelectTest {
 
 
         final Table selected = SparseSelect.sparseSelect(table);
-        final String diff = TableTools.diff(selected, table, 10);
-        TestCase.assertEquals("", diff);
+        assertTableEquals(selected, table);
+        assertTableEquals(TstUtils.prevTable(selected), TstUtils.prevTable(table));
 
-        final String diffPrev = TableTools.diff(TstUtils.prevTable(selected), TstUtils.prevTable(table), 10);
-        TestCase.assertEquals("", diffPrev);
-
-        UpdateGraphProcessor.DEFAULT.runWithinUnitTestCycle(() -> {
+        final ControlledUpdateGraph updateGraph = ExecutionContext.getContext().getUpdateGraph().cast();
+        updateGraph.runWithinUnitTestCycle(() -> {
             addToTable(table, i(2), TableTools.longCol("Value", 3));
             table.notifyListeners(i(2), i(), i());
         });
 
-        final String diff2 = TableTools.diff(selected, table, 10);
-        TestCase.assertEquals("", diff2);
-
-        final String diffPrev2 = TableTools.diff(TstUtils.prevTable(selected), TstUtils.prevTable(table), 10);
-        TestCase.assertEquals("", diffPrev2);
+        assertTableEquals(selected, table);
+        assertTableEquals(TstUtils.prevTable(selected), TstUtils.prevTable(table));
 
         TableTools.show(table);
         TableTools.show(selected);
 
-
-        UpdateGraphProcessor.DEFAULT.runWithinUnitTestCycle(() -> {
+        updateGraph.runWithinUnitTestCycle(() -> {
             addToTable(table, i(1L << 20 + 2), TableTools.longCol("Value", 4));
             table.notifyListeners(i(1L << 20 + 2), i(), i());
         });
@@ -208,10 +206,7 @@ public class SparseSelectTest {
         TableTools.show(table);
         TableTools.show(selected);
 
-        final String diff3 = TableTools.diff(selected, table, 10);
-        TestCase.assertEquals("", diff3);
-
-        final String diffPrev3 = TableTools.diff(TstUtils.prevTable(selected), TstUtils.prevTable(table), 10);
-        TestCase.assertEquals("", diffPrev3);
+        assertTableEquals(selected, table);
+        assertTableEquals(TstUtils.prevTable(selected), TstUtils.prevTable(table));
     }
 }

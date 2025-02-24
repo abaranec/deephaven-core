@@ -1,8 +1,10 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit CharChunk and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit CharChunk and run "./gradlew replicateSourcesAndChunks" to regenerate
+//
+// @formatter:off
 package io.deephaven.chunk;
 
 import io.deephaven.util.type.ArrayTypeUtils;
@@ -16,22 +18,28 @@ import org.jetbrains.annotations.NotNull;
 // region BufferImports
 // endregion BufferImports
 
+// region BinarySearchImports
+import java.util.Arrays;
+// endregion BinarySearchImports
+
 /**
  * {@link Chunk} implementation for Object data.
  */
 public class ObjectChunk<T, ATTR extends Any> extends ChunkBase<ATTR> {
 
+    @SuppressWarnings("rawtypes")
     private static final ObjectChunk EMPTY = new ObjectChunk<>(ArrayTypeUtils.EMPTY_OBJECT_ARRAY, 0, 0);
 
     public static <T, ATTR extends Any> ObjectChunk<T, ATTR> getEmptyChunk() {
-        //noinspection unchecked
+        // noinspection unchecked
         return EMPTY;
     }
 
+    @SuppressWarnings("rawtypes")
     private static final ObjectChunk[] EMPTY_OBJECT_CHUNK_ARRAY = new ObjectChunk[0];
 
     static <T, ATTR extends Any> ObjectChunk<T, ATTR>[] getEmptyChunkArray() {
-        //noinspection unchecked
+        // noinspection unchecked
         return EMPTY_OBJECT_CHUNK_ARRAY;
     }
 
@@ -83,7 +91,7 @@ public class ObjectChunk<T, ATTR extends Any> extends ChunkBase<ATTR> {
 
     @Override
     public final void copyToArray(int srcOffset, Object dest, int destOffset, int length) {
-        final T[] realType = (T[])dest;
+        final T[] realType = (T[]) dest;
         copyToTypedArray(srcOffset, realType, destOffset, length);
     }
 
@@ -94,13 +102,13 @@ public class ObjectChunk<T, ATTR extends Any> extends ChunkBase<ATTR> {
             return;
         }
         if (ChunkHelpers.canCopyForward(data, sStart, destData, destOffset, length)) {
-            //noinspection ManualArrayCopy
+            // noinspection ManualArrayCopy
             for (int ii = 0; ii < length; ++ii) {
                 destData[destOffset + ii] = data[sStart + ii];
             }
             return;
         }
-        //noinspection ManualArrayCopy
+        // noinspection ManualArrayCopy
         for (int ii = length - 1; ii >= 0; --ii) {
             destData[destOffset + ii] = data[sStart + ii];
         }
@@ -112,7 +120,7 @@ public class ObjectChunk<T, ATTR extends Any> extends ChunkBase<ATTR> {
     }
 
     @Override
-    public final boolean isAlias(Chunk chunk) {
+    public final boolean isAlias(Chunk<?> chunk) {
         return chunk.isAlias(data);
     }
 
@@ -134,9 +142,42 @@ public class ObjectChunk<T, ATTR extends Any> extends ChunkBase<ATTR> {
         return (ObjectChunk<T_DERIV, ATTR>) this;
     }
 
-    public static <T, ATTR extends Any, ATTR_DERIV extends ATTR> WritableObjectChunk<T, ATTR_DERIV> downcast(WritableObjectChunk<T, ATTR> self) {
-        //noinspection unchecked
-        return (WritableObjectChunk<T, ATTR_DERIV>) self;
+    public static <T, ATTR extends Any, ATTR_DERIV extends ATTR> ObjectChunk<T, ATTR_DERIV> downcast(ObjectChunk<T, ATTR> self) {
+        // noinspection unchecked
+        return (ObjectChunk<T, ATTR_DERIV>) self;
     }
     // endregion downcast
+
+    // region BinarySearch
+    /**
+     * Search for {@code key} in this chunk in the index range [0, {@link #size() size}) using Java's primitive
+     * ordering. This chunk must be sorted as by {@link WritableObjectChunk#sort()} prior to this call.
+     * <p>
+     * This method does <em>not</em> compare {@code null} or {@code NaN} values according to Deephaven ordering rules.
+     *
+     * @param key The key to search for
+     * @return The index of the key in this chunk, or else {@code (-(insertion point) - 1)} as defined by
+     *         {@link Arrays#binarySearch}
+     */
+    public final int binarySearch(final Object key) {
+        return Arrays.binarySearch(data, offset, offset + size, key);
+    }
+
+    /**
+     * Search for {@code key} in this chunk in the index range {@code [fromIndexInclusive, toIndexExclusive)} using
+     * Java's primitive ordering. This chunk must be sorted over the search index range as by
+     * {@link WritableObjectChunk#sort(int, int)} prior to this call.
+     * <p>
+     * This method does <em>not</em> compare {@code null} or {@code NaN} values according to Deephaven ordering rules.
+     *
+     * @param fromIndexInclusive The first index to be searched
+     * @param toIndexExclusive The index after the last index to be searched
+     * @param key The key to search for
+     * @return The index of the key in this chunk, or else {@code (-(insertion point) - 1)} as defined by
+     *         {@link Arrays#binarySearch(T[], int, int, Object)}
+     */
+    public final int binarySearch(final int fromIndexInclusive, final int toIndexExclusive, final Object key) {
+        return Arrays.binarySearch(data, offset + fromIndexInclusive, offset + toIndexExclusive, key);
+    }
+    // endregion BinarySearch
 }

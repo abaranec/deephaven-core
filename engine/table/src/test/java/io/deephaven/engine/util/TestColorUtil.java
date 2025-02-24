@@ -1,20 +1,37 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.util;
 
 import io.deephaven.base.testing.BaseArrayTestCase;
+import io.deephaven.engine.context.TestExecutionContext;
+import io.deephaven.engine.table.vectors.ColumnVectors;
 import io.deephaven.gui.color.Color;
 import io.deephaven.engine.table.Table;
 import io.deephaven.util.QueryConstants;
+import io.deephaven.util.SafeCloseable;
+import org.jetbrains.annotations.NotNull;
 
 import static io.deephaven.gui.color.Color.*;
 
 public class TestColorUtil extends BaseArrayTestCase {
 
     private final int size = 10;
-    private final Table t1 = TableTools.emptyTable(size).updateView("X = i", "Y = 2*i");
+    private SafeCloseable executionContext;
+    private Table t1;
+
+    @Override
+    protected void setUp() throws Exception {
+        super.setUp();
+        executionContext = TestExecutionContext.createForUnitTests().open();
+        t1 = TableTools.emptyTable(size).updateView("X = i", "Y = 2*i");
+    }
+
+    @Override
+    protected void tearDown() throws Exception {
+        super.tearDown();
+        executionContext.close();
+    }
 
     public void testRowFormatWhereNew() {
         testRowFormatWhere(t1.formatRowWhere("X > 5", "ALICEBLUE"), ALICEBLUE);
@@ -275,8 +292,7 @@ public class TestColorUtil extends BaseArrayTestCase {
 
     private void testRowFormatWhere(final Table colorTable, final Color color) {
         final long[] colorTableCol =
-                colorTable.getColumn(ColumnFormattingValues.ROW_FORMAT_NAME + ColumnFormattingValues.TABLE_FORMAT_NAME)
-                        .getLongs(0, size);
+                ColumnVectors.ofLong(colorTable, ColumnFormatting.getRowStyleFormatColumn()).toArray();
 
         for (int i = 0; i < 6; i++) {
             // assertEquals(0L, colorTableCol[i]);
@@ -287,8 +303,8 @@ public class TestColorUtil extends BaseArrayTestCase {
     }
 
     private void testFormatColumns(final Table colorTable, final Color color) {
-        final long[] colorTableCol =
-                colorTable.getColumn("X" + ColumnFormattingValues.TABLE_FORMAT_NAME).getLongs(0, size);
+        final @NotNull String columnName = ColumnFormatting.getStyleFormatColumn("X");
+        final long[] colorTableCol = ColumnVectors.ofLong(colorTable, columnName).toArray();
         for (long aColorTableCol : colorTableCol) {
             assertEquals(ColorUtil.toLong(color), aColorTableCol);
         }

@@ -1,8 +1,10 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit CharToIntegerCastWithOffset and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit CharToIntegerCastWithOffset and run "./gradlew replicateHashing" to regenerate
+//
+// @formatter:off
 package io.deephaven.chunk.util.hashing;
 
 import io.deephaven.chunk.attributes.Any;
@@ -32,7 +34,7 @@ public class ShortToIntegerCastWithOffset<T extends Any> implements ToIntFunctor
 
     private IntChunk<T> castWithOffset(ShortChunk<? extends T> input) {
         for (int ii = 0; ii < input.size(); ++ii) {
-            result.set(ii, (int)input.get(ii) + offset);
+            result.set(ii, (int) input.get(ii) + offset);
         }
         result.setSize(input.size());
         return result;

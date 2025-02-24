@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources.regioned;
 
 import io.deephaven.chunk.attributes.Any;
@@ -18,6 +21,11 @@ public class ColumnRegionReferencingImpl<ATTR extends Any, REFERENCED_COLUMN_REG
 
     public ColumnRegionReferencingImpl(@NotNull final REFERENCED_COLUMN_REGION referencedColumnRegion) {
         this.referencedColumnRegion = referencedColumnRegion;
+    }
+
+    @Override
+    public void invalidate() {
+        referencedColumnRegion.invalidate();
     }
 
     @NotNull

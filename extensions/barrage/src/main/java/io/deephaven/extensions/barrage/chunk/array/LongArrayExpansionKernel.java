@@ -1,12 +1,10 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit CharArrayExpansionKernel and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit CharArrayExpansionKernel and run "./gradlew replicateBarrageUtils" to regenerate
+//
+// @formatter:off
 package io.deephaven.extensions.barrage.chunk.array;
 
 import io.deephaven.chunk.LongChunk;
@@ -19,66 +17,82 @@ import io.deephaven.chunk.WritableIntChunk;
 import io.deephaven.chunk.WritableObjectChunk;
 import io.deephaven.chunk.attributes.Any;
 import io.deephaven.chunk.attributes.ChunkPositions;
-import io.deephaven.chunk.sized.SizedLongChunk;
+import io.deephaven.util.datastructures.LongSizedDataStructure;
 
 public class LongArrayExpansionKernel implements ArrayExpansionKernel {
     private final static long[] ZERO_LEN_ARRAY = new long[0];
     public final static LongArrayExpansionKernel INSTANCE = new LongArrayExpansionKernel();
 
     @Override
-    public <T, A extends Any> WritableChunk<A> expand(final ObjectChunk<T, A> source, final WritableIntChunk<ChunkPositions> perElementLengthDest) {
+    public <T, A extends Any> WritableChunk<A> expand(final ObjectChunk<T, A> source,
+            final WritableIntChunk<ChunkPositions> perElementLengthDest) {
         if (source.size() == 0) {
             perElementLengthDest.setSize(0);
             return WritableLongChunk.makeWritableChunk(0);
         }
 
         final ObjectChunk<long[], A> typedSource = source.asObjectChunk();
-        final SizedLongChunk<A> resultWrapper = new SizedLongChunk<>();
+
+        long totalSize = 0;
+        for (int i = 0; i < typedSource.size(); ++i) {
+            final long[] row = typedSource.get(i);
+            totalSize += row == null ? 0 : row.length;
+        }
+        final WritableLongChunk<A> result = WritableLongChunk.makeWritableChunk(
+                LongSizedDataStructure.intSize("ExpansionKernel", totalSize));
 
         int lenWritten = 0;
         perElementLengthDest.setSize(source.size() + 1);
         for (int i = 0; i < typedSource.size(); ++i) {
             final long[] row = typedSource.get(i);
-            final int len = row == null ? 0 : row.length;
             perElementLengthDest.set(i, lenWritten);
-            final WritableLongChunk<A> result = resultWrapper.ensureCapacityPreserve(lenWritten + len);
-            for (int j = 0; j < len; ++j) {
-                result.set(lenWritten + j, row[j]);
+            if (row == null) {
+                continue;
             }
-            lenWritten += len;
-            result.setSize(lenWritten);
+            result.copyFromArray(row, 0, lenWritten, row.length);
+            lenWritten += row.length;
         }
         perElementLengthDest.set(typedSource.size(), lenWritten);
 
-        return resultWrapper.get();
+        return result;
     }
 
     @Override
     public <T, A extends Any> WritableObjectChunk<T, A> contract(
-            final Chunk<A> source, final IntChunk<ChunkPositions> perElementLengthDest) {
+            final Chunk<A> source, final IntChunk<ChunkPositions> perElementLengthDest,
+            final WritableChunk<A> outChunk, final int outOffset, final int totalRows) {
         if (perElementLengthDest.size() == 0) {
-            return WritableObjectChunk.makeWritableChunk(0);
+            if (outChunk != null) {
+                return outChunk.asWritableObjectChunk();
+            }
+            return WritableObjectChunk.makeWritableChunk(totalRows);
         }
 
+        final int itemsInBatch = perElementLengthDest.size() - 1;
         final LongChunk<A> typedSource = source.asLongChunk();
-        final WritableObjectChunk<Object, A> result = WritableObjectChunk.makeWritableChunk(perElementLengthDest.size() - 1);
+        final WritableObjectChunk<Object, A> result;
+        if (outChunk != null) {
+            result = outChunk.asWritableObjectChunk();
+        } else {
+            final int numRows = Math.max(itemsInBatch, totalRows);
+            result = WritableObjectChunk.makeWritableChunk(numRows);
+            result.setSize(numRows);
+        }
 
         int lenRead = 0;
-        for (int i = 0; i < result.size(); ++i) {
-            final int ROW_LEN = perElementLengthDest.get(i + 1) - perElementLengthDest.get(i);
-            if (ROW_LEN == 0) {
-                result.set(i, ZERO_LEN_ARRAY);
+        for (int i = 0; i < itemsInBatch; ++i) {
+            final int rowLen = perElementLengthDest.get(i + 1) - perElementLengthDest.get(i);
+            if (rowLen == 0) {
+                result.set(outOffset + i, ZERO_LEN_ARRAY);
             } else {
-                final long[] row = new long[ROW_LEN];
-                for (int j = 0; j < ROW_LEN; ++j) {
-                    row[j] = typedSource.get(lenRead + j);
-                }
-                lenRead += ROW_LEN;
-                result.set(i, row);
+                final long[] row = new long[rowLen];
+                typedSource.copyToArray(lenRead, row, 0, rowLen);
+                lenRead += rowLen;
+                result.set(outOffset + i, row);
             }
         }
 
-        //noinspection unchecked
-        return (WritableObjectChunk<T, A>)result;
+        // noinspection unchecked
+        return (WritableObjectChunk<T, A>) result;
     }
 }

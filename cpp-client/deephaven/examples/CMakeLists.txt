@@ -1,0 +1,8 @@
+add_subdirectory(table_cleanup)
+add_subdirectory(concurrent_client)
+add_subdirectory(create_table_with_arrow_flight)
+add_subdirectory(create_table_with_table_maker)
+add_subdirectory(demos)
+add_subdirectory(hello_world)
+add_subdirectory(read_csv)
+add_subdirectory(read_table_with_arrow_flight)

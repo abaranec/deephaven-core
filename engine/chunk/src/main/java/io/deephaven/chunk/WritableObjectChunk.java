@@ -1,14 +1,14 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit WritableCharChunk and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit WritableCharChunk and run "./gradlew replicateSourcesAndChunks" to regenerate
+//
+// @formatter:off
 package io.deephaven.chunk;
 
 import io.deephaven.util.compare.ObjectComparisons;
 import java.util.Comparator;
-
-// @formatter:off
 
 import io.deephaven.chunk.attributes.Any;
 import io.deephaven.chunk.util.pools.MultiChunkPool;
@@ -23,29 +23,33 @@ import java.util.Arrays;
 // region BufferImports
 // endregion BufferImports
 
-// @formatter:on
+import static io.deephaven.chunk.util.pools.ChunkPoolConstants.POOL_WRITABLE_CHUNKS;
 
 /**
  * {@link WritableChunk} implementation for Object data.
  */
 public class WritableObjectChunk<T, ATTR extends Any> extends ObjectChunk<T, ATTR> implements WritableChunk<ATTR> {
 
+    @SuppressWarnings("rawtypes")
     private static final WritableObjectChunk[] EMPTY_WRITABLE_OBJECT_CHUNK_ARRAY = new WritableObjectChunk[0];
 
     static <T, ATTR extends Any> WritableObjectChunk<T, ATTR>[] getEmptyChunkArray() {
-        //noinspection unchecked
+        // noinspection unchecked
         return EMPTY_WRITABLE_OBJECT_CHUNK_ARRAY;
     }
 
     public static <T, ATTR extends Any> WritableObjectChunk<T, ATTR> makeWritableChunk(int size) {
-        return MultiChunkPool.forThisThread().getObjectChunkPool().takeWritableObjectChunk(size);
+        if (POOL_WRITABLE_CHUNKS) {
+            return MultiChunkPool.forThisThread().takeWritableObjectChunk(size);
+        }
+        return new WritableObjectChunk<>(makeArray(size), 0, size);
     }
 
-    public static WritableObjectChunk makeWritableChunkForPool(int size) {
-        return new WritableObjectChunk(makeArray(size), 0, size) {
+    public static <T, ATTR extends Any> WritableObjectChunk<T, ATTR> makeWritableChunkForPool(int size) {
+        return new WritableObjectChunk<>(makeArray(size), 0, size) {
             @Override
             public void close() {
-                MultiChunkPool.forThisThread().getObjectChunkPool().giveWritableObjectChunk(this);
+                MultiChunkPool.forThisThread().giveWritableObjectChunk(this);
             }
         };
     }
@@ -58,7 +62,7 @@ public class WritableObjectChunk<T, ATTR extends Any> extends ObjectChunk<T, ATT
         return new WritableObjectChunk<>(data, offset, size);
     }
 
-    WritableObjectChunk(T[] data, int offset, int capacity) {
+    protected WritableObjectChunk(T[] data, int offset, int capacity) {
         super(data, offset, capacity);
     }
 
@@ -66,13 +70,40 @@ public class WritableObjectChunk<T, ATTR extends Any> extends ObjectChunk<T, ATT
         data[offset + index] = value;
     }
 
-    public final void add(T value) { data[offset + size++] = value; }
+    public final void add(T value) {
+        data[offset + size++] = value;
+    }
 
     @Override
     public WritableObjectChunk<T, ATTR> slice(int offset, int capacity) {
         ChunkHelpers.checkSliceArgs(size, offset, capacity);
         return new WritableObjectChunk<>(data, this.offset + offset, capacity);
     }
+
+    // region array
+    /**
+     * Get the data array backing this WritableObjectChunk. The first element of this chunk corresponds to
+     * {@code array()[arrayOffset()]}.
+     * <p>
+     * This WritableObjectChunk must never be {@link #close() closed} while the array <em>may</em> be in use externally,
+     * because it must not be returned to any pool for re-use until that re-use is guaranteed to be exclusive.
+     *
+     * @return The backing data array
+     */
+    public final T[] array() {
+        return data;
+    }
+
+    /**
+     * Get this WritableObjectChunk's offset into the backing data array. The first element of this chunk corresponds to
+     * {@code array()[arrayOffset()]}.
+     *
+     * @return The offset into the backing data array
+     */
+    public final int arrayOffset() {
+        return offset;
+    }
+    // endregion array
 
     // region FillWithNullValueImpl
     @Override
@@ -117,7 +148,7 @@ public class WritableObjectChunk<T, ATTR extends Any> extends ObjectChunk<T, ATT
     @Override
     public final void copyFromArray(Object srcArray, int srcOffset, int destOffset, int length) {
         //noinspection unchecked
-        final T[] typedArray = (T[])srcArray;
+        final T[] typedArray = (T[]) srcArray;
         copyFromTypedArray(typedArray, srcOffset, destOffset, length);
     }
 
@@ -129,13 +160,13 @@ public class WritableObjectChunk<T, ATTR extends Any> extends ObjectChunk<T, ATT
             return;
         }
         if (ChunkHelpers.canCopyForward(src, srcOffset, data, destOffset, length)) {
-            //noinspection ManualArrayCopy
+            // noinspection ManualArrayCopy
             for (int ii = 0; ii < length; ++ii) {
                 data[netDestOffset + ii] = src[srcOffset + ii];
             }
             return;
         }
-        //noinspection ManualArrayCopy
+        // noinspection ManualArrayCopy
         for (int ii = length - 1; ii >= 0; --ii) {
             data[netDestOffset + ii] = src[srcOffset + ii];
         }
@@ -160,8 +191,7 @@ public class WritableObjectChunk<T, ATTR extends Any> extends ObjectChunk<T, ATT
     // endregion sort
 
     @Override
-    public void close() {
-    }
+    public void close() {}
 
     // region downcast
     public <T_DERIV extends T> WritableObjectChunk<T_DERIV, ATTR> asTypedWritableObjectChunk() {
@@ -169,8 +199,9 @@ public class WritableObjectChunk<T, ATTR extends Any> extends ObjectChunk<T, ATT
         return (WritableObjectChunk<T_DERIV, ATTR>) this;
     }
 
-    public static <T, ATTR extends Any, ATTR_DERIV extends ATTR> WritableObjectChunk<T, ATTR> upcast(WritableObjectChunk<T, ATTR_DERIV> self) {
-        //noinspection unchecked
+    public static <T, ATTR extends Any, ATTR_DERIV extends ATTR> WritableObjectChunk<T, ATTR> upcast(
+            WritableObjectChunk<T, ATTR_DERIV> self) {
+        // noinspection unchecked
         return (WritableObjectChunk<T, ATTR>) self;
     }
     // endregion downcast

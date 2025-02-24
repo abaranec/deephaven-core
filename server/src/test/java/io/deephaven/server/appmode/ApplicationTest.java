@@ -1,12 +1,19 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.server.appmode;
 
 import io.deephaven.appmode.ApplicationState;
 import io.deephaven.appmode.Field;
+import io.deephaven.engine.context.ExecutionContext;
 import io.deephaven.engine.table.Table;
+import io.deephaven.engine.testutil.junit4.EngineCleanup;
 import io.deephaven.engine.util.AbstractScriptSession;
 import io.deephaven.engine.util.GroovyDeephavenSession;
-import io.deephaven.engine.util.PythonDeephavenSession;
-import io.deephaven.test.junit4.EngineCleanup;
+import io.deephaven.integrations.python.PythonDeephavenSession;
+import io.deephaven.engine.util.PythonEvaluatorJpy;
+import io.deephaven.plugin.type.ObjectTypeLookup.NoOp;
+import io.deephaven.util.thread.ThreadInitializationFactory;
 import org.junit.After;
 import org.junit.Ignore;
 import org.junit.Rule;
@@ -22,12 +29,11 @@ public class ApplicationTest {
     @Rule
     public final EngineCleanup base = new EngineCleanup();
 
-    private AbstractScriptSession session = null;
+    private AbstractScriptSession<?> session = null;
 
     @After
     public void tearDown() {
         if (session != null) {
-            session.release();
             session = null;
         }
     }
@@ -44,7 +50,11 @@ public class ApplicationTest {
 
     @Test
     public void app01() throws IOException {
-        session = new GroovyDeephavenSession(null, GroovyDeephavenSession.RunScripts.none(), false);
+        session = GroovyDeephavenSession.of(
+                ExecutionContext.getContext().getUpdateGraph(),
+                ExecutionContext.getContext().getOperationInitializer(),
+                NoOp.INSTANCE, null,
+                GroovyDeephavenSession.RunScripts.none());
         ApplicationState app = ApplicationFactory.create(ApplicationConfigs.testAppDir(), ApplicationConfigs.app01(),
                 session, new NoopStateListener());
         assertThat(app.name()).isEqualTo("My Groovy Application");
@@ -56,7 +66,11 @@ public class ApplicationTest {
     @Test
     @Ignore("TODO: deephaven-core#1741 python test needs to run in a container")
     public void app02() throws IOException, InterruptedException, TimeoutException {
-        session = new PythonDeephavenSession(null, false, false);
+        session = new PythonDeephavenSession(
+                ExecutionContext.getDefaultContext().getUpdateGraph(),
+                ExecutionContext.getContext().getOperationInitializer(), ThreadInitializationFactory.NO_OP,
+                NoOp.INSTANCE, null, false,
+                PythonEvaluatorJpy.withGlobalCopy());
         ApplicationState app = ApplicationFactory.create(ApplicationConfigs.testAppDir(), ApplicationConfigs.app02(),
                 session, new NoopStateListener());
         assertThat(app.name()).isEqualTo("My Python Application");

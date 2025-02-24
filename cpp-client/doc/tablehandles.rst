@@ -1,38 +1,44 @@
 TableHandleManager and TableHandle
 ==================================
 
-:cpp:class:`TableHandleManager <deephaven::client::highlevel::TableHandleManager>`
-is one of two ways to get
-:cpp:class:`TableHandle <deephaven::client::highlevel::TableHandle>` resources
-in the system.
+TableHandleManager
+------------------
 
-:cpp:class:`TableHandleManager <deephaven::client::highlevel::TableHandleManager>` is used to access existing tables in the system (e.g. via
-:cpp:func:`fetchTable <deephaven::client::highlevel::TableHandleManager::fetchTable>`)
+:cpp:class:`TableHandleManager <deephaven::client::TableHandleManager>` is used to access existing tables in the system (e.g. via
+:cpp:func:`FetchTable <deephaven::client::TableHandleManager::FetchTable>`)
 or create new tables (e.g. via
-:cpp:func:`emptyTable <deephaven::client::highlevel::TableHandleManager::emptyTable>` or
-:cpp:func:`timeTable <deephaven::client::highlevel::TableHandleManager::timeTable>`).
-It is also that place that (in a future version) you can set attributes that
-affect a related group of tables, such as whether they are resolved
-synchronously or asynchronously.
+:cpp:func:`EmptyTable <deephaven::client::TableHandleManager::EmptyTable>` or
+:cpp:func:`TimeTable <deephaven::client::TableHandleManager::TimeTable>`).
+These calls return a 
+:cpp:class:`TableHandle <deephaven::client::TableHandle>`.
 
-On the other hand, the methods on
-:cpp:class:`TableHandle <deephaven::client::highlevel::TableHandle>`
-are used to create tables derived from other tables.
-Some examples are
-:cpp:func:`where <deephaven::client::highlevel::TableHandle::where>` and
-:cpp:func:`sort <deephaven::client::highlevel::TableHandle::sort>`).
+:cpp:class:`TableHandleManager <deephaven::client::TableHandleManager>` can also be used to access the
+:cpp:class:`arrow::flight::FlightClient` for direct access to Arrow.
 
-These are used to create tables derived from other tables. A typical pattern
-might be
+TableHandle
+-----------
+
+Once you have a
+:cpp:class:`TableHandle <deephaven::client::TableHandle>`,
+you can create derived tables via a large variety of methods, such as
+:cpp:func:`Where <deephaven::client::TableHandle::Where>`
+and
+:cpp:func:`Sort <deephaven::client::TableHandle::Sort>`.
+
+A simple example is:
 
 .. code:: c++
 
-   TableHandle t1 = ...;
-   TableHandle t2 = t1.where(...).sort(...).tail(5);
+   TableHandle my_data = manager.FetchTable("MyData");
+   TableHandle filtered = my_data.Where("Price < 100")
+       .Sort(SortPair("Timestamp"))
+       .Tail(5);
 
-.. doxygenclass:: deephaven::client::highlevel::TableHandleManager
+Declarations
+------------
+
+.. doxygenclass:: deephaven::client::TableHandleManager
    :members:
 
-.. doxygenclass:: deephaven::client::highlevel::TableHandle
+.. doxygenclass:: deephaven::client::TableHandle
    :members:
-

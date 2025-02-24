@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.jpy;
 
 import org.jpy.IdentityModule;
@@ -92,14 +95,14 @@ public class CreateModuleTest extends PythonTest {
     }
 
     @Test
-    public void hasGil() {
+    public void hasNoGilInJava() {
         final HasGilObject hasGilObject = new HasGilObject();
         try (final IdentityModule identityModule = IdentityModule.create(getCreateModule());
                 final HasGil proxy = identityModule
                         .identity(hasGilObject)
                         .createProxy(HasGil.class)) {
             Assert.assertFalse(hasGilObject.hasGil());
-            Assert.assertTrue(proxy.hasGil());
+            Assert.assertFalse(proxy.hasGil());
         }
     }
 }

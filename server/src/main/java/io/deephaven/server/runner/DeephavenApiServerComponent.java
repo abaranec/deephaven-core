@@ -1,8 +1,11 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.server.runner;
 
 import dagger.BindsInstance;
-import dagger.Component;
 
+import javax.annotation.Nullable;
 import javax.inject.Named;
 import java.io.PrintStream;
 
@@ -10,23 +13,13 @@ public interface DeephavenApiServerComponent {
 
     DeephavenApiServer getServer();
 
-    interface Builder<B extends Builder<B>> {
+    interface Builder<Self extends Builder<Self, Component>, Component extends DeephavenApiServerComponent> {
         @BindsInstance
-        B withPort(@Named("http.port") int port);
+        Self withOut(@Nullable @Named("out") PrintStream out);
 
         @BindsInstance
-        B withSchedulerPoolSize(@Named("scheduler.poolSize") int numThreads);
+        Self withErr(@Nullable @Named("err") PrintStream err);
 
-        @BindsInstance
-        B withSessionTokenExpireTmMs(@Named("session.tokenExpireMs") long tokenExpireMs);
-
-        @BindsInstance
-        B withMaxInboundMessageSize(@Named("grpc.maxInboundMessageSize") int maxInboundMessageSize);
-
-        @BindsInstance
-        B withOut(@Named("out") PrintStream out);
-
-        @BindsInstance
-        B withErr(@Named("err") PrintStream err);
+        Component build();
     }
 }

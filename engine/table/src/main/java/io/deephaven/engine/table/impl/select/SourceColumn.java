@@ -1,11 +1,12 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.select;
 
+import io.deephaven.api.JoinAddition;
 import io.deephaven.base.verify.Assert;
 import io.deephaven.engine.table.*;
+import io.deephaven.engine.table.impl.MatchPair;
 import io.deephaven.engine.table.impl.sources.InMemoryColumnSource;
 import io.deephaven.api.util.NameValidator;
 import io.deephaven.engine.table.impl.NoSuchColumnException;
@@ -14,11 +15,21 @@ import io.deephaven.engine.table.WritableColumnSource;
 import io.deephaven.engine.rowset.TrackingRowSet;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
 public class SourceColumn implements SelectColumn {
+
+    public static SourceColumn of(JoinAddition joinAddition) {
+        // We know ColumnName already does validation
+        return new SourceColumn(joinAddition.existingColumn().name(), joinAddition.newColumn().name(), true);
+    }
+
+    public static SourceColumn[] from(Collection<? extends JoinAddition> joinAdditions) {
+        return joinAdditions.stream().map(SourceColumn::of).toArray(SourceColumn[]::new);
+    }
 
     @NotNull
     private final String sourceName;
@@ -32,17 +43,12 @@ public class SourceColumn implements SelectColumn {
     }
 
     public SourceColumn(String sourceName, String destName) {
-        this.sourceName = NameValidator.validateColumnName(sourceName);
-        this.destName = NameValidator.validateColumnName(destName);
+        this(NameValidator.validateColumnName(sourceName), NameValidator.validateColumnName(destName), true);
     }
 
-    @Override
-    public List<String> initInputs(Table table) {
-        this.sourceColumn = table.getColumnSource(sourceName);
-        if (sourceColumn == null) {
-            throw new NoSuchColumnException(table.getDefinition().getColumnNames(), sourceName);
-        }
-        return Collections.singletonList(sourceName);
+    private SourceColumn(@NotNull final String sourceName, @NotNull final String destName, boolean unused) {
+        this.sourceName = sourceName;
+        this.destName = destName;
     }
 
     @Override
@@ -55,7 +61,7 @@ public class SourceColumn implements SelectColumn {
     }
 
     @Override
-    public List<String> initDef(Map<String, ColumnDefinition<?>> columnDefinitionMap) {
+    public List<String> initDef(@NotNull final Map<String, ColumnDefinition<?>> columnDefinitionMap) {
         sourceDefinition = columnDefinitionMap.get(sourceName);
         if (sourceDefinition == null) {
             throw new NoSuchColumnException(columnDefinitionMap.keySet(), sourceName);
@@ -70,6 +76,15 @@ public class SourceColumn implements SelectColumn {
             return sourceDefinition.getDataType();
         }
         return sourceColumn.getType();
+    }
+
+    @Override
+    public Class<?> getReturnedComponentType() {
+        // Try to be a little flexible, depending on whether initInputs or initDef was called.
+        if (sourceDefinition != null) {
+            return sourceDefinition.getComponentType();
+        }
+        return sourceColumn.getComponentType();
     }
 
     @Override
@@ -153,10 +168,9 @@ public class SourceColumn implements SelectColumn {
         return result;
     }
 
-
     @Override
-    public boolean disallowRefresh() {
-        return false;
+    public boolean isStateless() {
+        return sourceColumn.isStateless();
     }
 
     @Override

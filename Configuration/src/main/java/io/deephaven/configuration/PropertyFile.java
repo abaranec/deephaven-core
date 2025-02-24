@@ -1,12 +1,10 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.configuration;
 
 import io.deephaven.base.verify.Assert;
 import io.deephaven.base.verify.Require;
-import io.deephaven.datastructures.util.CollectionUtil;
 import io.deephaven.io.logger.Logger;
 import gnu.trove.set.TIntSet;
 import gnu.trove.set.hash.TIntHashSet;
@@ -16,10 +14,9 @@ import org.jetbrains.annotations.NotNull;
 
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.Serializable;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.util.BitSet;
 import java.util.*;
 import java.util.regex.Matcher;
@@ -42,7 +39,7 @@ public class PropertyFile {
      *
      * @param filename name of file to load properties from
      * @param log Logger for error/warning messages, or null if not logging
-     * @param fatal If the file can't be read and fatal is true -> throw exception
+     * @param fatal If the file can't be read and fatal is true -&gt; throw exception
      */
     public PropertyFile(String filename, Logger log, boolean fatal) {
         this.log = log;
@@ -61,7 +58,7 @@ public class PropertyFile {
 
     /**
      * Return the Properties object loaded by this property file.
-     * 
+     *
      * @return the Properties object.
      */
     public Properties getProperties() {
@@ -70,7 +67,7 @@ public class PropertyFile {
 
     /**
      * Collect all of the properties in this property file that begin with a given prefix.
-     * 
+     *
      * @return a new Properties object containing the selected properties, with the prefix removed.
      */
     public Properties getProperties(String prefix) {
@@ -422,12 +419,7 @@ public class PropertyFile {
                     throw new PropertyException("null value for property " + propName);
                 } else {
                     source = "file";
-                    // Setting field accessibility should be allowed by our code, but not from outside classes, so
-                    // this should be privileged.
-                    AccessController.doPrivileged((PrivilegedAction<Void>) () -> {
-                        f.setAccessible(true);
-                        return null;
-                    });
+                    f.setAccessible(true);
                     final String fieldTypeName = f.getType().getName();
                     if (fieldTypeName.equals("java.lang.String")) {
                         f.set(obj, value.trim());
@@ -482,7 +474,10 @@ public class PropertyFile {
     }
 
     public Set<String> getStringSetFromProperty(final String propertyName) {
-        Set<String> set = CollectionUtil.setFromArray(getProperty(propertyName).split("[, ]"));
+        String[] data = getProperty(propertyName).split("[, ]");
+        Require.neqNull(data, "data");
+        Set<String> set = new LinkedHashSet<>(Arrays.asList(data));
+        Require.eq(set.size(), "set.size()", data.length, "data.length");
         set.remove("");
         return set;
     }
@@ -507,13 +502,101 @@ public class PropertyFile {
         final String propertyValue = getProperty(propertyName).trim();
         switch (propertyValue) {
             case "*":
-                return CollectionUtil.universalSet();
+                // noinspection unchecked
+                return (Set<String>) UNIVERSAL_SET;
             case "":
                 return Collections.emptySet();
             default:
-                Set<String> result = CollectionUtil.setFromArray(propertyValue.split("[, ]+"));
-                result.remove("");
-                return result;
+                String[] data = propertyValue.split("[, ]+");
+                Require.neqNull(data, "data");
+                Set<String> set = new LinkedHashSet<>(Arrays.asList(data));
+                Require.eq(set.size(), "set.size()", data.length, "data.length");
+                set.remove("");
+                return set;
+        }
+    }
+
+
+    /**
+     * The universal set (immutable). This set is serializable.
+     */
+    @SuppressWarnings("rawtypes")
+    private static final Set UNIVERSAL_SET = new UniversalSet();
+
+    /**
+     * A set that contains everything. Iteration is not supported - only containment checks.
+     */
+    private static class UniversalSet<T> implements Set<T>, Serializable {
+
+        private static final long serialVersionUID = 1L;
+
+        private Object readResolve() {
+            return UNIVERSAL_SET;
+        }
+
+        @Override
+        public int size() {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean isEmpty() {
+            return false;
+        }
+
+        @Override
+        public boolean contains(Object o) {
+            return true;
+        }
+
+        @Override
+        public Iterator<T> iterator() {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Object[] toArray() {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean add(Object o) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean remove(Object o) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean containsAll(Collection<?> c) {
+            return true;
+        }
+
+        @Override
+        public boolean addAll(Collection<? extends T> c) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean retainAll(Collection<?> c) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean removeAll(Collection<?> c) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void clear() {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public <T> T[] toArray(T[] a) {
+            throw new UnsupportedOperationException();
         }
     }
 
@@ -555,7 +638,7 @@ public class PropertyFile {
     /**
      * Parse a set of non-negative ints from a property. Format is comma-separated individual values and ranges of the
      * form start-end.
-     * 
+     *
      * @example 0,22,100-200,99,1000-2000
      * @param propertyName
      * @return A set of ints derived from the specified property.

@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.base.stats;
 
 public class Item<V extends Value> {
@@ -72,7 +71,7 @@ public class Item<V extends Value> {
     }
 
     /**
-     * Update the history intervals for this item's value, logging updated intervals >= logInterval
+     * Update the history intervals for this item's value, logging updated intervals &gt;= logInterval
      */
     public void update(ItemUpdateListener listener, long logInterval, long now, long appNow) {
         value.update(this, listener, logInterval, now, appNow);

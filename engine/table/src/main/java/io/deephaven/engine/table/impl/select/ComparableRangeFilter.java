@@ -1,23 +1,25 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.select;
 
 import io.deephaven.base.verify.Assert;
 import io.deephaven.engine.table.ColumnDefinition;
 import io.deephaven.engine.table.TableDefinition;
 import io.deephaven.engine.table.impl.chunkfilter.ChunkFilter;
+import io.deephaven.engine.table.impl.chunkfilter.ObjectChunkFilter;
 import io.deephaven.util.compare.ObjectComparisons;
 import io.deephaven.engine.table.ColumnSource;
-import io.deephaven.chunk.*;
-import io.deephaven.engine.rowset.chunkattributes.OrderedRowKeys;
-import io.deephaven.chunk.attributes.Values;
 import io.deephaven.engine.rowset.WritableRowSet;
 import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.util.annotations.TestUseOnly;
+import org.jetbrains.annotations.NotNull;
 
 public class ComparableRangeFilter extends AbstractRangeFilter {
-    private final Comparable upper;
-    private final Comparable lower;
+    private final Comparable<?> upper;
+    private final Comparable<?> lower;
 
-    ComparableRangeFilter(String columnName, Comparable val1, Comparable val2, boolean lowerInclusive,
+    ComparableRangeFilter(String columnName, Comparable<?> val1, Comparable<?> val2, boolean lowerInclusive,
             boolean upperInclusive) {
         super(columnName, lowerInclusive, upperInclusive);
 
@@ -31,18 +33,18 @@ public class ComparableRangeFilter extends AbstractRangeFilter {
     }
 
     @TestUseOnly
-    public static ComparableRangeFilter makeForTest(String columnName, Comparable lower, Comparable upper,
+    public static ComparableRangeFilter makeForTest(String columnName, Comparable<?> lower, Comparable<?> upper,
             boolean lowerInclusive, boolean upperInclusive) {
         return new ComparableRangeFilter(columnName, lower, upper, lowerInclusive, upperInclusive);
     }
 
     @Override
-    public void init(TableDefinition tableDefinition) {
+    public void init(@NotNull final TableDefinition tableDefinition) {
         if (chunkFilter != null) {
             return;
         }
 
-        final ColumnDefinition def = tableDefinition.getColumn(columnName);
+        final ColumnDefinition<?> def = tableDefinition.getColumn(columnName);
         if (def == null) {
             throw new RuntimeException("Column \"" + columnName + "\" doesn't exist in this table, available columns: "
                     + tableDefinition.getColumnNames());
@@ -54,8 +56,8 @@ public class ComparableRangeFilter extends AbstractRangeFilter {
         chunkFilter = makeComparableChunkFilter(lower, upper, lowerInclusive, upperInclusive);
     }
 
-    public static ChunkFilter makeComparableChunkFilter(Comparable lower, Comparable upper, boolean lowerInclusive,
-            boolean upperInclusive) {
+    public static ChunkFilter makeComparableChunkFilter(
+            Comparable<?> lower, Comparable<?> upper, boolean lowerInclusive, boolean upperInclusive) {
         if (lowerInclusive) {
             if (upperInclusive) {
                 return new InclusiveInclusiveComparableChunkFilter(lower, upper);
@@ -73,7 +75,11 @@ public class ComparableRangeFilter extends AbstractRangeFilter {
 
     @Override
     public WhereFilter copy() {
-        return new ComparableRangeFilter(columnName, lower, upper, lowerInclusive, upperInclusive);
+        final ComparableRangeFilter copy =
+                new ComparableRangeFilter(columnName, lower, upper, lowerInclusive, upperInclusive);
+        copy.chunkFilter = chunkFilter;
+        copy.longFilter = longFilter;
+        return copy;
     }
 
     @Override
@@ -83,149 +89,83 @@ public class ComparableRangeFilter extends AbstractRangeFilter {
                 (upperInclusive ? "]" : ")") + ")";
     }
 
-    private static class InclusiveInclusiveComparableChunkFilter implements ChunkFilter {
-        private final Comparable lower;
-        private final Comparable upper;
+    private final static class InclusiveInclusiveComparableChunkFilter
+            extends ObjectChunkFilter<Comparable<?>> {
+        private final Comparable<?> lower;
+        private final Comparable<?> upper;
 
-        private InclusiveInclusiveComparableChunkFilter(Comparable lower, Comparable upper) {
+        private InclusiveInclusiveComparableChunkFilter(Comparable<?> lower, Comparable<?> upper) {
             this.lower = lower;
             this.upper = upper;
         }
 
         @Override
-        public void filter(Chunk<? extends Values> values, LongChunk<OrderedRowKeys> keys,
-                WritableLongChunk<OrderedRowKeys> results) {
-            final ObjectChunk<? extends Comparable, ? extends Values> objectChunk = values.asObjectChunk();
-
-            results.setSize(0);
-            for (int ii = 0; ii < values.size(); ++ii) {
-                final Comparable value = objectChunk.get(ii);
-                if (meetsLowerBound(value) && meetsUpperBound(value)) {
-                    results.add(keys.get(ii));
-                }
-            }
-        }
-
-        boolean meetsLowerBound(Comparable<?> value) {
-            return ObjectComparisons.compare(lower, value) <= 0;
-        }
-
-        boolean meetsUpperBound(Comparable<?> value) {
-            return ObjectComparisons.compare(upper, value) >= 0;
+        public boolean matches(Comparable<?> value) {
+            return ObjectComparisons.compare(lower, value) <= 0 && ObjectComparisons.compare(upper, value) >= 0;
         }
     }
 
-    private static class InclusiveExclusiveComparableChunkFilter implements ChunkFilter {
-        private final Comparable lower;
-        private final Comparable upper;
+    private final static class InclusiveExclusiveComparableChunkFilter
+            extends ObjectChunkFilter<Comparable<?>> {
+        private final Comparable<?> lower;
+        private final Comparable<?> upper;
 
-        private InclusiveExclusiveComparableChunkFilter(Comparable lower, Comparable upper) {
+        private InclusiveExclusiveComparableChunkFilter(Comparable<?> lower, Comparable<?> upper) {
             this.lower = lower;
             this.upper = upper;
         }
 
-
         @Override
-        public void filter(Chunk<? extends Values> values, LongChunk<OrderedRowKeys> keys,
-                WritableLongChunk<OrderedRowKeys> results) {
-            final ObjectChunk<? extends Comparable, ? extends Values> objectChunk = values.asObjectChunk();
-
-            results.setSize(0);
-            for (int ii = 0; ii < values.size(); ++ii) {
-                final Comparable value = objectChunk.get(ii);
-                if (meetsLowerBound(value) && meetsUpperBound(value)) {
-                    results.add(keys.get(ii));
-                }
-            }
-        }
-
-        boolean meetsLowerBound(Comparable value) {
-            return ObjectComparisons.compare(lower, value) <= 0;
-        }
-
-        boolean meetsUpperBound(Comparable value) {
-            return ObjectComparisons.compare(upper, value) > 0;
+        public boolean matches(Comparable<?> value) {
+            return ObjectComparisons.compare(lower, value) <= 0 && ObjectComparisons.compare(upper, value) > 0;
         }
     }
 
-    private static class ExclusiveInclusiveComparableChunkFilter implements ChunkFilter {
-        private final Comparable lower;
-        private final Comparable upper;
+    private final static class ExclusiveInclusiveComparableChunkFilter
+            extends ObjectChunkFilter<Comparable<?>> {
+        private final Comparable<?> lower;
+        private final Comparable<?> upper;
 
-        private ExclusiveInclusiveComparableChunkFilter(Comparable lower, Comparable upper) {
+        private ExclusiveInclusiveComparableChunkFilter(Comparable<?> lower, Comparable<?> upper) {
             this.lower = lower;
             this.upper = upper;
         }
 
-
         @Override
-        public void filter(Chunk<? extends Values> values, LongChunk<OrderedRowKeys> keys,
-                WritableLongChunk<OrderedRowKeys> results) {
-            final ObjectChunk<? extends Comparable, ? extends Values> objectChunk = values.asObjectChunk();
-
-            results.setSize(0);
-            for (int ii = 0; ii < values.size(); ++ii) {
-                final Comparable value = objectChunk.get(ii);
-                if (meetsLowerBound(value) && meetsUpperBound(value)) {
-                    results.add(keys.get(ii));
-                }
-            }
-        }
-
-        boolean meetsLowerBound(Comparable value) {
-            // noinspection unchecked
-            return ObjectComparisons.compare(lower, value) < 0;
-        }
-
-        boolean meetsUpperBound(Comparable value) {
-            // noinspection unchecked
-            return ObjectComparisons.compare(upper, value) >= 0;
+        public boolean matches(Comparable<?> value) {
+            return ObjectComparisons.compare(lower, value) < 0 && ObjectComparisons.compare(upper, value) >= 0;
         }
     }
 
-    private static class ExclusiveExclusiveComparableChunkFilter implements ChunkFilter {
-        private final Comparable lower;
-        private final Comparable upper;
+    private final static class ExclusiveExclusiveComparableChunkFilter
+            extends ObjectChunkFilter<Comparable<?>> {
+        private final Comparable<?> lower;
+        private final Comparable<?> upper;
 
-        private ExclusiveExclusiveComparableChunkFilter(Comparable lower, Comparable upper) {
+        private ExclusiveExclusiveComparableChunkFilter(Comparable<?> lower, Comparable<?> upper) {
             this.lower = lower;
             this.upper = upper;
         }
 
-
         @Override
-        public void filter(Chunk<? extends Values> values, LongChunk<OrderedRowKeys> keys,
-                WritableLongChunk<OrderedRowKeys> results) {
-            final ObjectChunk<? extends Comparable, ? extends Values> objectChunk = values.asObjectChunk();
-
-            results.setSize(0);
-            for (int ii = 0; ii < values.size(); ++ii) {
-                final Comparable value = objectChunk.get(ii);
-                if (meetsLowerBound(value) && meetsUpperBound(value)) {
-                    results.add(keys.get(ii));
-                }
-            }
-        }
-
-        boolean meetsLowerBound(Comparable value) {
-            // noinspection unchecked
-            return ObjectComparisons.compare(lower, value) < 0;
-        }
-
-        boolean meetsUpperBound(Comparable value) {
-            // noinspection unchecked
-            return ObjectComparisons.compare(upper, value) > 0;
+        public boolean matches(Comparable<?> value) {
+            return ObjectComparisons.compare(lower, value) < 0 && ObjectComparisons.compare(upper, value) > 0;
         }
     }
 
+    @NotNull
     @Override
-    WritableRowSet binarySearch(RowSet selection, ColumnSource columnSource, boolean usePrev, boolean reverse) {
+    WritableRowSet binarySearch(
+            @NotNull final RowSet selection,
+            @NotNull final ColumnSource<?> columnSource,
+            final boolean usePrev,
+            final boolean reverse) {
         if (selection.isEmpty()) {
             return selection.copy();
         }
 
         // noinspection unchecked
-        final ColumnSource<Comparable> comparableColumnSource = (ColumnSource<Comparable>) columnSource;
+        final ColumnSource<Comparable<?>> comparableColumnSource = (ColumnSource<Comparable<?>>) columnSource;
 
         final Comparable<?> startValue = reverse ? upper : lower;
         final Comparable<?> endValue = reverse ? lower : upper;
@@ -242,8 +182,8 @@ public class ComparableRangeFilter extends AbstractRangeFilter {
     }
 
 
-    static long bound(RowSet selection, boolean usePrev, ColumnSource<Comparable> comparableColumnSource,
-            long minPosition, long maxPosition, Comparable targetValue, boolean inclusive, int compareSign,
+    static long bound(RowSet selection, boolean usePrev, ColumnSource<Comparable<?>> comparableColumnSource,
+            long minPosition, long maxPosition, Comparable<?> targetValue, boolean inclusive, int compareSign,
             boolean end) {
         while (minPosition < maxPosition) {
             final long midPos = (minPosition + maxPosition) / 2;

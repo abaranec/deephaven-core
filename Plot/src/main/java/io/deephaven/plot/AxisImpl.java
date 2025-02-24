@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.plot;
 
 import io.deephaven.plot.axisformatters.AxisFormat;
@@ -12,8 +11,8 @@ import io.deephaven.plot.errors.PlotExceptionCause;
 import io.deephaven.plot.errors.PlotInfo;
 import io.deephaven.plot.errors.PlotUnsupportedOperationException;
 import io.deephaven.plot.filters.SelectableDataSet;
+import io.deephaven.plot.util.tables.PartitionedTableHandle;
 import io.deephaven.plot.util.tables.SwappableTable;
-import io.deephaven.plot.util.tables.TableMapHandle;
 import io.deephaven.gui.color.Color;
 import io.deephaven.gui.color.Paint;
 import io.deephaven.time.calendar.BusinessCalendar;
@@ -58,7 +57,7 @@ public class AxisImpl implements Axis, PlotExceptionCause {
 
     private boolean isTimeAxis = false;
     private final Set<SwappableTable> swappableTables = new CopyOnWriteArraySet<>();
-    private final Set<TableMapHandle> tableMapHandles = new CopyOnWriteArraySet<>();
+    private final Set<PartitionedTableHandle> partitionedTableHandles = new CopyOnWriteArraySet<>();
     public final Set<OneClickChartModifier> oneClickChartModifiers = new CopyOnWriteArraySet<>();
 
 
@@ -97,7 +96,7 @@ public class AxisImpl implements Axis, PlotExceptionCause {
         this.invert = axis.invert;
         this.isTimeAxis = axis.isTimeAxis;
         this.swappableTables.addAll(axis.swappableTables);
-        this.tableMapHandles.addAll(axis.tableMapHandles);
+        this.partitionedTableHandles.addAll(axis.partitionedTableHandles);
         this.oneClickChartModifiers.addAll(axis.oneClickChartModifiers);
     }
 
@@ -336,21 +335,21 @@ public class AxisImpl implements Axis, PlotExceptionCause {
         isTimeAxis = timeAxis;
     }
 
-    public void addTableMapHandle(TableMapHandle map) {
-        tableMapHandles.add(map);
+    public void addPartitionedTableHandle(PartitionedTableHandle map) {
+        partitionedTableHandles.add(map);
     }
 
     public Set<SwappableTable> getSwappableTables() {
         return swappableTables;
     }
 
-    public Set<TableMapHandle> getTableMapHandles() {
-        return tableMapHandles;
+    public Set<PartitionedTableHandle> getPartitionedTableHandles() {
+        return partitionedTableHandles;
     }
 
     public void addSwappableTable(SwappableTable st) {
         swappableTables.add(st);
-        addTableMapHandle(st.getTableMapHandle());
+        addPartitionedTableHandle(st.getPartitionedTableHandle());
     }
 
     public void addOneClickChartModifier(OneClickChartModifier oneClickChartModifier) {
@@ -365,14 +364,14 @@ public class AxisImpl implements Axis, PlotExceptionCause {
 
 
     @Override
-    public AxisImpl axisFormat(final AxisFormat format) {
-        this.format = format;
+    public AxisImpl axisFormat(final AxisFormat axisFormat) {
+        this.format = axisFormat;
         return this;
     }
 
     @Override
-    public AxisImpl axisFormatPattern(final String pattern) {
-        this.formatPattern = pattern;
+    public AxisImpl axisFormatPattern(final String axisFormatPattern) {
+        this.formatPattern = axisFormatPattern;
         return this;
     }
 
@@ -444,12 +443,18 @@ public class AxisImpl implements Axis, PlotExceptionCause {
     }
 
     @Override
+    public Axis log(final boolean useLog) {
+        this.log = useLog;
+        return this;
+    }
+
+    @Override
     public AxisImpl businessTime(final BusinessCalendar calendar) {
         return transform(new AxisTransformBusinessCalendar(calendar));
     }
 
     @Override
-    public AxisImpl businessTime(final SelectableDataSet sds, final String valueColumn) {
+    public AxisImpl businessTime(final SelectableDataSet sds, final String calendar) {
         throw new PlotUnsupportedOperationException(
                 "Selectable business time transformation is not currently supported", this);
     }
@@ -459,6 +464,10 @@ public class AxisImpl implements Axis, PlotExceptionCause {
         return businessTime(Calendars.calendar());
     }
 
+    @Override
+    public AxisImpl businessTime(boolean useBusinessTime) {
+        return useBusinessTime ? businessTime() : transform(null);
+    }
 
     ////////////////////////// axis rescaling //////////////////////////
 
@@ -497,12 +506,12 @@ public class AxisImpl implements Axis, PlotExceptionCause {
     }
 
     @Override
-    public AxisImpl min(final SelectableDataSet sds, final String valueColumn) {
+    public AxisImpl min(final SelectableDataSet sds, final String min) {
         throw new PlotUnsupportedOperationException("Selectable min transformation is not currently supported", this);
     }
 
     @Override
-    public AxisImpl max(final SelectableDataSet sds, final String valueColumn) {
+    public AxisImpl max(final SelectableDataSet sds, final String max) {
         throw new PlotUnsupportedOperationException("Selectable max transformation is not currently supported", this);
     }
 
@@ -536,8 +545,8 @@ public class AxisImpl implements Axis, PlotExceptionCause {
     }
 
     @Override
-    public AxisImpl minorTicks(int count) {
-        this.minorTickCount = count;
+    public AxisImpl minorTicks(int nminor) {
+        this.minorTickCount = nminor;
         this.minorTicksVisible = true;
         return this;
     }

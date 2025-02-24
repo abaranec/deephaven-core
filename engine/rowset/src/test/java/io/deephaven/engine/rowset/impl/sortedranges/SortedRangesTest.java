@@ -1,22 +1,25 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.rowset.impl.sortedranges;
 
 import gnu.trove.iterator.TLongIterator;
 import gnu.trove.list.array.TLongArrayList;
 import gnu.trove.set.TLongSet;
 import gnu.trove.set.hash.TLongHashSet;
+import io.deephaven.base.testing.Shuffle;
 import io.deephaven.engine.rowset.RowSequence;
 import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.engine.rowset.RowSetFactory;
 import io.deephaven.engine.rowset.impl.OrderedLongSet;
 import io.deephaven.engine.rowset.impl.OrderedLongSetBuilderSequential;
-import io.deephaven.engine.rowset.impl.TrackingWritableRowSetImpl;
 import io.deephaven.engine.rowset.impl.ValidationSet;
+import io.deephaven.engine.rowset.impl.WritableRowSetImpl;
 import io.deephaven.engine.rowset.impl.rsp.RspBitmap;
 import io.deephaven.engine.rowset.impl.singlerange.SingleRange;
-import io.deephaven.engine.testutil.Shuffle;
 import io.deephaven.test.types.OutOfBandTest;
-import org.apache.commons.lang3.mutable.MutableInt;
-import org.apache.commons.lang3.mutable.MutableLong;
+import io.deephaven.util.mutable.MutableInt;
+import io.deephaven.util.mutable.MutableLong;
 import org.apache.commons.lang3.mutable.MutableObject;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -1052,14 +1055,14 @@ public class SortedRangesTest {
         long prev = -1L;
         final MutableLong mutVal = new MutableLong(-1L);
         final RowSet.TargetComparator comp =
-                (final long key, final int dir) -> Long.signum(dir * (mutVal.getValue() - key));
+                (final long key, final int dir) -> Long.signum(dir * (mutVal.get() - key));
         for (long[] segment : segments0) {
             final long start = segment[0];
             final long end = segment[1];
             final String m = "start==" + start + " && end==" + end;
             for (long v = start - 1; v <= end + 1; ++v) {
                 final String m2 = m + " && v==" + v;
-                mutVal.setValue(v);
+                mutVal.set(v);
                 long result = sit.binarySearchValue(comp, 1);
                 searchRangeCheck(m2, start, end, v, prev, result);
                 final RowSet.SearchIterator brandNewIter = sar.getSearchIterator();
@@ -1076,15 +1079,42 @@ public class SortedRangesTest {
     @Test
     public void testSearchIteratorBinarySearchCases() {
         SortedRanges sar = new SortedRangesLong(2);
+
+        // search for last when single value is final entry
         sar.appendRange(4, 10);
         sar.append(25);
         sar.append(32);
-        final RowSet.SearchIterator sit = sar.getSearchIterator();
-        final long v = sar.last();
-        final RowSet.TargetComparator comp =
-                (final long key, final int dir) -> Long.signum(dir * (v - key));
-        final long r = sit.binarySearchValue(comp, 1);
-        assertEquals(v, r);
+        try (final RowSet.SearchIterator sit = sar.getSearchIterator()) {
+            final long v = sar.last();
+            final RowSet.TargetComparator comp =
+                    (final long key, final int dir) -> Long.signum(dir * (v - key));
+            final long r = sit.binarySearchValue(comp, 1);
+            assertEquals(v, r);
+        }
+
+        // search for last when a range is the final entry
+        sar.clear();
+        sar.appendRange(4, 10);
+        sar.appendRange(25, 32);
+        try (final RowSet.SearchIterator sit = sar.getSearchIterator()) {
+            final long v = sar.last();
+            final RowSet.TargetComparator comp =
+                    (final long key, final int dir) -> Long.signum(dir * (v - key));
+            final long r = sit.binarySearchValue(comp, 1);
+            assertEquals(v, r);
+        }
+
+        // search for value in the final range when a range is the final entry
+        sar.clear();
+        sar.appendRange(4, 10);
+        sar.appendRange(25, 32);
+        try (final RowSet.SearchIterator sit = sar.getSearchIterator()) {
+            final long v = sar.last() - 1;
+            final RowSet.TargetComparator comp =
+                    (final long key, final int dir) -> Long.signum(dir * (v - key));
+            final long r = sit.binarySearchValue(comp, 1);
+            assertEquals(v, r);
+        }
     }
 
     @Test
@@ -1162,7 +1192,7 @@ public class SortedRangesTest {
             card.add(end - start + 1);
             return true;
         });
-        return card.longValue();
+        return card.get();
     }
 
     @Test
@@ -1174,13 +1204,13 @@ public class SortedRangesTest {
         sar.getKeysForPositions(iterator, new LongConsumer() {
             @Override
             public void accept(final long v) {
-                final int miValue = mi.intValue();
+                final int miValue = mi.get();
                 final String m = "v==" + v + ", miValue==" + miValue;
                 assertEquals(m, sar.get(positions[miValue]), v);
                 mi.increment();
             }
         });
-        assertEquals(positions.length, mi.intValue());
+        assertEquals(positions.length, mi.get());
     }
 
     private static class IterOfLongAdaptor implements PrimitiveIterator.OfLong {
@@ -1226,13 +1256,13 @@ public class SortedRangesTest {
                 sar.getKeysForPositions(iterator, new LongConsumer() {
                     @Override
                     public void accept(final long v) {
-                        final int miValue = mi.intValue();
+                        final int miValue = mi.get();
                         final String m2 = m + " && v==" + v + ", miValue==" + miValue;
                         assertEquals(m2, sar.get(positions.get(miValue)), v);
                         mi.increment();
                     }
                 });
-                assertEquals(positions.size(), mi.intValue());
+                assertEquals(positions.size(), mi.get());
             }
         }
     }
@@ -1651,7 +1681,7 @@ public class SortedRangesTest {
         final boolean r = sar.invertOnNew(ixrit, b, maxPosition);
         final String m = "maxPosition==" + maxPosition;
         assertTrue(m, r);
-        final RowSet rix = new TrackingWritableRowSetImpl(b.getTreeIndexImpl());
+        final RowSet rix = new WritableRowSetImpl(b.getOrderedLongSet());
         final RowSet.Iterator rit = rix.iterator();
         while (ixit.hasNext()) {
             final long ixv = ixit.nextLong();
@@ -2030,9 +2060,9 @@ public class SortedRangesTest {
             if (v == -1) {
                 return true;
             }
-            final int j = sr.unpackedBinarySearch(v, pos.intValue());
+            final int j = sr.unpackedBinarySearch(v, pos.get());
             assertTrue(m + " && v==" + v, j >= 0);
-            pos.setValue(j);
+            pos.set(j);
             return true;
         });
     }
@@ -2149,7 +2179,7 @@ public class SortedRangesTest {
             assertEquals("v==" + v, !inSr2, sr3.contains(v));
             return true;
         });
-        assertEquals(card.longValue(), sr3.getCardinality());
+        assertEquals(card.get(), sr3.getCardinality());
     }
 
     @Test
@@ -2278,7 +2308,7 @@ public class SortedRangesTest {
                     assertEquals(m2 + " && v==" + v, inSr2, intersect.ixContainsRange(v, v));
                     return true;
                 });
-                assertEquals(m, card.longValue(), intersect.ixCardinality());
+                assertEquals(m, card.get(), intersect.ixCardinality());
                 intersect.ixForEachLong((final long v) -> {
                     assertTrue(m2 + " && v==" + v, sr1.contains(v));
                     assertTrue(m2 + " && v==" + v, sr2.contains(v));
@@ -2602,7 +2632,7 @@ public class SortedRangesTest {
                     for (long end = start; end <= last + 1; ++end) {
                         final String m4 = m3 + " && end==" + end;
                         try (final RowSequence rs = sr.getRowSequenceByKeyRange(start, end);
-                                final RowSet ix = new TrackingWritableRowSetImpl(sr.ixSubindexByKeyOnNew(start, end))) {
+                                final RowSet ix = new WritableRowSetImpl(sr.ixSubindexByKeyOnNew(start, end))) {
                             assertEquals(m4, ix.firstRowKey(), rs.firstRowKey());
                             assertEquals(m4, ix.lastRowKey(), rs.lastRowKey());
                             assertEquals(m4, ix.size(), rs.size());
@@ -2623,7 +2653,7 @@ public class SortedRangesTest {
                                     final long rStart = Math.min(rs.lastRowKey(), Math.max(rs2Start, rs.firstRowKey()));
                                     final long rEnd = Math.max(rs.firstRowKey(), Math.min(rs2End, rs.lastRowKey()));
                                     final RowSet ix2 =
-                                            new TrackingWritableRowSetImpl(sr.ixSubindexByKeyOnNew(rStart, rEnd));
+                                            new WritableRowSetImpl(sr.ixSubindexByKeyOnNew(rStart, rEnd));
                                     checkOkAgainstIndex(m5, rs2, ix2);
                                 }
                             }
@@ -2675,7 +2705,7 @@ public class SortedRangesTest {
                             final RowSequence rs = rsIt.getNextRowSequenceWithLength(step);
                             final long rsCard = Math.min(step, rsSrCard - accum);
                             assertEquals(m3, rsCard, rs.size());
-                            final RowSet subSr = new TrackingWritableRowSetImpl(
+                            final RowSet subSr = new WritableRowSetImpl(
                                     sr.ixSubindexByPosOnNew(dStart + accum, dStart + accum + rsCard /* exclusive */));
                             assertEquals(m3, rsCard, subSr.size());
                             checkOkAgainstIndex(m3, rs, subSr);
@@ -2721,7 +2751,7 @@ public class SortedRangesTest {
                                 break;
                             }
                             final long rsCard = Math.min(1 + rand.nextInt(step), rsSrCard - accum);
-                            final RowSet subSr = new TrackingWritableRowSetImpl(
+                            final RowSet subSr = new WritableRowSetImpl(
                                     sr.ixSubindexByPosOnNew(dStart + accum, dStart + accum + rsCard /* exclusive */));
                             final long last = subSr.lastRowKey();
                             final long target;
@@ -2897,9 +2927,9 @@ public class SortedRangesTest {
         sr = sr.add(5);
         try (final RowSequence.Iterator rsIt = sr.getRowSequenceIterator()) {
             RowSequence rs = rsIt.getNextRowSequenceWithLength(3);
-            checkOkAgainstIndex("", rs, new TrackingWritableRowSetImpl(sr.subRangesByKey(1, 3)));
+            checkOkAgainstIndex("", rs, new WritableRowSetImpl(sr.subRangesByKey(1, 3)));
             rs = rsIt.getNextRowSequenceWithLength(4);
-            checkOkAgainstIndex("", rs, new TrackingWritableRowSetImpl(sr.subRangesByKey(5, 5)));
+            checkOkAgainstIndex("", rs, new WritableRowSetImpl(sr.subRangesByKey(5, 5)));
         }
     }
 
@@ -2912,9 +2942,9 @@ public class SortedRangesTest {
         sr = sr.add(20);
         try (final RowSequence.Iterator rsIt = sr.getRowSequenceIterator()) {
             RowSequence rs = rsIt.getNextRowSequenceWithLength(3);
-            checkOkAgainstIndex("", rs, new TrackingWritableRowSetImpl(sr.subRangesByKey(1, 3)));
+            checkOkAgainstIndex("", rs, new WritableRowSetImpl(sr.subRangesByKey(1, 3)));
             rs = rsIt.getNextRowSequenceWithLength(9);
-            checkOkAgainstIndex("", rs, new TrackingWritableRowSetImpl(sr.subRangesByKey(7, 20)));
+            checkOkAgainstIndex("", rs, new WritableRowSetImpl(sr.subRangesByKey(7, 20)));
         }
     }
 
@@ -3389,5 +3419,46 @@ public class SortedRangesTest {
             assertFalse(more);
             assertFalse(it.hasNext());
         }
+    }
+
+    private void testInsertAppendHelper(final long[] vs0, final long[] vs1) {
+        SortedRanges sr0 = vs2sar(vs0);
+        final long sr0OriginalCardinality = sr0.cardinality;
+        SortedRanges sr1 = vs2sar(vs1);
+        OrderedLongSet t = sr0.ixInsert(sr1);
+        t.ixValidate();
+        assertTrue(t instanceof SortedRanges);
+        assertEquals(t.ixCardinality(), sr0OriginalCardinality + sr1.ixCardinality());
+        for (SortedRanges sr : new SortedRanges[] {sr0, sr1}) {
+            try (RowSet.RangeIterator it = sr.ixRangeIterator()) {
+                while (it.hasNext()) {
+                    it.next();
+                    assertTrue(t.ixContainsRange(it.currentRangeStart(), it.currentRangeEnd()));
+                }
+            }
+        }
+    }
+
+    @Test
+    public void testInsertAppendForCoverage() {
+        testInsertAppendHelper(new long[] {10, -20, 30, -40}, new long[] {41, 51, 60, -62});
+    }
+
+    @Test
+    public void testInsertMergeAppend() {
+        testInsertAppendHelper(new long[] {10}, new long[] {12, 14});
+        testInsertAppendHelper(new long[] {10}, new long[] {11, 14});
+        testInsertAppendHelper(new long[] {10}, new long[] {12, -14});
+        testInsertAppendHelper(new long[] {10}, new long[] {11, -14});
+        testInsertAppendHelper(new long[] {10}, new long[] {12});
+        testInsertAppendHelper(new long[] {10}, new long[] {11});
+        testInsertAppendHelper(new long[] {10, -11}, new long[] {12});
+        testInsertAppendHelper(new long[] {10, -11}, new long[] {13});
+        testInsertAppendHelper(new long[] {10, -20, 30, -40}, new long[] {41, 51, 60, -62});
+        testInsertAppendHelper(new long[] {10, -20, 30, -40}, new long[] {41, -43, 51, 60, -62});
+        testInsertAppendHelper(new long[] {10, -20, 30, -40}, new long[] {42, 51, 60, -62});
+        testInsertAppendHelper(new long[] {10, -20, 30, 40}, new long[] {41, 51, 60, -62});
+        testInsertAppendHelper(new long[] {10, -20, 30, 40}, new long[] {41, -43, 51, 60, -62});
+        testInsertAppendHelper(new long[] {10, -20, 30, 40}, new long[] {42, 51, 60, -62});
     }
 }

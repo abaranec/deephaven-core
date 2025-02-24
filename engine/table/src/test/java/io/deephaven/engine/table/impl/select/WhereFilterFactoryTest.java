@@ -1,27 +1,26 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.select;
 
 import io.deephaven.engine.table.Table;
 import io.deephaven.engine.table.TableDefinition;
-import io.deephaven.engine.table.lang.QueryScope;
-import io.deephaven.engine.table.impl.RefreshingTableTestCase;
-import io.deephaven.time.DateTime;
+import io.deephaven.engine.context.QueryScope;
+import io.deephaven.engine.testutil.testcase.RefreshingTableTestCase;
 import io.deephaven.time.DateTimeUtils;
 import io.deephaven.engine.util.TableTools;
-import io.deephaven.engine.table.impl.TstUtils;
+import io.deephaven.engine.testutil.TstUtils;
 import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.engine.rowset.RowSetFactory;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.time.ZoneId;
+import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 
 public class WhereFilterFactoryTest extends RefreshingTableTestCase {
 
@@ -35,8 +34,6 @@ public class WhereFilterFactoryTest extends RefreshingTableTestCase {
     }
 
     public void testInComplex() {
-        QueryScope.setScope(new QueryScope.StandaloneImpl());
-
         assertEquals(MatchFilter.class, WhereFilterFactory.getExpression("Opra in opra1, opra2, opra3").getClass());
         QueryScope.addParam("pmExpiry", "World");
         assertEquals(MatchFilter.class, WhereFilterFactory.getExpression("amExpiry = pmExpiry").getClass());
@@ -46,8 +43,8 @@ public class WhereFilterFactoryTest extends RefreshingTableTestCase {
 
         WhereFilter filter = WhereFilterFactory.getExpression("Maturity in amExpiry,pmExpiry , \"AGAIN\"  ");
         assertEquals(MatchFilter.class, filter.getClass());
-        TableDefinition tableDef = new TableDefinition(Collections.singletonList((Class) String.class),
-                Collections.singletonList("Maturity"));
+        TableDefinition tableDef = TableDefinition.from(Collections.singletonList("Maturity"),
+                Collections.singletonList((Class) String.class));
 
         filter.init(tableDef);
         Object[] values = ((MatchFilter) filter).getValues();
@@ -58,8 +55,7 @@ public class WhereFilterFactoryTest extends RefreshingTableTestCase {
 
         filter = WhereFilterFactory.getExpression("Maturity in amExpiry,1 , \"AGAIN\"  ");
         assertEquals(MatchFilter.class, filter.getClass());
-        tableDef = new TableDefinition(Collections.singletonList((Class) String.class),
-                Collections.singletonList("Maturity"));
+        tableDef = TableDefinition.from(List.of("Maturity"), List.of(String.class));
 
         try {
             filter.init(tableDef);
@@ -70,7 +66,6 @@ public class WhereFilterFactoryTest extends RefreshingTableTestCase {
     }
 
     public void testCharMatch() {
-        QueryScope.setScope(new QueryScope.StandaloneImpl());
         QueryScope.addParam("theChar", 'C');
 
         final Table tt = TableTools.newTable(TableTools.charCol("AChar", 'A', 'B', 'C', '\0', '\''));
@@ -92,12 +87,12 @@ public class WhereFilterFactoryTest extends RefreshingTableTestCase {
         };
         final RowSet[] expectedResults = new RowSet[] {
                 TstUtils.i(0),
-                TstUtils.ir(1, 4),
+                RowSetFactory.fromRange(1, 4),
                 TstUtils.i(4),
                 TstUtils.i(0, 2, 4),
                 TstUtils.i(1, 3),
                 TstUtils.i(0),
-                TstUtils.ir(1, 4),
+                RowSetFactory.fromRange(1, 4),
                 TstUtils.i(4),
                 TstUtils.i(0, 2, 4),
                 TstUtils.i(1, 3),
@@ -168,8 +163,9 @@ public class WhereFilterFactoryTest extends RefreshingTableTestCase {
         assertEquals(4, idx.size());
 
         t = TstUtils.testRefreshingTable(
-                TstUtils.c("Opra", "opra1", "opra2", "opra3", "Opra1", "Opra2", "Opra3", "Opra4", null, "OpRa5"),
-                TstUtils.cG("Food", "Apple", "Orange", "bacon", "laffa", "pOtato", "carroT", "WafflE", null, "Apple"));
+                TableTools.col("Opra", "opra1", "opra2", "opra3", "Opra1", "Opra2", "Opra3", "Opra4", null, "OpRa5"),
+                TstUtils.colIndexed("Food", "Apple", "Orange", "bacon", "laffa", "pOtato", "carroT", "WafflE", null,
+                        "Apple"));
 
         f = WhereFilterFactory.getExpression("Food icase in `apple`, `orange`, `bacon`,`LAFFA`");
         f.init(t.getDefinition());
@@ -203,28 +199,27 @@ public class WhereFilterFactoryTest extends RefreshingTableTestCase {
     }
 
 
-    public void testInDateTimes() {
-        DateTime wed = DateTimeUtils.convertDateTime("2018-05-02T10:00:00 NY");// not in the table
+    public void testInInstants() {
+        Instant wed = DateTimeUtils.parseInstant("2018-05-02T10:00:00 NY");// not in the table
 
-        DateTime mon = DateTimeUtils.convertDateTime("2018-04-30T10:00:00 NY");
-        DateTime tues = DateTimeUtils.convertDateTime("2018-05-01T10:00:00 NY");
-        DateTime thurs = DateTimeUtils.convertDateTime("2018-05-03T10:00:00 NY");
-        Table t = TableTools.newTable(TableTools.col("Timestamp", new DateTime(mon.getNanos()),
-                new DateTime(tues.getNanos()), new DateTime(thurs.getNanos())));
+        Instant mon = DateTimeUtils.parseInstant("2018-04-30T10:00:00 NY");
+        Instant tues = DateTimeUtils.parseInstant("2018-05-01T10:00:00 NY");
+        Instant thurs = DateTimeUtils.parseInstant("2018-05-03T10:00:00 NY");
+        Table t = TableTools.newTable(TableTools.col("Timestamp", mon, tues, thurs));
         // match one item
         WhereFilter f = WhereFilterFactory.getExpression("Timestamp in '" + mon + "'");
         f.init(t.getDefinition());
         assertEquals(MatchFilter.class, f.getClass());
         RowSet idx = f.filter(t.getRowSet().copy(), t.getRowSet(), t, false);
         assertEquals(1, idx.size());
-        assertEquals(mon, t.getColumn(0).get(idx.firstRowKey()));
+        assertEquals(mon, t.getColumnSource("Timestamp", Instant.class).get(idx.firstRowKey()));
         // match one of two items
         f = WhereFilterFactory.getExpression("Timestamp in '" + tues + "', '" + wed + "'");
         f.init(t.getDefinition());
         assertEquals(MatchFilter.class, f.getClass());
         idx = f.filter(t.getRowSet().copy(), t.getRowSet(), t, false);
         assertEquals(1, idx.size());
-        assertEquals(tues, t.getColumn(0).get(idx.firstRowKey()));
+        assertEquals(tues, t.getColumnSource("Timestamp", Instant.class).get(idx.firstRowKey()));
 
         // match two of two items
         f = WhereFilterFactory.getExpression("Timestamp in '" + tues + "', '" + thurs + "'");
@@ -232,11 +227,89 @@ public class WhereFilterFactoryTest extends RefreshingTableTestCase {
         assertEquals(MatchFilter.class, f.getClass());
         idx = f.filter(t.getRowSet().copy(), t.getRowSet(), t, false);
         assertEquals(2, idx.size());
-        assertEquals(tues, t.getColumn(0).get(idx.firstRowKey()));
-        assertEquals(thurs, t.getColumn(0).get(idx.lastRowKey()));
+        assertEquals(tues, t.getColumnSource("Timestamp", Instant.class).get(idx.firstRowKey()));
+        assertEquals(thurs, t.getColumnSource("Timestamp", Instant.class).get(idx.lastRowKey()));
 
         // match zero of one item
         f = WhereFilterFactory.getExpression("Timestamp in '" + wed + "'");
+        f.init(t.getDefinition());
+        assertEquals(MatchFilter.class, f.getClass());
+        idx = f.filter(t.getRowSet().copy(), t.getRowSet(), t, false);
+        assertEquals(0, idx.size());
+    }
+
+    public void testBigDecimal() {
+        BigDecimal a = new BigDecimal("-914.9539"); // not in the table
+
+        BigDecimal b = new BigDecimal("618.2686");
+        BigDecimal c = new BigDecimal("89.3824");
+        BigDecimal d = new BigDecimal("-471.0881");
+        Table t = TableTools.newTable(TableTools.col("BigDecimal", b, c, d));
+        // match one item
+        WhereFilter f = WhereFilterFactory.getExpression("BigDecimal = " + b);
+        f.init(t.getDefinition());
+        assertEquals(MatchFilter.class, f.getClass());
+        RowSet idx = f.filter(t.getRowSet().copy(), t.getRowSet(), t, false);
+        assertEquals(1, idx.size());
+        assertEquals(b, t.getColumnSource("BigDecimal", BigDecimal.class).get(idx.firstRowKey()));
+        // match one of two items
+        f = WhereFilterFactory.getExpression("BigDecimal in " + a + ", " + b);
+        f.init(t.getDefinition());
+        assertEquals(MatchFilter.class, f.getClass());
+        idx = f.filter(t.getRowSet().copy(), t.getRowSet(), t, false);
+        assertEquals(1, idx.size());
+        assertEquals(b, t.getColumnSource("BigDecimal", BigDecimal.class).get(idx.firstRowKey()));
+
+        // match two of two items
+        f = WhereFilterFactory.getExpression("BigDecimal in " + c + ", " + d);
+        f.init(t.getDefinition());
+        assertEquals(MatchFilter.class, f.getClass());
+        idx = f.filter(t.getRowSet().copy(), t.getRowSet(), t, false);
+        assertEquals(2, idx.size());
+        assertEquals(c, t.getColumnSource("BigDecimal", BigDecimal.class).get(idx.firstRowKey()));
+        assertEquals(d, t.getColumnSource("BigDecimal", BigDecimal.class).get(idx.lastRowKey()));
+
+        // match zero of one item
+        f = WhereFilterFactory.getExpression("BigDecimal == " + a);
+        f.init(t.getDefinition());
+        assertEquals(MatchFilter.class, f.getClass());
+        idx = f.filter(t.getRowSet().copy(), t.getRowSet(), t, false);
+        assertEquals(0, idx.size());
+    }
+
+    public void testBigIntegerl() {
+        BigInteger a = new BigInteger("-914"); // not in the table
+
+        BigInteger b = new BigInteger("618");
+        BigInteger c = new BigInteger("89");
+        BigInteger d = new BigInteger("-471");
+        Table t = TableTools.newTable(TableTools.col("BigInteger", b, c, d));
+        // match one item
+        WhereFilter f = WhereFilterFactory.getExpression("BigInteger = " + b);
+        f.init(t.getDefinition());
+        assertEquals(MatchFilter.class, f.getClass());
+        RowSet idx = f.filter(t.getRowSet().copy(), t.getRowSet(), t, false);
+        assertEquals(1, idx.size());
+        assertEquals(b, t.getColumnSource("BigInteger", BigInteger.class).get(idx.firstRowKey()));
+        // match one of two items
+        f = WhereFilterFactory.getExpression("BigInteger in " + a + ", " + b);
+        f.init(t.getDefinition());
+        assertEquals(MatchFilter.class, f.getClass());
+        idx = f.filter(t.getRowSet().copy(), t.getRowSet(), t, false);
+        assertEquals(1, idx.size());
+        assertEquals(b, t.getColumnSource("BigInteger", BigInteger.class).get(idx.firstRowKey()));
+
+        // match two of two items
+        f = WhereFilterFactory.getExpression("BigInteger in " + c + ", " + d);
+        f.init(t.getDefinition());
+        assertEquals(MatchFilter.class, f.getClass());
+        idx = f.filter(t.getRowSet().copy(), t.getRowSet(), t, false);
+        assertEquals(2, idx.size());
+        assertEquals(c, t.getColumnSource("BigInteger", BigInteger.class).get(idx.firstRowKey()));
+        assertEquals(d, t.getColumnSource("BigInteger", BigInteger.class).get(idx.lastRowKey()));
+
+        // match zero of one item
+        f = WhereFilterFactory.getExpression("BigInteger == " + a);
         f.init(t.getDefinition());
         assertEquals(MatchFilter.class, f.getClass());
         idx = f.filter(t.getRowSet().copy(), t.getRowSet(), t, false);
@@ -290,25 +363,24 @@ public class WhereFilterFactoryTest extends RefreshingTableTestCase {
                 null, 0, null, '0');
         checkResult("FALS3", false, false, false, false, false, false, false, false, false, (byte) 0, (short) 0, 0, 0,
                 null, 0, null, '0');
-
-        checkDateRange("18:43", makeDateTime("18:43"), makeDateTime("18:44"));
-        checkDateRange("18:43:40", makeDateTime("18:43:40"), makeDateTime("18:43:41"));
-        checkDateRange("18:43:40.100", makeDateTime("18:43:40.100"), makeDateTime("18:43:40.101"));
-        checkDateRange("2018-03-25 NY", DateTimeUtils.convertDateTime("2018-03-25 NY"),
-                DateTimeUtils.convertDateTime("2018-03-26 NY"));
-        checkDateRange("2018-03-25T18:00 NY", DateTimeUtils.convertDateTime("2018-03-25T18:00 NY"),
-                DateTimeUtils.convertDateTime("2018-03-25T18:01 NY"));
-        checkDateRange("2018-03-25T18:00:00 NY", DateTimeUtils.convertDateTime("2018-03-25T18:00:00 NY"),
-                DateTimeUtils.convertDateTime("2018-03-25T18:00:01 NY"));
+        checkDateRange("PT18:43", makeInstant("PT18:43"), makeInstant("PT18:44"));
+        checkDateRange("PT18:43:40", makeInstant("PT18:43:40"), makeInstant("PT18:43:41"));
+        checkDateRange("PT18:43:40.100", makeInstant("PT18:43:40.100"), makeInstant("PT18:43:40.101"));
+        checkDateRange("2018-03-25 NY", DateTimeUtils.parseInstant("2018-03-25 NY"),
+                DateTimeUtils.parseInstant("2018-03-26 NY"));
+        checkDateRange("2018-03-25T18:00 NY", DateTimeUtils.parseInstant("2018-03-25T18:00 NY"),
+                DateTimeUtils.parseInstant("2018-03-25T18:01 NY"));
+        checkDateRange("2018-03-25T18:00:00 NY", DateTimeUtils.parseInstant("2018-03-25T18:00:00 NY"),
+                DateTimeUtils.parseInstant("2018-03-25T18:00:01 NY"));
     }
 
-    private DateTime makeDateTime(String timeStr) {
-        ZonedDateTime zdt = ZonedDateTime.now(ZoneId.of("America/New_York")).truncatedTo(ChronoUnit.DAYS)
-                .plus(DateTimeUtils.convertTime(timeStr), ChronoUnit.NANOS);
-        return DateTimeUtils.millisToTime(zdt.toInstant().toEpochMilli());
+    private Instant makeInstant(String timeStr) {
+        ZonedDateTime zdt = ZonedDateTime.now(DateTimeUtils.timeZone()).truncatedTo(ChronoUnit.DAYS)
+                .plus(DateTimeUtils.parseDurationNanos(timeStr), ChronoUnit.NANOS);
+        return zdt.toInstant();
     }
 
-    private void checkDateRange(String input, DateTime lowerDate, DateTime upperDate) {
+    private void checkDateRange(String input, Instant lowerDate, Instant upperDate) {
         WhereFilterFactory.InferenceResult inf = new WhereFilterFactory.InferenceResult(input);
         assertEquals(false, inf.isByte);
         assertEquals(false, inf.isShort);
@@ -319,8 +391,8 @@ public class WhereFilterFactoryTest extends RefreshingTableTestCase {
         assertEquals(false, inf.isBool);
         assertEquals(false, inf.isChar);
 
-        assertEquals(lowerDate.getNanos(), inf.dateLower.getNanos());
-        assertEquals(upperDate.getNanos(), inf.dateUpper.getNanos());
+        assertEquals(DateTimeUtils.epochNanos(lowerDate), DateTimeUtils.epochNanos(inf.dateLower));
+        assertEquals(DateTimeUtils.epochNanos(upperDate), DateTimeUtils.epochNanos(inf.dateUpper));
     }
 
     private void checkResult(String input, boolean isByte, boolean isShort, boolean isInt, boolean isLong,
@@ -391,51 +463,43 @@ public class WhereFilterFactoryTest extends RefreshingTableTestCase {
                 /* 14 */ null));
 
         WhereFilter f = WhereFilterFactory.getExpression("Phrase icase includes any `T1`, `T2`, `T3`");
-        assertTrue("f instanceof StringContainsFilter", f instanceof StringContainsFilter);
         f.init(t.getDefinition());
         RowSet result = f.filter(t.getRowSet().copy(), t.getRowSet(), t, false);
         assertEquals(12, result.size());
         assertEquals(RowSetFactory.fromKeys(0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 13), result);
 
         f = WhereFilterFactory.getExpression("Phrase icase includes all `T1`, `T2`, `T3`");
-        assertTrue("f instanceof StringContainsFilter", f instanceof StringContainsFilter);
         f.init(t.getDefinition());
         result = f.filter(t.getRowSet().copy(), t.getRowSet(), t, false);
         assertEquals(4, result.size());
         assertEquals(RowSetFactory.fromKeys(7, 9, 10, 11), result);
 
         f = WhereFilterFactory.getExpression("Phrase includes any `T1`, `T2`, `T3`");
-        assertTrue("f instanceof StringContainsFilter", f instanceof StringContainsFilter);
         f.init(t.getDefinition());
         result = f.filter(t.getRowSet().copy(), t.getRowSet(), t, false);
         assertEquals(RowSetFactory.fromKeys(0, 1, 2, 6, 7, 9, 10, 11), result);
 
         f = WhereFilterFactory.getExpression("Phrase includes all `T1`, `t2`, `T3`");
-        assertTrue("f instanceof StringContainsFilter", f instanceof StringContainsFilter);
         f.init(t.getDefinition());
         result = f.filter(t.getRowSet().copy(), t.getRowSet(), t, false);
         assertEquals(RowSetFactory.fromKeys(7, 11), result);
 
         f = WhereFilterFactory.getExpression("Phrase icase not includes any `T1`, `T2`, `T3`");
-        assertTrue("f instanceof StringContainsFilter", f instanceof StringContainsFilter);
         f.init(t.getDefinition());
         result = f.filter(t.getRowSet().copy(), t.getRowSet(), t, false);
         assertEquals(RowSetFactory.fromKeys(0, 1, 2, 3, 4, 5, 6, 8, 12, 13), result);
 
         f = WhereFilterFactory.getExpression("Phrase icase not includes all `T1`, `T2`, `T3`");
-        assertTrue("f instanceof StringContainsFilter", f instanceof StringContainsFilter);
         f.init(t.getDefinition());
         result = f.filter(t.getRowSet().copy(), t.getRowSet(), t, false);
         assertEquals(RowSetFactory.fromKeys(5, 12), result);
 
         f = WhereFilterFactory.getExpression("Phrase not includes any `T1`, `T2`, `T3`");
-        assertTrue("f instanceof StringContainsFilter", f instanceof StringContainsFilter);
         f.init(t.getDefinition());
         result = f.filter(t.getRowSet().copy(), t.getRowSet(), t, false);
         assertEquals(RowSetFactory.fromKeys(0, 1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 13), result);
 
         f = WhereFilterFactory.getExpression("Phrase not includes all `T1`, `t2`, `T3`");
-        assertTrue("f instanceof StringContainsFilter", f instanceof StringContainsFilter);
         f.init(t.getDefinition());
         result = f.filter(t.getRowSet().copy(), t.getRowSet(), t, false);
         assertEquals(RowSetFactory.fromKeys(1, 3, 5, 12), result);

@@ -1,47 +1,52 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit CharVectorDirect and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit CharVectorDirect and run "./gradlew replicateVectors" to regenerate
+//
+// @formatter:off
 package io.deephaven.vector;
 
-import io.deephaven.util.datastructures.LongSizedDataStructure;
+import io.deephaven.base.verify.Require;
+import io.deephaven.engine.primitive.iterator.CloseablePrimitiveIteratorOfByte;
 import io.deephaven.util.annotations.ArrayType;
 import io.deephaven.util.annotations.ArrayTypeGetter;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.Arrays;
 
 import static io.deephaven.util.QueryConstants.NULL_BYTE;
 
+/**
+ * A {@link ByteVector} backed by an array.
+ */
 @ArrayType(type = byte[].class)
-public class ByteVectorDirect implements ByteVector {
+public final class ByteVectorDirect implements ByteVector {
 
     private final static long serialVersionUID = 3636374971797603565L;
 
+    public static final ByteVector ZERO_LENGTH_VECTOR = new ByteVectorDirect();
+
     private final byte[] data;
 
-    public ByteVectorDirect(byte... data){
-        this.data = data;
+    public ByteVectorDirect(@NotNull final byte... data) {
+        this.data = Require.neqNull(data, "data");
     }
 
     @Override
-    public byte get(long i) {
-        if (i < 0 || i > data.length - 1) {
+    public byte get(final long index) {
+        if (index < 0 || index >= data.length) {
             return NULL_BYTE;
         }
-        return data[LongSizedDataStructure.intSize("ByteVectorDirect get",  i)];
+        return data[(int) index];
     }
 
     @Override
-    public ByteVector subVector(long fromIndex, long toIndex) {
-        return new ByteVectorSlice(this, fromIndex, toIndex - fromIndex);
+    public ByteVector subVector(final long fromIndexInclusive, final long toIndexExclusive) {
+        return new ByteVectorSlice(this, fromIndexInclusive, toIndexExclusive - fromIndexInclusive);
     }
 
-    public ByteVector subVectorByPositions(long [] positions) {
+    public ByteVector subVectorByPositions(final long[] positions) {
         return new ByteSubVector(this, positions);
     }
 
@@ -49,6 +54,19 @@ public class ByteVectorDirect implements ByteVector {
     @ArrayTypeGetter
     public byte[] toArray() {
         return data;
+    }
+
+    @Override
+    public byte[] copyToArray() {
+        return Arrays.copyOf(data, data.length);
+    }
+
+    @Override
+    public CloseablePrimitiveIteratorOfByte iterator(final long fromIndexInclusive, final long toIndexExclusive) {
+        if (fromIndexInclusive == 0 && toIndexExclusive == data.length) {
+            return CloseablePrimitiveIteratorOfByte.of(data);
+        }
+        return ByteVector.super.iterator(fromIndexInclusive, toIndexExclusive);
     }
 
     @Override
@@ -62,12 +80,12 @@ public class ByteVectorDirect implements ByteVector {
     }
 
     @Override
-    public final String toString() {
+    public String toString() {
         return ByteVector.toString(this, 10);
     }
 
     @Override
-    public final boolean equals(Object obj) {
+    public boolean equals(final Object obj) {
         if (obj instanceof ByteVectorDirect) {
             return Arrays.equals(data, ((ByteVectorDirect) obj).data);
         }
@@ -75,7 +93,7 @@ public class ByteVectorDirect implements ByteVector {
     }
 
     @Override
-    public final int hashCode() {
+    public int hashCode() {
         return ByteVector.hashCode(this);
     }
 }

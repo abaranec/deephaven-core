@@ -1,0 +1,10 @@
+plugins {
+    id 'io.deephaven.project.register'
+}
+
+dependencies {
+    compileOnly libs.autoservice
+    annotationProcessor libs.autoservice.compiler
+
+    implementation project(':Configuration')
+}

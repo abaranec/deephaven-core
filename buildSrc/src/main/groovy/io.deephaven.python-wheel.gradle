@@ -1,0 +1,60 @@
+plugins {
+    id 'com.bmuschko.docker-remote-api'
+    id 'io.deephaven.project.register'
+    id 'com.diffplug.spotless'
+}
+
+import io.deephaven.python.PythonWheelExtension
+
+project.extensions.create('wheel', PythonWheelExtension, project.objects)
+
+spotless {
+    python {
+        target '**/*.py'
+        targetExclude '**/proto/*_pb2*', '**/setup.py', 'docs/**'
+        licenseHeader '#\n' +
+                '# Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending\n' +
+                '#', '[^#]'
+    }
+}
+configurations {
+    pythonWheel
+    getByName(Dependency.DEFAULT_CONFIGURATION).extendsFrom(pythonWheel)
+}
+
+project.evaluationDependsOn(Docker.registryProject('python'))
+def wheelPath = project.layout.buildDirectory.dir('wheel')
+
+def buildWheel = Docker.registerDockerTask(project, 'buildWheel') { config ->
+    config.copyIn { Sync sync ->
+        // apply the extension spec, copying into src
+        sync.from(project.projectDir) { CopySpec copy ->
+            wheel.contents().execute(copy)
+            copy.into 'src'
+        }
+    }
+    config.imageName = "deephaven/${project.name}:local-build"
+    config.dockerfile { action ->
+        // set up the container, env vars - things that aren't likely to change
+        action.from 'deephaven/python:local-build as sources'
+        action.arg 'DEEPHAVEN_VERSION'
+        action.environmentVariable 'DEEPHAVEN_VERSION', project.version.toString()
+        action.workingDir '/usr/src/app'
+        action.copyFile '/src', '.'
+        action.from 'sources as build'
+        action.runCommand '''set -eux; \\
+                      test -n "${DEEPHAVEN_VERSION}";\\
+                      python setup.py bdist_wheel'''
+    }
+    config.parentContainers = [ Docker.registryTask(project, 'python') ]
+    config.containerOutPath='/usr/src/app/dist'
+    config.copyOut { Sync sync ->
+        sync.into wheelPath
+    }
+}
+
+artifacts {
+    pythonWheel(wheelPath) {
+        builtBy buildWheel
+    }
+}

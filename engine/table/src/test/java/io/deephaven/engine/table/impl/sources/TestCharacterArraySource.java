@@ -1,5 +1,9 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources;
 
+import io.deephaven.engine.context.ExecutionContext;
 import io.deephaven.engine.rowset.RowSetFactory;
 import io.deephaven.engine.table.ChunkSink;
 import io.deephaven.engine.table.ChunkSource;
@@ -7,16 +11,16 @@ import io.deephaven.engine.table.impl.DefaultGetContext;
 import io.deephaven.engine.table.impl.TestSourceSink;
 import io.deephaven.engine.rowset.*;
 import io.deephaven.engine.table.ColumnSource;
-import io.deephaven.engine.updategraph.UpdateGraphProcessor;
 import io.deephaven.engine.table.impl.select.FormulaColumn;
 import io.deephaven.chunk.*;
 import io.deephaven.engine.rowset.chunkattributes.OrderedRowKeyRanges;
 import io.deephaven.chunk.attributes.Values;
-import io.deephaven.engine.testutil.Shuffle;
+import io.deephaven.base.testing.Shuffle;
 import io.deephaven.engine.rowset.chunkattributes.RowKeys;
+import io.deephaven.engine.testutil.ControlledUpdateGraph;
+import io.deephaven.engine.testutil.junit4.EngineCleanup;
 import junit.framework.TestCase;
-import org.junit.After;
-import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 
 import java.util.HashMap;
@@ -25,10 +29,13 @@ import java.util.Random;
 import java.util.stream.LongStream;
 
 import static io.deephaven.chunk.ArrayGenerator.indexDataGenerator;
-import static io.deephaven.util.QueryConstants.NULL_CHAR;
+import static io.deephaven.util.QueryConstants.*;
 import static junit.framework.TestCase.*;
 
 public class TestCharacterArraySource {
+    @Rule
+    public final EngineCleanup base = new EngineCleanup();
+
     private CharacterArraySource forArray(char[] values) {
         final CharacterArraySource source = new CharacterArraySource();
         source.ensureCapacity(values.length);
@@ -46,89 +53,81 @@ public class TestCharacterArraySource {
         }
     }
 
-    @Before
-    public void setUp() throws Exception {
-        UpdateGraphProcessor.DEFAULT.enableUnitTestMode();
-        UpdateGraphProcessor.DEFAULT.resetForUnitTests(false);
-    }
-
-    @After
-    public void tearDown() throws Exception {
-        UpdateGraphProcessor.DEFAULT.resetForUnitTests(true);
-    }
-
     private void testGetChunkGeneric(char[] values, char[] newValues, int chunkSize, RowSet rowSet) {
         final CharacterArraySource source;
-        UpdateGraphProcessor.DEFAULT.startCycleForUnitTests();
+        ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().startCycleForUnitTests();
         try {
             source = forArray(values);
             validateValues(chunkSize, values, rowSet, source);
         } finally {
-            UpdateGraphProcessor.DEFAULT.completeCycleForUnitTests();
+            ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().completeCycleForUnitTests();
         }
-        UpdateGraphProcessor.DEFAULT.startCycleForUnitTests();
+        ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().startCycleForUnitTests();
         try {
             updateFromArray(source, newValues);
             validateValues(chunkSize, newValues, rowSet, source);
             validatePrevValues(chunkSize, values, rowSet, source);
         } finally {
-            UpdateGraphProcessor.DEFAULT.completeCycleForUnitTests();
+            ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().completeCycleForUnitTests();
         }
     }
 
     private void validateValues(int chunkSize, char[] values, RowSet rowSet, CharacterArraySource source) {
-        final RowSequence.Iterator rsIterator = rowSet.getRowSequenceIterator();
-        final RowSet.Iterator it = rowSet.iterator();
-        final ChunkSource.GetContext context = source.makeGetContext(chunkSize);
-        long pos = 0;
-        while (it.hasNext()) {
-            assertTrue(rsIterator.hasMore());
-            final RowSequence okChunk = rsIterator.getNextRowSequenceWithLength(chunkSize);
-            final CharChunk chunk = source.getChunk(context, okChunk).asCharChunk();
-            assertTrue(chunk.size() <= chunkSize);
-            if (rsIterator.hasMore()) {
-                assertEquals(chunkSize, chunk.size());
-            }
-            for (int i = 0; i < chunk.size(); i++) {
-                assertTrue(it.hasNext());
-                final long idx = it.nextLong();
-                checkFromSource("idx=" + idx + ", i=" + i, source.getChar(idx), chunk.get(i));
-                checkFromValues("idx=" + idx + ", i=" + i, values[(int) idx], chunk.get(i));
-                pos++;
-            }
-            // region samecheck
-            final LongChunk<OrderedRowKeyRanges> ranges = okChunk.asRowKeyRangesChunk();
-            if (ranges.size() > 2 || ranges.get(0) / CharacterArraySource.BLOCK_SIZE != (ranges.get(1) / CharacterArraySource.BLOCK_SIZE)) {
-                assertTrue(DefaultGetContext.isMyWritableChunk(context, chunk));
+        try (final RowSequence.Iterator rsIterator = rowSet.getRowSequenceIterator();
+                final RowSet.Iterator it = rowSet.iterator();
+                final ChunkSource.GetContext context = source.makeGetContext(chunkSize)) {
+            long pos = 0;
+            while (it.hasNext()) {
+                assertTrue(rsIterator.hasMore());
+                final RowSequence okChunk = rsIterator.getNextRowSequenceWithLength(chunkSize);
+                final CharChunk chunk = source.getChunk(context, okChunk).asCharChunk();
+                assertTrue(chunk.size() <= chunkSize);
+                if (rsIterator.hasMore()) {
+                    assertEquals(chunkSize, chunk.size());
+                }
+                for (int i = 0; i < chunk.size(); i++) {
+                    assertTrue(it.hasNext());
+                    final long idx = it.nextLong();
+                    checkFromSource("idx=" + idx + ", i=" + i, source.getChar(idx), chunk.get(i));
+                    checkFromValues("idx=" + idx + ", i=" + i, values[(int) idx], chunk.get(i));
+                    pos++;
+                }
+                // region samecheck
+                final LongChunk<OrderedRowKeyRanges> ranges = okChunk.asRowKeyRangesChunk();
+                if (ranges.size() > 2 || ranges.get(0)
+                        / CharacterArraySource.BLOCK_SIZE != (ranges.get(1) / CharacterArraySource.BLOCK_SIZE)) {
+                    assertTrue(DefaultGetContext.isMyWritableChunk(context, chunk));
 
-            } else {
-                assertTrue(DefaultGetContext.isMyResettableChunk(context, chunk));
+                } else {
+                    assertTrue(DefaultGetContext.isMyResettableChunk(context, chunk));
+                }
+                // endregion samecheck
             }
-            // endregion samecheck
+            assertEquals(pos, rowSet.size());
         }
-        assertEquals(pos, rowSet.size());
     }
 
 
     private void validatePrevValues(int chunkSize, char[] values, RowSet rowSet, CharacterArraySource source) {
-        final RowSequence.Iterator rsIterator = rowSet.getRowSequenceIterator();
-        final RowSet.Iterator it = rowSet.iterator();
-        final ChunkSource.GetContext context = source.makeGetContext(chunkSize);
-        long pos = 0;
-        while (it.hasNext()) {
-            assertTrue(rsIterator.hasMore());
-            final RowSequence okChunk = rsIterator.getNextRowSequenceWithLength(chunkSize);
-            final CharChunk chunk = source.getPrevChunk(context, okChunk).asCharChunk();
-            for (int i = 0; i < chunk.size(); i++) {
-                assertTrue(it.hasNext());
-                final long idx = it.nextLong();
-                checkFromSource(source.getPrevChar(idx), chunk.get(i));
-                checkFromValues(values[(int) idx], chunk.get(i));
-                pos++;
+        try (final RowSequence.Iterator rsIterator = rowSet.getRowSequenceIterator();
+                final RowSet.Iterator it = rowSet.iterator();
+                final ChunkSource.GetContext context = source.makeGetContext(chunkSize)) {
+            long pos = 0;
+            while (it.hasNext()) {
+                assertTrue(rsIterator.hasMore());
+                final RowSequence okChunk = rsIterator.getNextRowSequenceWithLength(chunkSize);
+                final CharChunk chunk = source.getPrevChunk(context, okChunk).asCharChunk();
+                for (int i = 0; i < chunk.size(); i++) {
+                    assertTrue(it.hasNext());
+                    final long idx = it.nextLong();
+                    checkFromSource(source.getPrevChar(idx), chunk.get(i));
+                    checkFromValues(values[(int) idx], chunk.get(i));
+                    pos++;
+                }
+                assertTrue(DefaultGetContext.isMyWritableChunk(context, chunk));
             }
-            assertTrue(DefaultGetContext.isMyWritableChunk(context, chunk));
+            assertEquals(pos, rowSet.size());
         }
-        assertEquals(pos, rowSet.size());
     }
 
     @Test
@@ -137,17 +136,28 @@ public class TestCharacterArraySource {
         testGetChunkGeneric(new char[0], new char[0], 1, RowSetFactory.fromKeys());
         testGetChunkGeneric(new char[0], new char[0], 16, RowSetFactory.fromKeys());
 
-        testGetChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 1, RowSetFactory.fromKeys(0));
-        testGetChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 1, RowSetFactory.fromKeys(0, 1));
-        testGetChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 1, RowSetFactory.fromKeys(4));
-        testGetChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 1, RowSetFactory.fromKeys(4, 5, 6));
-        testGetChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 1, RowSetFactory.fromKeys(4,  6));
-        testGetChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 1, RowSetFactory.fromKeys(4, 5, 6, 7, 8));
-        testGetChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 3, RowSetFactory.fromKeys(5, 6, 7));
-        testGetChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 4, RowSetFactory.fromKeys(4, 5, 6, 7));
-        testGetChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 5, RowSetFactory.fromKeys(4, 5, 6, 7, 8));
-        testGetChunkGeneric(ArrayGenerator.randomChars(random, 512), ArrayGenerator.randomChars(random, 512), 4, RowSetFactory.fromKeys(254, 255, 256, 257));
-        testGetChunkGeneric(ArrayGenerator.randomChars(random, 512), ArrayGenerator.randomChars(random, 512), 5, RowSetFactory.fromKeys(254, 255, 256, 257, 258));
+        testGetChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 1,
+                RowSetFactory.fromKeys(0));
+        testGetChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 1,
+                RowSetFactory.fromKeys(0, 1));
+        testGetChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 1,
+                RowSetFactory.fromKeys(4));
+        testGetChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 1,
+                RowSetFactory.fromKeys(4, 5, 6));
+        testGetChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 1,
+                RowSetFactory.fromKeys(4, 6));
+        testGetChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 1,
+                RowSetFactory.fromKeys(4, 5, 6, 7, 8));
+        testGetChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 3,
+                RowSetFactory.fromKeys(5, 6, 7));
+        testGetChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 4,
+                RowSetFactory.fromKeys(4, 5, 6, 7));
+        testGetChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 5,
+                RowSetFactory.fromKeys(4, 5, 6, 7, 8));
+        testGetChunkGeneric(ArrayGenerator.randomChars(random, 512), ArrayGenerator.randomChars(random, 512), 4,
+                RowSetFactory.fromKeys(254, 255, 256, 257));
+        testGetChunkGeneric(ArrayGenerator.randomChars(random, 512), ArrayGenerator.randomChars(random, 512), 5,
+                RowSetFactory.fromKeys(254, 255, 256, 257, 258));
 
         for (int sourceSize = 32; sourceSize < 4096; sourceSize *= 4) {
             for (int v = -4; v < 5; v++) {
@@ -155,7 +165,7 @@ public class TestCharacterArraySource {
             }
         }
 
-        //References to block test
+        // References to block test
     }
 
     // region lazy
@@ -171,21 +181,22 @@ public class TestCharacterArraySource {
         oneAndOnly.put("origin", sourceOrigin);
         formulaColumn.initInputs(fullRange, oneAndOnly);
         final ColumnSource<?> source = formulaColumn.getDataView();
-        final RowSequence.Iterator rsIterator = rowSet.getRowSequenceIterator();
-        final RowSet.Iterator it = rowSet.iterator();
-        final ChunkSource.GetContext context = source.makeGetContext(chunkSize);
-        long pos = 0;
-        while (it.hasNext()) {
-            assertTrue(rsIterator.hasMore());
-            final RowSequence okChunk = rsIterator.getNextRowSequenceWithLength(chunkSize);
-            final CharChunk chunk = source.getChunk(context, okChunk).asCharChunk();
-            for (int i = 0; i < chunk.size(); i++) {
-                assertTrue(it.hasNext());
-                assertEquals(chunk.get(i), source.getChar(it.nextLong()));
-                pos++;
+        try (final RowSequence.Iterator rsIterator = rowSet.getRowSequenceIterator();
+                final RowSet.Iterator it = rowSet.iterator();
+                final ChunkSource.GetContext context = source.makeGetContext(chunkSize)) {
+            long pos = 0;
+            while (it.hasNext()) {
+                assertTrue(rsIterator.hasMore());
+                final RowSequence okChunk = rsIterator.getNextRowSequenceWithLength(chunkSize);
+                final CharChunk chunk = source.getChunk(context, okChunk).asCharChunk();
+                for (int i = 0; i < chunk.size(); i++) {
+                    assertTrue(it.hasNext());
+                    assertEquals(chunk.get(i), source.getChar(it.nextLong()));
+                    pos++;
+                }
             }
+            assertEquals(pos, rowSet.size());
         }
-        assertEquals(pos, rowSet.size());
     }
     // endregion lazy
 
@@ -199,13 +210,14 @@ public class TestCharacterArraySource {
         testGetChunkGenericLazy(ArrayGenerator.randomChars(random, 16), 1, RowSetFactory.fromKeys(0, 1));
         testGetChunkGenericLazy(ArrayGenerator.randomChars(random, 16), 1, RowSetFactory.fromKeys(4));
         testGetChunkGenericLazy(ArrayGenerator.randomChars(random, 16), 1, RowSetFactory.fromKeys(4, 5, 6));
-        testGetChunkGenericLazy(ArrayGenerator.randomChars(random, 16), 1, RowSetFactory.fromKeys(4,  6));
+        testGetChunkGenericLazy(ArrayGenerator.randomChars(random, 16), 1, RowSetFactory.fromKeys(4, 6));
         testGetChunkGenericLazy(ArrayGenerator.randomChars(random, 16), 1, RowSetFactory.fromKeys(4, 5, 6, 7, 8));
         testGetChunkGenericLazy(ArrayGenerator.randomChars(random, 16), 3, RowSetFactory.fromKeys(5, 6, 7));
         testGetChunkGenericLazy(ArrayGenerator.randomChars(random, 16), 4, RowSetFactory.fromKeys(4, 5, 6, 7));
         testGetChunkGenericLazy(ArrayGenerator.randomChars(random, 16), 5, RowSetFactory.fromKeys(4, 5, 6, 7, 8));
         testGetChunkGenericLazy(ArrayGenerator.randomChars(random, 512), 4, RowSetFactory.fromKeys(254, 255, 256, 257));
-        testGetChunkGenericLazy(ArrayGenerator.randomChars(random, 512), 5, RowSetFactory.fromKeys(254, 255, 256, 257, 258));
+        testGetChunkGenericLazy(ArrayGenerator.randomChars(random, 512), 5,
+                RowSetFactory.fromKeys(254, 255, 256, 257, 258));
 
         for (int sourceSize = 512; sourceSize < 4096; sourceSize *= 4) {
             for (int v = -2; v < 3; v += 2) {
@@ -229,7 +241,8 @@ public class TestCharacterArraySource {
     }
 
     private void testParameterChunkAndIndexLazy(Random random, int sourceSize, char[] values, int indexSize) {
-        final RowSet rowSet = RowSetFactory.fromKeys(indexDataGenerator(random, indexSize, .1, sourceSize / indexSize, sourceSize));
+        final RowSet rowSet =
+                RowSetFactory.fromKeys(indexDataGenerator(random, indexSize, .1, sourceSize / indexSize, sourceSize));
         for (int chunkSize = 2; chunkSize < sourceSize; chunkSize *= 4) {
             testGetChunkGenericLazy(values, chunkSize, rowSet);
             testGetChunkGenericLazy(values, chunkSize + 1, rowSet);
@@ -246,14 +259,17 @@ public class TestCharacterArraySource {
         }
     }
 
-    private void testIndexSizeVariations(Random random, int sourceSize, char[] values, char[] newvalues, int indexSize) {
+    private void testIndexSizeVariations(Random random, int sourceSize, char[] values, char[] newvalues,
+            int indexSize) {
         testParameterChunkAndIndex(random, sourceSize, values, newvalues, indexSize - 1);
         testParameterChunkAndIndex(random, sourceSize, values, newvalues, indexSize);
         testParameterChunkAndIndex(random, sourceSize, values, newvalues, indexSize + 1);
     }
 
-    private void testParameterChunkAndIndex(Random random, int sourceSize, char[] values, char[] newvalues, int indexSize) {
-        final RowSet rowSet = RowSetFactory.fromKeys(indexDataGenerator(random, indexSize, .1, sourceSize / indexSize, sourceSize));
+    private void testParameterChunkAndIndex(Random random, int sourceSize, char[] values, char[] newvalues,
+            int indexSize) {
+        final RowSet rowSet =
+                RowSetFactory.fromKeys(indexDataGenerator(random, indexSize, .1, sourceSize / indexSize, sourceSize));
         for (int chunkSize = 2; chunkSize < sourceSize; chunkSize *= 2) {
             testGetChunkGeneric(values, newvalues, chunkSize, rowSet);
             testGetChunkGeneric(values, newvalues, chunkSize + 1, rowSet);
@@ -263,64 +279,68 @@ public class TestCharacterArraySource {
 
     private void testFillChunkGeneric(char[] values, char[] newValues, int chunkSize, RowSet rowSet) {
         final CharacterArraySource source;
-        UpdateGraphProcessor.DEFAULT.startCycleForUnitTests();
+        ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().startCycleForUnitTests();
         try {
             source = forArray(values);
             validateValuesWithFill(chunkSize, values, rowSet, source);
         } finally {
-            UpdateGraphProcessor.DEFAULT.completeCycleForUnitTests();
+            ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().completeCycleForUnitTests();
         }
-        UpdateGraphProcessor.DEFAULT.startCycleForUnitTests();
+        ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().startCycleForUnitTests();
         try {
             updateFromArray(source, newValues);
             validateValuesWithFill(chunkSize, newValues, rowSet, source);
             validatePrevValuesWithFill(chunkSize, values, rowSet, source);
         } finally {
-            UpdateGraphProcessor.DEFAULT.completeCycleForUnitTests();
+            ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().completeCycleForUnitTests();
         }
     }
 
+    // region validate with fill
     private void validateValuesWithFill(int chunkSize, char[] values, RowSet rowSet, CharacterArraySource source) {
-        final RowSequence.Iterator rsIterator = rowSet.getRowSequenceIterator();
-        final RowSet.Iterator it = rowSet.iterator();
-        final ColumnSource.FillContext context = source.makeFillContext(chunkSize);
-        final WritableCharChunk<Values> chunk = WritableCharChunk.makeWritableChunk(chunkSize);
-        long pos = 0;
-        while (it.hasNext()) {
-            assertTrue(rsIterator.hasMore());
-            final RowSequence okChunk = rsIterator.getNextRowSequenceWithLength(chunkSize);
-            source.fillChunk(context, chunk, okChunk);
-            for (int i = 0; i < chunk.size(); i++) {
-                assertTrue(it.hasNext());
-                final long idx = it.nextLong();
-                checkFromSource(source.getChar(idx), chunk.get(i));
-                checkFromValues(values[(int)idx], chunk.get(i));
-                pos++;
+        try (final RowSequence.Iterator rsIterator = rowSet.getRowSequenceIterator();
+                final RowSet.Iterator it = rowSet.iterator();
+                final ColumnSource.FillContext context = source.makeFillContext(chunkSize);
+                final WritableCharChunk<Values> chunk = WritableCharChunk.makeWritableChunk(chunkSize)) {
+            long pos = 0;
+            while (it.hasNext()) {
+                assertTrue(rsIterator.hasMore());
+                final RowSequence okChunk = rsIterator.getNextRowSequenceWithLength(chunkSize);
+                source.fillChunk(context, chunk, okChunk);
+                for (int i = 0; i < chunk.size(); i++) {
+                    assertTrue(it.hasNext());
+                    final long idx = it.nextLong();
+                    checkFromSource(source.getChar(idx), chunk.get(i));
+                    checkFromValues(idx < values.length ? values[(int) idx] : NULL_CHAR, chunk.get(i));
+                    pos++;
+                }
             }
+            assertEquals(pos, rowSet.size());
         }
-        assertEquals(pos, rowSet.size());
     }
 
     private void validatePrevValuesWithFill(int chunkSize, char[] values, RowSet rowSet, CharacterArraySource source) {
-        final RowSequence.Iterator rsIterator = rowSet.getRowSequenceIterator();
-        final RowSet.Iterator it = rowSet.iterator();
-        final ColumnSource.FillContext context = source.makeFillContext(chunkSize);
-        final WritableCharChunk<Values> chunk = WritableCharChunk.makeWritableChunk(chunkSize);
-        long pos = 0;
-        while (it.hasNext()) {
-            assertTrue(rsIterator.hasMore());
-            final RowSequence okChunk = rsIterator.getNextRowSequenceWithLength(chunkSize);
-            source.fillPrevChunk(context, chunk, okChunk);
-            for (int i = 0; i < chunk.size(); i++) {
-                assertTrue(it.hasNext());
-                final long idx = it.nextLong();
-                checkFromSource(source.getPrevChar(idx), chunk.get(i));
-                checkFromValues(values[(int)idx], chunk.get(i));
-                pos++;
+        try (final RowSequence.Iterator rsIterator = rowSet.getRowSequenceIterator();
+                final RowSet.Iterator it = rowSet.iterator();
+                final ColumnSource.FillContext context = source.makeFillContext(chunkSize);
+                final WritableCharChunk<Values> chunk = WritableCharChunk.makeWritableChunk(chunkSize)) {
+            long pos = 0;
+            while (it.hasNext()) {
+                assertTrue(rsIterator.hasMore());
+                final RowSequence okChunk = rsIterator.getNextRowSequenceWithLength(chunkSize);
+                source.fillPrevChunk(context, chunk, okChunk);
+                for (int i = 0; i < chunk.size(); i++) {
+                    assertTrue(it.hasNext());
+                    final long idx = it.nextLong();
+                    checkFromSource(source.getPrevChar(idx), chunk.get(i));
+                    checkFromValues(idx < values.length ? values[(int) idx] : NULL_CHAR, chunk.get(i));
+                    pos++;
+                }
             }
+            assertEquals(pos, rowSet.size());
         }
-        assertEquals(pos, rowSet.size());
     }
+    // endregion validate with fill
 
     @Test
     public void testFillChunk() {
@@ -328,17 +348,34 @@ public class TestCharacterArraySource {
         testFillChunkGeneric(new char[0], new char[0], 1, RowSetFactory.fromKeys());
         testFillChunkGeneric(new char[0], new char[0], 16, RowSetFactory.fromKeys());
 
-        testFillChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 1, RowSetFactory.fromKeys(0));
-        testFillChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 1, RowSetFactory.fromKeys(0, 1));
-        testFillChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 1, RowSetFactory.fromKeys(4));
-        testFillChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 1, RowSetFactory.fromKeys(4, 5, 6));
-        testFillChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 1, RowSetFactory.fromKeys(4,  6));
-        testFillChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 1, RowSetFactory.fromKeys(4, 5, 6, 7, 8));
-        testFillChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 3, RowSetFactory.fromKeys(5, 6, 7));
-        testFillChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 4, RowSetFactory.fromKeys(4, 5, 6, 7));
-        testFillChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 5, RowSetFactory.fromKeys(4, 5, 6, 7, 8));
-        testFillChunkGeneric(ArrayGenerator.randomChars(random, 512), ArrayGenerator.randomChars(random, 512), 4, RowSetFactory.fromKeys(254, 255, 256, 257));
-        testFillChunkGeneric(ArrayGenerator.randomChars(random, 512), ArrayGenerator.randomChars(random, 512), 5, RowSetFactory.fromKeys(254, 255, 256, 257, 258));
+        testFillChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 1,
+                RowSetFactory.fromKeys(0));
+        testFillChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 1,
+                RowSetFactory.fromKeys(0, 1));
+        testFillChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 1,
+                RowSetFactory.fromKeys(4));
+        testFillChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 1,
+                RowSetFactory.fromKeys(4, 5, 6));
+        testFillChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 1,
+                RowSetFactory.fromKeys(4, 6));
+        testFillChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 1,
+                RowSetFactory.fromKeys(4, 5, 6, 7, 8));
+        testFillChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 3,
+                RowSetFactory.fromKeys(5, 6, 7));
+        testFillChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 4,
+                RowSetFactory.fromKeys(4, 5, 6, 7));
+        testFillChunkGeneric(ArrayGenerator.randomChars(random, 16), ArrayGenerator.randomChars(random, 16), 5,
+                RowSetFactory.fromKeys(4, 5, 6, 7, 8));
+        testFillChunkGeneric(ArrayGenerator.randomChars(random, 512), ArrayGenerator.randomChars(random, 512), 4,
+                RowSetFactory.fromKeys(254, 255, 256, 257));
+        testFillChunkGeneric(ArrayGenerator.randomChars(random, 512), ArrayGenerator.randomChars(random, 512), 5,
+                RowSetFactory.fromKeys(254, 255, 256, 257, 258));
+
+        // Test the fill with null behavior when requesting keys outside of source.
+        testFillChunkGeneric(ArrayGenerator.randomChars(random, 512), ArrayGenerator.randomChars(random, 4096), 4096,
+                RowSetFactory.fromRange(4096, 8192));
+        testFillChunkGeneric(ArrayGenerator.randomChars(random, 512), ArrayGenerator.randomChars(random, 4096), 4096,
+                RowSetFactory.flat(4096));
 
         for (int sourceSize = 32; sourceSize < 8192; sourceSize *= 4) {
             for (int v = -4; v < 5; v += 2) {
@@ -355,14 +392,17 @@ public class TestCharacterArraySource {
         }
     }
 
-    private void testFillChunkIndexSizeVariations(Random random, int sourceSize, char[] values, char[] newValues, int indexSize) {
+    private void testFillChunkIndexSizeVariations(Random random, int sourceSize, char[] values, char[] newValues,
+            int indexSize) {
         testParameterFillChunkAndIndex(random, sourceSize, values, newValues, indexSize - 1);
         testParameterFillChunkAndIndex(random, sourceSize, values, newValues, indexSize);
         testParameterFillChunkAndIndex(random, sourceSize, values, newValues, indexSize + 1);
     }
 
-    private void testParameterFillChunkAndIndex(Random random, int sourceSize, char[] values, char[] newValues, int indexSize) {
-        final RowSet rowSet = RowSetFactory.fromKeys(indexDataGenerator(random, indexSize, .1, sourceSize / indexSize, sourceSize));
+    private void testParameterFillChunkAndIndex(Random random, int sourceSize, char[] values, char[] newValues,
+            int indexSize) {
+        final RowSet rowSet =
+                RowSetFactory.fromKeys(indexDataGenerator(random, indexSize, .1, sourceSize / indexSize, sourceSize));
         for (int chunkSize = 2; chunkSize < sourceSize; chunkSize *= 2) {
             testFillChunkGeneric(values, newValues, chunkSize, rowSet);
             testFillChunkGeneric(values, newValues, chunkSize + 1, rowSet);
@@ -383,23 +423,24 @@ public class TestCharacterArraySource {
         oneAndOnly.put("origin", sourceOrigin);
         formulaColumn.initInputs(fullRange, oneAndOnly);
         final ColumnSource source = formulaColumn.getDataView();
-        final RowSequence.Iterator rsIterator = rowSet.getRowSequenceIterator();
-        final RowSet.Iterator it = rowSet.iterator();
-        final ColumnSource.FillContext context = source.makeFillContext(chunkSize);
-        final WritableCharChunk<Values> chunk = WritableCharChunk.makeWritableChunk(chunkSize);
-        long pos = 0;
-        while (it.hasNext()) {
-            assertTrue(rsIterator.hasMore());
-            final RowSequence okChunk = rsIterator.getNextRowSequenceWithLength(chunkSize);
-            source.fillChunk(context, chunk, okChunk);
-            for (int i = 0; i < chunk.size(); i++) {
-                assertTrue(it.hasNext());
-                final long idx = it.nextLong();
-                assertEquals(chunk.get(i), source.getChar(idx));
-                pos++;
+        try (final RowSequence.Iterator rsIterator = rowSet.getRowSequenceIterator();
+                final RowSet.Iterator it = rowSet.iterator();
+                final ColumnSource.FillContext context = source.makeFillContext(chunkSize);
+                final WritableCharChunk<Values> chunk = WritableCharChunk.makeWritableChunk(chunkSize)) {
+            long pos = 0;
+            while (it.hasNext()) {
+                assertTrue(rsIterator.hasMore());
+                final RowSequence okChunk = rsIterator.getNextRowSequenceWithLength(chunkSize);
+                source.fillChunk(context, chunk, okChunk);
+                for (int i = 0; i < chunk.size(); i++) {
+                    assertTrue(it.hasNext());
+                    final long idx = it.nextLong();
+                    assertEquals(chunk.get(i), source.getChar(idx));
+                    pos++;
+                }
             }
+            assertEquals(pos, rowSet.size());
         }
-        assertEquals(pos, rowSet.size());
     }
     // endregion lazygeneric
 
@@ -414,13 +455,15 @@ public class TestCharacterArraySource {
         testFillChunkLazyGeneric(ArrayGenerator.randomChars(random, 16), 1, RowSetFactory.fromKeys(0, 1));
         testFillChunkLazyGeneric(ArrayGenerator.randomChars(random, 16), 1, RowSetFactory.fromKeys(4));
         testFillChunkLazyGeneric(ArrayGenerator.randomChars(random, 16), 1, RowSetFactory.fromKeys(4, 5, 6));
-        testFillChunkLazyGeneric(ArrayGenerator.randomChars(random, 16), 1, RowSetFactory.fromKeys(4,  6));
+        testFillChunkLazyGeneric(ArrayGenerator.randomChars(random, 16), 1, RowSetFactory.fromKeys(4, 6));
         testFillChunkLazyGeneric(ArrayGenerator.randomChars(random, 16), 1, RowSetFactory.fromKeys(4, 5, 6, 7, 8));
         testFillChunkLazyGeneric(ArrayGenerator.randomChars(random, 16), 3, RowSetFactory.fromKeys(5, 6, 7));
         testFillChunkLazyGeneric(ArrayGenerator.randomChars(random, 16), 4, RowSetFactory.fromKeys(4, 5, 6, 7));
         testFillChunkLazyGeneric(ArrayGenerator.randomChars(random, 16), 5, RowSetFactory.fromKeys(4, 5, 6, 7, 8));
-        testFillChunkLazyGeneric(ArrayGenerator.randomChars(random, 512), 4, RowSetFactory.fromKeys(254, 255, 256, 257));
-        testFillChunkLazyGeneric(ArrayGenerator.randomChars(random, 512), 5, RowSetFactory.fromKeys(254, 255, 256, 257, 258));
+        testFillChunkLazyGeneric(ArrayGenerator.randomChars(random, 512), 4,
+                RowSetFactory.fromKeys(254, 255, 256, 257));
+        testFillChunkLazyGeneric(ArrayGenerator.randomChars(random, 512), 5,
+                RowSetFactory.fromKeys(254, 255, 256, 257, 258));
 
         for (int sourceSize = 512; sourceSize < 4096; sourceSize *= 4) {
             for (int v = -2; v < 3; v++) {
@@ -443,7 +486,8 @@ public class TestCharacterArraySource {
     }
 
     private void testParameterFillChunkAndIndexLazy(Random random, int sourceSize, char[] values, int indexSize) {
-        final RowSet rowSet = RowSetFactory.fromKeys(indexDataGenerator(random, indexSize, .1, sourceSize / indexSize, sourceSize));
+        final RowSet rowSet =
+                RowSetFactory.fromKeys(indexDataGenerator(random, indexSize, .1, sourceSize / indexSize, sourceSize));
         for (int chunkSize = 2; chunkSize < sourceSize; chunkSize *= 4) {
             testFillChunkLazyGeneric(values, chunkSize, rowSet);
             testFillChunkLazyGeneric(values, chunkSize + 1, rowSet);
@@ -495,24 +539,21 @@ public class TestCharacterArraySource {
             source.set(ii, data[ii]);
         }
         // super hack
-        final char[] peekedBlock = (char[])source.getBlock(0);
+        final char[] peekedBlock = (char[]) source.getBlock(0);
 
-        try (RowSet srcKeys = RowSetFactory.fromRange(rangeStart, rangeEnd)) {
-            try (RowSet destKeys = RowSetFactory.fromRange(rangeStart + 1, rangeEnd + 1)) {
-                try (ChunkSource.GetContext srcContext = source.makeGetContext(arraySize)) {
-                    try (ChunkSink.FillFromContext destContext = source.makeFillFromContext(arraySize)) {
-                        Chunk chunk = source.getChunk(srcContext, srcKeys);
-                        if (chunk.isAlias(peekedBlock)) {
-                            // If the ArraySource gives out aliases of its blocks, then it should throw when we try to
-                            // fill from that aliased chunk
-                            try {
-                                source.fillFromChunk(destContext, chunk, destKeys);
-                                TestCase.fail();
-                            } catch (UnsupportedOperationException uoe) {
-                                // Expected
-                            }
-                        }
-                    }
+        try (RowSet srcKeys = RowSetFactory.fromRange(rangeStart, rangeEnd);
+                RowSet destKeys = RowSetFactory.fromRange(rangeStart + 1, rangeEnd + 1);
+                ChunkSource.GetContext srcContext = source.makeGetContext(arraySize);
+                ChunkSink.FillFromContext destContext = source.makeFillFromContext(arraySize)) {
+            Chunk chunk = source.getChunk(srcContext, srcKeys);
+            if (chunk.isAlias(peekedBlock)) {
+                // If the ArraySource gives out aliases of its blocks, then it should throw when we try to
+                // fill from that aliased chunk
+                try {
+                    source.fillFromChunk(destContext, chunk, destKeys);
+                    TestCase.fail();
+                } catch (UnsupportedOperationException uoe) {
+                    // Expected
                 }
             }
         }
@@ -525,14 +566,14 @@ public class TestCharacterArraySource {
     public void testFillEmptyChunkWithPrev() {
         final CharacterArraySource src = new CharacterArraySource();
         src.startTrackingPrevValues();
-        UpdateGraphProcessor.DEFAULT.startCycleForUnitTests();
+        ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().startCycleForUnitTests();
         try (final RowSet keys = RowSetFactory.empty();
-             final WritableCharChunk<Values> chunk = WritableCharChunk.makeWritableChunk(0)) {
+                final WritableCharChunk<Values> chunk = WritableCharChunk.makeWritableChunk(0)) {
             // Fill from an empty chunk
             src.fillFromChunkByKeys(keys, chunk);
         }
         // NullPointerException in CharacterSparseArraySource.commitUpdates()
-        UpdateGraphProcessor.DEFAULT.completeCycleForUnitTests();
+        ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().completeCycleForUnitTests();
     }
 
     @Test
@@ -548,12 +589,13 @@ public class TestCharacterArraySource {
             source.set(ii, data[ii]);
         }
 
-        final long [] keys = LongStream.concat(LongStream.of(RowSequence.NULL_ROW_KEY), LongStream.range(0, data.length - 1)).toArray();
+        final long[] keys = LongStream
+                .concat(LongStream.of(RowSequence.NULL_ROW_KEY), LongStream.range(0, data.length - 1)).toArray();
         Shuffle.shuffleArray(rng, keys);
 
         try (final ChunkSource.FillContext ctx = source.makeFillContext(keys.length);
-             final WritableCharChunk<Values> dest = WritableCharChunk.makeWritableChunk(keys.length);
-             final ResettableLongChunk<RowKeys> rlc = ResettableLongChunk.makeResettableChunk()) {
+                final WritableCharChunk<Values> dest = WritableCharChunk.makeWritableChunk(keys.length);
+                final ResettableLongChunk<RowKeys> rlc = ResettableLongChunk.makeResettableChunk()) {
             rlc.resetFromTypedArray(keys, 0, keys.length);
             source.fillChunkUnordered(ctx, dest, rlc);
             assertEquals(keys.length, dest.size());
@@ -561,7 +603,7 @@ public class TestCharacterArraySource {
                 if (keys[ii] == RowSequence.NULL_ROW_KEY) {
                     assertEquals(NULL_CHAR, dest.get(ii));
                 } else {
-                    checkFromValues(data[(int)keys[ii]], dest.get(ii));
+                    checkFromValues(data[(int) keys[ii]], dest.get(ii));
                 }
             }
         }

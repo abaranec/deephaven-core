@@ -1,14 +1,16 @@
 package io.deephaven.lang.completion
 
-import io.deephaven.engine.table.ColumnDefinition
-import io.deephaven.engine.table.TableDefinition
-import io.deephaven.engine.util.VariableProvider
+import io.deephaven.engine.context.QueryScope
+import io.deephaven.engine.context.StandaloneQueryScope
+import io.deephaven.engine.context.TestExecutionContext
+import io.deephaven.engine.table.Table
+import io.deephaven.engine.table.TableFactory
 import io.deephaven.internal.log.LoggerFactory
 import io.deephaven.io.logger.Logger
+import io.deephaven.lang.parse.CompletionParser
 import io.deephaven.proto.backplane.script.grpc.ChangeDocumentRequest.TextDocumentContentChangeEvent
 import io.deephaven.proto.backplane.script.grpc.CompletionItem
-import io.deephaven.engine.table.Table
-import io.deephaven.lang.parse.CompletionParser
+import io.deephaven.util.SafeCloseable
 import spock.lang.Specification
 import spock.lang.Unroll
 
@@ -33,13 +35,19 @@ class ChunkerCompletionHandlerTest extends Specification implements ChunkerCompl
         return result.build()
     }
 
+    private SafeCloseable executionContext;
+
+    void setup() {
+        executionContext = TestExecutionContext.createForUnitTests().open();
+    }
+
+    void cleanup() {
+        executionContext.close();
+    }
+
     @Override
     Specification getSpec() {
         return this
-    }
-
-    VariableProvider mockVars(Closure configure) {
-        return Mock(VariableProvider, configure)
     }
 
     @Unroll
@@ -48,14 +56,8 @@ class ChunkerCompletionHandlerTest extends Specification implements ChunkerCompl
 
         when:
         doc = p.parse(src)
-        VariableProvider vars = Mock(VariableProvider){
-            _ * getVariableType('t') >> Table
-            _ * getVariableType(_) >> null
-            _ * getVariable(_, _) >> null
-            _ * getVariableNames() >> []
-            _ * getTableDefinition('emptyTable') >> new TableDefinition(new ColumnDefinition[0])
-            0 * _
-        }
+        QueryScope vars = new StandaloneQueryScope();
+        vars.putParam('t', TableFactory.emptyTable(0))
 
         then:
         assertAllValid(doc, src)
@@ -85,13 +87,8 @@ t = emptyTable(10).update(
 t = emptyTable(10)
 u = t.'''
         CompletionParser p = new CompletionParser()
-        VariableProvider vars = Mock(VariableProvider){
-            _ * getVariableType('t') >> Table
-            _ * getVariableType(_) >> null
-            _ * getVariable(_,_) >> null
-            _ * getVariableNames() >> []
-            0 * _
-        }
+        QueryScope vars = new StandaloneQueryScope();
+        vars.putParam('t', TableFactory.emptyTable(0))
 
         when:
         doc = p.parse(src)
@@ -126,10 +123,9 @@ u = t.'''
         doc = p.parse(src)
 
         LoggerFactory.getLogger(CompletionHandler)
-        VariableProvider variables = Mock(VariableProvider) {
-            _ * getVariableNames() >> ['emptyTable']
-            0 * _
-        }
+        QueryScope variables = new StandaloneQueryScope();
+        variables.putParam('emptyTable', TableFactory.emptyTable(0))
+
 
         when: "Cursor is at EOF, table name completion from t is returned"
         Set<CompletionItem> result = performSearch(doc, src.length(), variables)
@@ -149,14 +145,12 @@ b = 2
 c = 3
 """
         String src2 = "t = "
-        p.update(uri, "0", [ makeChange(0, 0, src1) ])
-        p.update(uri, "1", [ makeChange(3, 0, src2) ])
+        p.update(uri, 0, [ makeChange(0, 0, src1) ])
+        p.update(uri, 1, [ makeChange(3, 0, src2) ])
         doc = p.finish(uri)
 
-        VariableProvider variables = Mock(VariableProvider) {
-            _ * getVariableNames() >> ['emptyTable']
-            0 * _
-        }
+        QueryScope variables = new StandaloneQueryScope();
+        variables.putParam('emptyTable', TableFactory.emptyTable(0))
 
         when: "Cursor is at EOF, table name completion from t is returned"
         Set<CompletionItem> result = performSearch(doc, (src1 + src2).length(), variables)
@@ -168,10 +162,27 @@ b = 2
 c = 3
 t = emptyTable."""
     }
-    @Override
-    VariableProvider getVariables() {
-        return Mock(VariableProvider) {
-            _ * getVariableNames() >> []
-        }
+
+    def "Completion should not error out in a comment between two lines"() {
+        given:
+        CompletionParser p = new CompletionParser()
+        String beforeCursor = """
+a = 1
+# hello world a."""
+        String afterCursor = """
+b = 2
+"""
+        String src = beforeCursor + afterCursor;
+
+        doc = p.parse(src)
+
+        LoggerFactory.getLogger(CompletionHandler)
+        QueryScope variables = new StandaloneQueryScope();
+        variables.putParam('emptyTable', TableFactory.emptyTable(0))
+
+        when: "Cursor is in the comment after the variablename+dot and completion is requested"
+        Set<CompletionItem> result = performSearch(doc, beforeCursor.length(), variables)
+        then: "Expect the completion result to suggest nothing"
+        result.size() == 0
     }
 }

@@ -1,19 +1,18 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.modelfarm;
 
 import io.deephaven.base.verify.Assert;
 import io.deephaven.base.verify.Require;
+import io.deephaven.engine.table.Table;
 import io.deephaven.engine.table.impl.ShiftObliviousInstrumentedListenerAdapter;
-import io.deephaven.engine.table.impl.NotificationStepSource;
 import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.internal.log.LoggerFactory;
 import io.deephaven.io.logger.Logger;
-import io.deephaven.util.FunctionalInterfaces;
 import gnu.trove.map.TObjectLongMap;
 import gnu.trove.map.hash.TObjectLongHashMap;
+import io.deephaven.util.function.ThrowingBiConsumer;
 
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -24,11 +23,9 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * table}. Each row of this table should contain all of the data necessary to populate an instance of {@code DATATYPE},
  * which will then be passed to the {@link ModelFarmBase#model model}.
  *
- * @param <KEYTYPE> The type of the keys (e.g. {@link io.deephaven.modelfarm.fitterfarm.FitScope}).
- * @param <DATATYPE> The type of the data (e.g.
- *        {@link io.deephaven.modelfarm.fitterfarm.futures.FuturesFitDataOptionPrices}.
- * @param <ROWDATAMANAGERTYPE> The type of the RowDataManager (e.g.
- *        {@link io.deephaven.modelfarm.fitterfarm.futures.FuturesFitDataManager}).
+ * @param <KEYTYPE> The type of keys.
+ * @param <DATATYPE> The type of data.
+ * @param <ROWDATAMANAGERTYPE> The type of RowDataManager.
  */
 public abstract class RDMModelFarm<KEYTYPE, DATATYPE, ROWDATAMANAGERTYPE extends RowDataManager<KEYTYPE, DATATYPE>>
         extends ModelFarmBase<DATATYPE> {
@@ -95,7 +92,7 @@ public abstract class RDMModelFarm<KEYTYPE, DATATYPE, ROWDATAMANAGERTYPE extends
             }
         };
 
-        dataManager.table().listenForUpdates(listener, true);
+        dataManager.table().addUpdateListener(listener, true);
     }
 
     private void removeKeyIndex(final RowSet rowSet) {
@@ -178,7 +175,7 @@ public abstract class RDMModelFarm<KEYTYPE, DATATYPE, ROWDATAMANAGERTYPE extends
             final ModelFarmBase.GetDataLockType lockType) {
         // Get the "doLockedConsumer", which will call the FitDataPopulator (i.e. the lambda below) using the configured
         // lock type and the appropriate value for 'usePrev'.
-        final FunctionalInterfaces.ThrowingBiConsumer<ModelFarmBase.QueryDataRetrievalOperation, NotificationStepSource, RuntimeException> doLockedConsumer =
+        final ThrowingBiConsumer<QueryDataRetrievalOperation, Table, RuntimeException> doLockedConsumer =
                 getDoLockedConsumer(lockType);
         return (key) -> {
             final DATATYPE data = dataManager.newData();
@@ -186,7 +183,7 @@ public abstract class RDMModelFarm<KEYTYPE, DATATYPE, ROWDATAMANAGERTYPE extends
 
             // (This lambda is a FitDataPopulator.)
             doLockedConsumer.accept(usePrev -> isOk[0] = loadData(data, key, usePrev),
-                    (NotificationStepSource) dataManager.table());
+                    dataManager.table());
 
             if (isOk[0]) {
                 return data;

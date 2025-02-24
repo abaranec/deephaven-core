@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.replicators;
 
 import gnu.trove.stack.TIntStack;
@@ -8,6 +11,7 @@ import io.deephaven.chunk.ChunkType;
 import io.deephaven.engine.table.impl.HashTableAnnotations.EmptyStateValue;
 import io.deephaven.engine.table.impl.HashTableAnnotations.OverflowStateColumnSource;
 import io.deephaven.engine.table.impl.HashTableAnnotations.StateColumnSource;
+import io.deephaven.replication.ReplicationUtils;
 import org.apache.commons.io.FileUtils;
 import org.jetbrains.annotations.NotNull;
 
@@ -24,6 +28,7 @@ import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static io.deephaven.replication.ReplicatePrimitiveCode.fullClassName;
 
@@ -68,74 +73,28 @@ import static io.deephaven.replication.ReplicatePrimitiveCode.fullClassName;
  */
 public class ReplicateHashTable {
 
+    public static final String SOURCE =
+            "engine/table/src/main/java/io/deephaven/engine/table/impl/LeftOnlyIncrementalChunkedCrossJoinStateManager.java";
+
     public static void main(String[] args) throws IOException, ClassNotFoundException {
         final boolean allowMissingDestinations = false;
 
-        // Incremental NJ -> Right-Incremental NJ
+        // Left-Only-Incremental Cross Join-> Symbol Table Combiner
         doReplicate(
-                "engine/table/src/main/java/io/deephaven/engine/table/impl/IncrementalChunkedNaturalJoinStateManager.java",
-                "engine/table/src/main/java/io/deephaven/engine/table/impl/RightIncrementalChunkedNaturalJoinStateManager.java",
-                allowMissingDestinations, Arrays.asList("rehash", "allowUpdateWriteThroughState", "dumpTable"));
-        // Incremental NJ -> Static NJ
-        doReplicate(
-                "engine/table/src/main/java/io/deephaven/engine/table/impl/IncrementalChunkedNaturalJoinStateManager.java",
-                "engine/table/src/main/java/io/deephaven/engine/table/impl/StaticChunkedNaturalJoinStateManager.java",
-                allowMissingDestinations, Arrays.asList("rehash", "allowUpdateWriteThroughState", "dumpTable", "prev"));
-
-        // Incremental NJ -> Static AJ
-        doReplicate(
-                "engine/table/src/main/java/io/deephaven/engine/table/impl/IncrementalChunkedNaturalJoinStateManager.java",
-                "engine/table/src/main/java/io/deephaven/engine/table/impl/StaticChunkedAsOfJoinStateManager.java",
-                allowMissingDestinations, Arrays.asList("dumpTable", "prev"));
-        // Incremental NJ -> Right-Incremental AJ
-        doReplicate(
-                "engine/table/src/main/java/io/deephaven/engine/table/impl/IncrementalChunkedNaturalJoinStateManager.java",
-                "engine/table/src/main/java/io/deephaven/engine/table/impl/RightIncrementalChunkedAsOfJoinStateManager.java",
-                allowMissingDestinations, Collections.singletonList("dumpTable"));
-
-        // Incremental NJ -> Symbol Table Combiner
-        doReplicate(
-                "engine/table/src/main/java/io/deephaven/engine/table/impl/IncrementalChunkedNaturalJoinStateManager.java",
+                SOURCE,
                 "engine/table/src/main/java/io/deephaven/engine/table/impl/SymbolTableCombiner.java",
                 allowMissingDestinations, Arrays.asList("overflowLocationToHashLocation", "getStateValue", "prev"));
 
-        // Incremental NJ -> Left-Only-Incremental Cross Join
+        // Left-Only-Incremental Cross Join -> Right-Incremental Cross Join
         doReplicate(
-                "engine/table/src/main/java/io/deephaven/engine/table/impl/IncrementalChunkedNaturalJoinStateManager.java",
-                "engine/table/src/main/java/io/deephaven/engine/table/impl/LeftOnlyIncrementalChunkedCrossJoinStateManager.java",
-                allowMissingDestinations, Collections.singletonList("dumpTable"));
-        // Incremental NJ -> Right-Incremental Cross Join
-        doReplicate(
-                "engine/table/src/main/java/io/deephaven/engine/table/impl/IncrementalChunkedNaturalJoinStateManager.java",
+                SOURCE,
                 "engine/table/src/main/java/io/deephaven/engine/table/impl/RightIncrementalChunkedCrossJoinStateManager.java",
-                allowMissingDestinations, Arrays.asList("dumpTable", "allowUpdateWriteThroughState"));
-        // Incremental NJ -> Static Cross Join
+                allowMissingDestinations, Arrays.asList("allowUpdateWriteThroughState"));
+        // Left-Only-Incremental Cross Join -> Static Cross Join
         doReplicate(
-                "engine/table/src/main/java/io/deephaven/engine/table/impl/IncrementalChunkedNaturalJoinStateManager.java",
+                SOURCE,
                 "engine/table/src/main/java/io/deephaven/engine/table/impl/StaticChunkedCrossJoinStateManager.java",
-                allowMissingDestinations, Arrays.asList("dumpTable", "prev"));
-
-        // Incremental NJ -> Static Operator Aggregations
-        doReplicate(
-                "engine/table/src/main/java/io/deephaven/engine/table/impl/IncrementalChunkedNaturalJoinStateManager.java",
-                "engine/table/src/main/java/io/deephaven/engine/table/impl/by/StaticChunkedOperatorAggregationStateManager.java",
-                allowMissingDestinations, Arrays.asList("dumpTable", "prev", "decorationProbe"));
-        // Incremental NJ -> Incremental Operator Aggregations
-        doReplicate(
-                "engine/table/src/main/java/io/deephaven/engine/table/impl/IncrementalChunkedNaturalJoinStateManager.java",
-                "engine/table/src/main/java/io/deephaven/engine/table/impl/by/IncrementalChunkedOperatorAggregationStateManager.java",
-                allowMissingDestinations, Collections.singletonList("dumpTable"));
-
-        // Incremental NJ -> Incremental By (non-operator)
-        doReplicate(
-                "engine/table/src/main/java/io/deephaven/engine/table/impl/IncrementalChunkedNaturalJoinStateManager.java",
-                "engine/table/src/main/java/io/deephaven/engine/table/impl/by/IncrementalChunkedByAggregationStateManager.java",
-                allowMissingDestinations, Arrays.asList("dumpTable", "allowUpdateWriteThroughState"));
-        // Incremental By -> Static By (non-operator)
-        doReplicate(
-                "engine/table/src/main/java/io/deephaven/engine/table/impl/by/IncrementalChunkedByAggregationStateManager.java",
-                "engine/table/src/main/java/io/deephaven/engine/table/impl/by/StaticChunkedByAggregationStateManager.java",
-                allowMissingDestinations, Arrays.asList("dumpTable", "prev", "decorationProbe"));
+                allowMissingDestinations, Arrays.asList("prev"));
     }
 
     private static class RegionedFile {
@@ -300,6 +259,22 @@ public class ReplicateHashTable {
         if (packageLine == 10) {
             throw new RuntimeException("Could not find package line to rewrite for " + destinationClass);
         }
+
+        // Remove any file header from rewrittenLines and replace with the generated header
+        // Skip, re-add file header
+        Iterator<String> iterator = rewrittenLines.iterator();
+        while (iterator.hasNext() && iterator.next().startsWith("//")) {
+            iterator.remove();
+        }
+        rewrittenLines.addAll(0, Arrays.asList("//",
+                "// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending",
+                "//",
+                "// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY",
+                "// ****** Edit " + ReplicationUtils.className(sourceClassJavaFile)
+                        + " and run \"./gradlew replicateHashTable\" to regenerate",
+                "//",
+                "// @formatter:off",
+                ""));
 
         FileUtils.writeLines(destinationFile, rewrittenLines);
         System.out.println("Wrote: " + destinationClassJavaFile);

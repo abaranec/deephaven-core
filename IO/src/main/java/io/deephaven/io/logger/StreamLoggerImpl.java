@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.io.logger;
 
 import io.deephaven.base.ArrayUtil;
@@ -17,33 +16,13 @@ import io.deephaven.io.log.impl.LogEntryImpl;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
-import java.nio.ByteBuffer;
 
 public class StreamLoggerImpl implements Logger {
 
     /**
      * Static buffer pool, shared among all SystemOut loggers
      */
-    private static final Pool<ByteBuffer> buffers = new ThreadSafeLenientFixedSizePool<>(2048,
-            () -> ByteBuffer.allocate(512),
-            null);
-
-    private static final LogBufferPool logBufferPool = new LogBufferPool() {
-        @Override
-        public ByteBuffer take(int minSize) {
-            return buffers.take();
-        }
-
-        @Override
-        public ByteBuffer take() {
-            return buffers.take();
-        }
-
-        @Override
-        public void give(ByteBuffer item) {
-            buffers.give(item);
-        }
-    };
+    private static final LogBufferPool logBufferPool = LogBufferPool.of(2048, 512);
 
     /**
      * Specialized entries for SystemOut loggers
@@ -71,7 +50,7 @@ public class StreamLoggerImpl implements Logger {
      */
     private static final Pool<Entry> entries = new ThreadSafeLenientFixedSizePool<>(1024,
             () -> new Entry(logBufferPool),
-            null);
+            Entry::clear);
 
     /**
      * Specialized sink for stream loggers
@@ -87,7 +66,6 @@ public class StreamLoggerImpl implements Logger {
             } catch (IOException x) {
                 throw new UncheckedIOException(x);
             } finally {
-                e.clear();
                 entries.give(e);
             }
         }

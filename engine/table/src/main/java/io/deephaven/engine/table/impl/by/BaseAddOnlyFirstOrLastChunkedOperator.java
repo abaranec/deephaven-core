@@ -1,7 +1,10 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.by;
 
 import io.deephaven.engine.table.Table;
-import io.deephaven.engine.table.MatchPair;
+import io.deephaven.engine.table.impl.MatchPair;
 import io.deephaven.engine.table.ColumnSource;
 import io.deephaven.engine.table.impl.sources.LongArraySource;
 import io.deephaven.engine.table.impl.sources.RedirectedColumnSource;
@@ -15,7 +18,10 @@ import io.deephaven.engine.table.impl.util.LongColumnSourceWritableRowRedirectio
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-abstract class BaseAddOnlyFirstOrLastChunkedOperator implements IterativeChunkedAggregationOperator {
+abstract class BaseAddOnlyFirstOrLastChunkedOperator
+        extends NoopStateChangeRecorder // We can never empty or reincarnate states since we're add-only
+        implements IterativeChunkedAggregationOperator {
+
     final boolean isFirst;
     final LongArraySource redirections;
     private final LongColumnSourceWritableRowRedirection rowRedirection;
@@ -29,9 +35,8 @@ abstract class BaseAddOnlyFirstOrLastChunkedOperator implements IterativeChunked
 
         this.resultColumns = new LinkedHashMap<>(resultPairs.length);
         for (final MatchPair mp : resultPairs) {
-            // noinspection unchecked
-            resultColumns.put(mp.leftColumn(),
-                    new RedirectedColumnSource(rowRedirection, originalTable.getColumnSource(mp.rightColumn())));
+            resultColumns.put(mp.leftColumn(), RedirectedColumnSource.maybeRedirect(
+                    rowRedirection, originalTable.getColumnSource(mp.rightColumn())));
         }
         if (exposeRedirectionAs != null) {
             resultColumns.put(exposeRedirectionAs, redirections);

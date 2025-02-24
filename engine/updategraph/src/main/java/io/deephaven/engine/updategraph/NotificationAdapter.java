@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.updategraph;
 
 import io.deephaven.base.log.LogOutput;
@@ -10,7 +13,7 @@ public class NotificationAdapter extends AbstractNotification {
 
     private final NotificationQueue.Notification wrapped;
 
-    NotificationAdapter(@NotNull final NotificationQueue.Notification wrapped) {
+    public NotificationAdapter(@NotNull final NotificationQueue.Notification wrapped) {
         super(wrapped.isTerminal());
         this.wrapped = wrapped;
     }

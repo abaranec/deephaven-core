@@ -1,25 +1,54 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.api.agg.spec;
 
-import io.deephaven.annotations.BuildableStyle;
-import org.immutables.value.Value.Default;
+import io.deephaven.annotations.SimpleStyle;
 import org.immutables.value.Value.Immutable;
+import org.immutables.value.Value.Parameter;
 
+/**
+ * Specifier for a column aggregation that produces a median value from the input column's values for each group. Only
+ * works for numeric or {@link Comparable} input types.
+ */
 @Immutable
-@BuildableStyle
+@SimpleStyle
 public abstract class AggSpecMedian extends AggSpecBase {
 
+    public static final boolean AVERAGE_EVENLY_DIVIDED_DEFAULT = true;
+
+    /**
+     * Create a new AggSpecMedian with {@code averageEvenlyDivided} of {@value AVERAGE_EVENLY_DIVIDED_DEFAULT}.
+     *
+     * @return the agg spec
+     */
     public static AggSpecMedian of() {
-        return ImmutableAggSpecMedian.builder().build();
+        return of(AVERAGE_EVENLY_DIVIDED_DEFAULT);
     }
 
-    public static AggSpecMedian of(boolean averageMedian) {
-        return ImmutableAggSpecMedian.builder().averageMedian(averageMedian).build();
+    /**
+     * Create a new AggSpecMedian.
+     *
+     * @param averageEvenlyDivided see {@link #averageEvenlyDivided()}
+     * @return the agg spec
+     */
+    public static AggSpecMedian of(boolean averageEvenlyDivided) {
+        return ImmutableAggSpecMedian.of(averageEvenlyDivided);
     }
 
-    @Default
-    public boolean averageMedian() {
-        return true;
+    @Override
+    public final String description() {
+        return "median" + (averageEvenlyDivided() ? " (averaging when evenly divided)" : "");
     }
+
+    /**
+     * Whether to average the highest low-bucket value and lowest high-bucket value, when the low-bucket and high-bucket
+     * are of equal size. Only applies to numeric types.
+     *
+     * @return Whether to average the two result candidates for evenly-divided input sets of numeric types
+     */
+    @Parameter
+    public abstract boolean averageEvenlyDivided();
 
     @Override
     public final <V extends Visitor> V walk(V visitor) {

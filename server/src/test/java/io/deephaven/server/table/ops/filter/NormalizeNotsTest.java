@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.server.table.ops.filter;
 
 import io.deephaven.proto.backplane.grpc.*;
@@ -85,6 +88,14 @@ public class NormalizeNotsTest extends AbstractNormalizingFilterTest {
                         inICase(reference("ColumnA"), reference("ColumnB")),
                         NormalizeFilterUtil.doContains(Reference.newBuilder().setColumnName("ColumnA").build(), "asdf",
                                 CaseSensitivity.MATCH_CASE, MatchType.INVERTED)));
+    }
+
+    @Test
+    public void testNormalizeNotsInCondition() {
+        final Condition aInB = in(reference("ColumnA"), reference("ColumnB"));
+        final Condition aNotInB = notIn(reference("ColumnA"), reference("ColumnB"));
+        assertFilterEquals("not(REGULAR) == INVERTED", not(aInB), aNotInB);
+        assertFilterEquals("not(INVERTED) == REGULAR", not(aNotInB), aInB);
     }
 
     @Override

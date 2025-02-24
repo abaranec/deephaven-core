@@ -1,61 +1,63 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.web.client.api;
 
+import com.google.flatbuffers.FlatBufferBuilder;
+import com.vertispan.tsdefs.annotations.TsIgnore;
 import elemental2.core.JsArray;
+import elemental2.core.JsObject;
 import elemental2.core.JsSet;
 import elemental2.core.JsWeakMap;
+import elemental2.core.TypedArray;
 import elemental2.core.Uint8Array;
 import elemental2.dom.DomGlobal;
 import elemental2.promise.Promise;
-import io.deephaven.javascript.proto.dhinternal.arrow.flight.flatbuf.message_generated.org.apache.arrow.flatbuf.FieldNode;
-import io.deephaven.javascript.proto.dhinternal.arrow.flight.flatbuf.message_generated.org.apache.arrow.flatbuf.Message;
-import io.deephaven.javascript.proto.dhinternal.arrow.flight.flatbuf.message_generated.org.apache.arrow.flatbuf.MessageHeader;
-import io.deephaven.javascript.proto.dhinternal.arrow.flight.flatbuf.message_generated.org.apache.arrow.flatbuf.RecordBatch;
-import io.deephaven.javascript.proto.dhinternal.arrow.flight.flatbuf.schema_generated.org.apache.arrow.flatbuf.Buffer;
-import io.deephaven.javascript.proto.dhinternal.arrow.flight.flatbuf.schema_generated.org.apache.arrow.flatbuf.Field;
-import io.deephaven.javascript.proto.dhinternal.arrow.flight.flatbuf.schema_generated.org.apache.arrow.flatbuf.KeyValue;
-import io.deephaven.javascript.proto.dhinternal.arrow.flight.flatbuf.schema_generated.org.apache.arrow.flatbuf.MetadataVersion;
-import io.deephaven.javascript.proto.dhinternal.arrow.flight.flatbuf.schema_generated.org.apache.arrow.flatbuf.Schema;
 import io.deephaven.javascript.proto.dhinternal.arrow.flight.protocol.browserflight_pb_service.BrowserFlightServiceClient;
 import io.deephaven.javascript.proto.dhinternal.arrow.flight.protocol.flight_pb.FlightData;
 import io.deephaven.javascript.proto.dhinternal.arrow.flight.protocol.flight_pb_service.FlightServiceClient;
 import io.deephaven.javascript.proto.dhinternal.browserheaders.BrowserHeaders;
-import io.deephaven.javascript.proto.dhinternal.flatbuffers.Builder;
-import io.deephaven.javascript.proto.dhinternal.flatbuffers.Long;
-import io.deephaven.javascript.proto.dhinternal.grpcweb.Grpc;
+import io.deephaven.javascript.proto.dhinternal.grpcweb.client.ClientRpcOptions;
 import io.deephaven.javascript.proto.dhinternal.grpcweb.grpc.Code;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.barrage.flatbuf.barrage_generated.io.deephaven.barrage.flatbuf.BarrageMessageType;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.barrage.flatbuf.barrage_generated.io.deephaven.barrage.flatbuf.BarrageMessageWrapper;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.barrage.flatbuf.barrage_generated.io.deephaven.barrage.flatbuf.BarrageSubscriptionOptions;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.barrage.flatbuf.barrage_generated.io.deephaven.barrage.flatbuf.BarrageSubscriptionRequest;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.barrage.flatbuf.barrage_generated.io.deephaven.barrage.flatbuf.BarrageUpdateMetadata;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.barrage.flatbuf.barrage_generated.io.deephaven.barrage.flatbuf.ColumnConversionMode;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.application_pb.FieldInfo;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.application_pb.FieldsChangeUpdate;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.application_pb.ListFieldsRequest;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.application_pb_service.ApplicationServiceClient;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.console_pb.FetchFigureRequest;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.console_pb.LogSubscriptionData;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.console_pb.LogSubscriptionRequest;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.console_pb_service.ConsoleServiceClient;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.inputtable_pb_service.InputTableServiceClient;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.session_pb.HandshakeRequest;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.session_pb.HandshakeResponse;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.session_pb.ReleaseRequest;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.session_pb.TerminationNotificationRequest;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.session_pb.terminationnotificationresponse.StackTrace;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.session_pb_service.SessionServiceClient;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.table_pb.ApplyPreviewColumnsRequest;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.table_pb.EmptyTableRequest;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.table_pb.ExportedTableCreationResponse;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.table_pb.ExportedTableUpdateMessage;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.table_pb.ExportedTableUpdatesRequest;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.table_pb.FetchTableRequest;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.table_pb.MergeTablesRequest;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.table_pb.TableReference;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.table_pb.TimeTableRequest;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.table_pb_service.TableServiceClient;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.ticket_pb.Ticket;
-import io.deephaven.web.client.api.barrage.BarrageUtils;
+import io.deephaven.javascript.proto.dhinternal.grpcweb.grpc.UnaryOutput;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.application_pb.FieldInfo;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.application_pb.FieldsChangeUpdate;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.application_pb.ListFieldsRequest;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.application_pb_service.ApplicationServiceClient;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.config_pb.ConfigValue;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.config_pb.ConfigurationConstantsRequest;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.config_pb.ConfigurationConstantsResponse;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.config_pb_service.ConfigService;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.config_pb_service.ConfigServiceClient;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.console_pb.LogSubscriptionData;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.console_pb.LogSubscriptionRequest;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.console_pb_service.ConsoleServiceClient;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.hierarchicaltable_pb_service.HierarchicalTableServiceClient;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.inputtable_pb_service.InputTableServiceClient;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.object_pb.FetchObjectResponse;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.object_pb_service.ObjectServiceClient;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.partitionedtable_pb_service.PartitionedTableServiceClient;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.session_pb.ExportRequest;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.session_pb.ExportResponse;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.session_pb.PublishRequest;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.session_pb.ReleaseRequest;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.session_pb.TerminationNotificationRequest;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.session_pb_service.SessionServiceClient;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.session_pb_service.UnaryResponse;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.storage_pb_service.StorageServiceClient;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.table_pb.ApplyPreviewColumnsRequest;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.table_pb.EmptyTableRequest;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.table_pb.ExportedTableCreationResponse;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.table_pb.ExportedTableUpdateMessage;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.table_pb.ExportedTableUpdatesRequest;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.table_pb.FetchTableRequest;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.table_pb.MergeTablesRequest;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.table_pb.TableReference;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.table_pb.TimeTableRequest;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.table_pb_service.TableServiceClient;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.ticket_pb.Ticket;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.ticket_pb.TypedTicket;
+import io.deephaven.web.client.api.barrage.WebBarrageUtils;
 import io.deephaven.web.client.api.barrage.def.InitialTableDefinition;
 import io.deephaven.web.client.api.barrage.stream.BiDiStream;
 import io.deephaven.web.client.api.barrage.stream.ResponseStreamWrapper;
@@ -63,33 +65,45 @@ import io.deephaven.web.client.api.batch.RequestBatcher;
 import io.deephaven.web.client.api.batch.TableConfig;
 import io.deephaven.web.client.api.console.JsVariableChanges;
 import io.deephaven.web.client.api.console.JsVariableDefinition;
+import io.deephaven.web.client.api.console.JsVariableType;
+import io.deephaven.web.client.api.event.HasEventHandling;
+import io.deephaven.web.client.api.grpc.UnaryWithHeaders;
 import io.deephaven.web.client.api.i18n.JsTimeZone;
+import io.deephaven.web.client.api.impl.TicketAndPromise;
 import io.deephaven.web.client.api.lifecycle.HasLifecycle;
 import io.deephaven.web.client.api.parse.JsDataHandler;
 import io.deephaven.web.client.api.state.StateCache;
 import io.deephaven.web.client.api.tree.JsTreeTable;
+import io.deephaven.web.client.api.widget.JsWidget;
+import io.deephaven.web.client.api.widget.JsWidgetExportedObject;
 import io.deephaven.web.client.api.widget.plot.JsFigure;
 import io.deephaven.web.client.fu.JsItr;
 import io.deephaven.web.client.fu.JsLog;
 import io.deephaven.web.client.fu.LazyPromise;
+import io.deephaven.web.client.ide.SharedExportBytesUnion;
 import io.deephaven.web.client.state.ClientTableState;
 import io.deephaven.web.client.state.HasTableBinding;
 import io.deephaven.web.client.state.TableReviver;
-import io.deephaven.web.shared.data.*;
 import io.deephaven.web.shared.fu.JsConsumer;
 import io.deephaven.web.shared.fu.JsRunnable;
-import io.deephaven.web.shared.ide.VariableType;
 import jsinterop.annotations.JsMethod;
 import jsinterop.annotations.JsOptional;
 import jsinterop.base.Js;
 import jsinterop.base.JsPropertyMap;
+import org.apache.arrow.flatbuf.Buffer;
+import org.apache.arrow.flatbuf.Field;
+import org.apache.arrow.flatbuf.FieldNode;
+import org.apache.arrow.flatbuf.KeyValue;
+import org.apache.arrow.flatbuf.Message;
+import org.apache.arrow.flatbuf.MessageHeader;
+import org.apache.arrow.flatbuf.MetadataVersion;
+import org.apache.arrow.flatbuf.RecordBatch;
+import org.apache.arrow.flatbuf.Schema;
 
 import javax.annotation.Nullable;
-import java.nio.ByteBuffer;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.BitSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -97,10 +111,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.BiConsumer;
-import java.util.function.Supplier;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
-
-import static io.deephaven.web.client.api.barrage.BarrageUtils.*;
 
 /**
  * Non-exported class, manages the connection to a given worker server. Exported types like QueryInfo and Table will
@@ -117,23 +129,16 @@ import static io.deephaven.web.client.api.barrage.BarrageUtils.*;
  * Responsible for reconnecting to the query server when required - when that server disappears, and at least one table
  * is left un-closed.
  */
+@TsIgnore
 public class WorkerConnection {
-    private static final boolean useWebsockets;
-
-    static {
-        // TODO configurable, let us support this even when ssl?
-        if (DomGlobal.window.location.getProtocol().equals("http:")) {
-            useWebsockets = true;
-            Grpc.setDefaultTransport.onInvoke(Grpc.WebsocketTransport.onInvoke());
-        } else {
-            useWebsockets = false;
-        }
-    }
-
-    private String sessionToken;
+    private static final String FLIGHT_AUTH_HEADER_NAME = "authorization";
 
     // All calls to the server should share this metadata instance, or copy from it if they need something custom
-    private BrowserHeaders metadata = new BrowserHeaders();
+    private final BrowserHeaders metadata = new BrowserHeaders();
+
+    private Double scheduledAuthUpdate;
+    // default to 10s, the actual value is almost certainly higher than that
+    private double sessionTimeoutMs = 10_000;
 
     /**
      * States the connection can be in. If non-requested disconnect occurs, transition to reconnecting. If reconnect
@@ -156,14 +161,14 @@ public class WorkerConnection {
     }
 
     private final QueryConnectable<?> info;
-    private final ClientConfiguration config;
+    private final ClientRpcOptions options = ClientRpcOptions.create();
+    private final Tickets tickets;
     private final ReconnectState newSessionReconnect;
     private final TableReviver reviver;
     // un-finished fetch operations - these can fail on connection issues, won't be attempted again
     private List<Callback<Void, String>> onOpen = new ArrayList<>();
 
     private State state;
-    private double killTimerCancelation;
     private SessionServiceClient sessionServiceClient;
     private TableServiceClient tableServiceClient;
     private ConsoleServiceClient consoleServiceClient;
@@ -171,6 +176,11 @@ public class WorkerConnection {
     private FlightServiceClient flightServiceClient;
     private BrowserFlightServiceClient browserFlightServiceClient;
     private InputTableServiceClient inputTableServiceClient;
+    private ObjectServiceClient objectServiceClient;
+    private PartitionedTableServiceClient partitionedTableServiceClient;
+    private StorageServiceClient storageServiceClient;
+    private ConfigServiceClient configServiceClient;
+    private HierarchicalTableServiceClient hierarchicalTableServiceClient;
 
     private final StateCache cache = new StateCache();
     private final JsWeakMap<HasTableBinding, RequestBatcher> batchers = new JsWeakMap<>();
@@ -179,46 +189,42 @@ public class WorkerConnection {
     private final Set<ClientTableState> flushable = new HashSet<>();
     private final JsSet<JsConsumer<LogItem>> logCallbacks = new JsSet<>();
 
-    private final Map<ClientTableState, BiDiStream<FlightData, FlightData>> subscriptionStreams = new HashMap<>();
     private ResponseStreamWrapper<ExportedTableUpdateMessage> exportNotifications;
 
-    private Map<TableMapHandle, TableMap> tableMaps = new HashMap<>();
-
-    private JsSet<JsFigure> figures = new JsSet<>();
+    private JsSet<HasLifecycle> simpleReconnectableInstances = new JsSet<>();
 
     private List<LogItem> pastLogs = new ArrayList<>();
     private JsConsumer<LogItem> recordLog = pastLogs::add;
     private ResponseStreamWrapper<LogSubscriptionData> logStream;
 
+    private UnaryResponse terminationStream;
+
     private final JsSet<JsConsumer<JsVariableChanges>> fieldUpdatesCallback = new JsSet<>();
     private Map<String, JsVariableDefinition> knownFields = new HashMap<>();
     private ResponseStreamWrapper<FieldsChangeUpdate> fieldsChangeUpdateStream;
 
-    private long lastSuccessResponseTime = 0;
-    private static final long GIVE_UP_TIMEOUT_MS = 10_000;
+    private ConfigurationConstantsResponse constants;
 
-    public WorkerConnection(QueryConnectable<?> info, Supplier<Promise<ConnectToken>> authTokenPromiseSupplier) {
+    public WorkerConnection(QueryConnectable<?> info) {
         this.info = info;
-        this.config = new ClientConfiguration();
+
+        this.tickets = new Tickets();
         state = State.Connecting;
         this.reviver = new TableReviver(this);
-        boolean debugGrpc = false;
-        sessionServiceClient = new SessionServiceClient(info.getServerUrl(), JsPropertyMap.of("debug", debugGrpc));
-        tableServiceClient = new TableServiceClient(info.getServerUrl(), JsPropertyMap.of("debug", debugGrpc));
-        consoleServiceClient = new ConsoleServiceClient(info.getServerUrl(), JsPropertyMap.of("debug", debugGrpc));
-        flightServiceClient = new FlightServiceClient(info.getServerUrl(), JsPropertyMap.of("debug", debugGrpc));
-        applicationServiceClient =
-                new ApplicationServiceClient(info.getServerUrl(), JsPropertyMap.of("debug", debugGrpc));
-        browserFlightServiceClient =
-                new BrowserFlightServiceClient(info.getServerUrl(), JsPropertyMap.of("debug", debugGrpc));
-        inputTableServiceClient =
-                new InputTableServiceClient(info.getServerUrl(), JsPropertyMap.of("debug", debugGrpc));
+        sessionServiceClient = info.createClient(SessionServiceClient::new);
+        tableServiceClient = info.createClient(TableServiceClient::new);
+        consoleServiceClient = info.createClient(ConsoleServiceClient::new);
+        flightServiceClient = info.createClient(FlightServiceClient::new);
+        applicationServiceClient = info.createClient(ApplicationServiceClient::new);
+        browserFlightServiceClient = info.createClient(BrowserFlightServiceClient::new);
+        inputTableServiceClient = info.createClient(InputTableServiceClient::new);
+        objectServiceClient = info.createClient(ObjectServiceClient::new);
+        partitionedTableServiceClient = info.createClient(PartitionedTableServiceClient::new);
+        storageServiceClient = info.createClient(StorageServiceClient::new);
+        configServiceClient = info.createClient(ConfigServiceClient::new);
+        hierarchicalTableServiceClient = info.createClient(HierarchicalTableServiceClient::new);
 
-        // builder.setConnectionErrorHandler(msg -> info.failureHandled(String.valueOf(msg)));
-
-        newSessionReconnect = new ReconnectState(() -> {
-            connectToWorker(authTokenPromiseSupplier);
-        });
+        newSessionReconnect = new ReconnectState(this::connectToWorker);
 
         // start connection
         newSessionReconnect.initialConnection();
@@ -238,25 +244,20 @@ public class WorkerConnection {
      * Once the table has been successfully fetched, after each reconnect until the table is close()d we'll attempt to
      * restore the table by re-fetching the table, then reapplying all operations on it.
      */
-    private void connectToWorker(Supplier<Promise<ConnectToken>> authTokenPromiseSupplier) {
-        info.running()
+    private void connectToWorker() {
+        info.onReady()
                 .then(queryWorkerRunning -> {
-                    // get the auth token
-                    return authTokenPromiseSupplier.get();
-                }).then(authToken -> {
-                    // create a new session
-                    HandshakeRequest handshakeRequest = new HandshakeRequest();
-                    if (authToken != null) {
-                        Uint8Array token = new Uint8Array(authToken.getBytes().length);
-                        handshakeRequest.setPayload(token);
+                    if (metadata().has(FLIGHT_AUTH_HEADER_NAME)) {
+                        return authUpdate().then(ignore -> Promise.resolve(Boolean.FALSE));
                     }
-                    handshakeRequest.setAuthProtocol(1);
-
-                    return Callbacks.<HandshakeResponse, Object>grpcUnaryPromise(
-                            c -> sessionServiceClient.newSession(handshakeRequest, (BrowserHeaders) null, c::apply));
-                }).then(handshakeResponse -> {
-                    // start the reauth cycle
-                    authUpdate(handshakeResponse);
+                    metadata.set(FLIGHT_AUTH_HEADER_NAME,
+                            (info.getToken().getType() + " " + info.getToken().getValue()).trim());
+                    JsObject.keys(info.getOptions().headers).forEach((key, index) -> {
+                        metadata.set(key, info.getOptions().headers.get(key));
+                        return null;
+                    });
+                    return authUpdate().then(ignore -> Promise.resolve(Boolean.TRUE));
+                }).then(newSession -> {
                     // subscribe to fatal errors
                     subscribeToTerminationNotification();
 
@@ -266,43 +267,58 @@ public class WorkerConnection {
                     // mark that we succeeded
                     newSessionReconnect.success();
 
-                    // nuke pending callbacks, we'll remake them
-                    handleCallbacks = new JsWeakMap<>();
-                    definitionCallbacks = new JsWeakMap<>();
+                    if (newSession) {
+                        // assert false : "Can't yet rebuild connections with new auth, please log in again";
+                        // nuke pending callbacks, we'll remake them
+                        handleCallbacks = new JsWeakMap<>();
+                        definitionCallbacks = new JsWeakMap<>();
 
+                        // for each cts in the cache, get all with active subs
+                        ClientTableState[] hasActiveSubs = cache.getAllStates().stream()
+                                .peek(cts -> {
+                                    cts.getHandle().setConnected(false);
+                                    cts.forActiveLifecycles(item -> {
+                                        assert !(item instanceof JsTable) ||
+                                                ((JsTable) item).state() == cts
+                                                : "Invalid table state " + item + " does not point to state " + cts;
+                                        item.suppressEvents();
+                                    });
+                                })
+                                .filter(cts -> !cts.isEmpty())
+                                .peek(cts -> {
+                                    cts.forActiveTables(t -> {
+                                        assert t.state().isAncestor(cts)
+                                                : "Invalid binding " + t + " (" + t.state() + ") does not contain "
+                                                        + cts;
+                                    });
+                                })
+                                .toArray(ClientTableState[]::new);
+                        // clear caches
+                        // TODO verify we still need to do this, it seems like it might signify a leak
+                        List<ClientTableState> inactiveStatesToRemove = cache.getAllStates().stream()
+                                .filter(ClientTableState::isEmpty)
+                                .collect(Collectors.toList());
+                        inactiveStatesToRemove.forEach(cache::release);
 
-                    // for each cts in the cache, get all with active subs
-                    ClientTableState[] hasActiveSubs = cache.getAllStates().stream()
-                            .peek(cts -> {
-                                cts.getHandle().setConnected(false);
-                                cts.setSubscribed(false);
-                                cts.forActiveLifecycles(item -> {
-                                    assert !(item instanceof JsTable) ||
-                                            ((JsTable) item).state() == cts
-                                            : "Invalid table state " + item + " does not point to state " + cts;
-                                    item.suppressEvents();
-                                });
-                            })
-                            .filter(cts -> !cts.isEmpty())
-                            .peek(cts -> {
-                                cts.forActiveTables(t -> {
-                                    assert t.state().isAncestor(cts)
-                                            : "Invalid binding " + t + " (" + t.state() + ") does not contain " + cts;
-                                });
-                            })
-                            .toArray(ClientTableState[]::new);
-                    // clear caches
-                    List<ClientTableState> inactiveStatesToRemove = cache.getAllStates().stream()
-                            .filter(ClientTableState::isEmpty)
-                            .collect(Collectors.toList());
-                    inactiveStatesToRemove.forEach(cache::release);
+                        flushable.clear();
 
-                    flushable.clear();
+                        reviver.revive(metadata, hasActiveSubs);
 
-                    reviver.revive(metadata, hasActiveSubs);
+                        simpleReconnectableInstances.forEach((item, index, arr) -> item.refetch());
+                    } else {
+                        // wire up figures to attempt to reconnect when ready
+                        simpleReconnectableInstances.forEach((item, index, arr) -> {
+                            item.reconnect();
+                            return null;
+                        });
 
-                    tableMaps.forEach((handle, tableMap) -> tableMap.refetch());
-                    figures.forEach((p0, p1, p2) -> p0.refetch());
+                        // only notify that we're back, no need to re-create or re-fetch anything
+                        ClientTableState[] hasActiveSubs = cache.getAllStates().stream()
+                                .filter(cts -> !cts.isEmpty())
+                                .toArray(ClientTableState[]::new);
+
+                        reviver.revive(metadata, hasActiveSubs);
+                    }
 
                     info.connected();
 
@@ -310,18 +326,18 @@ public class WorkerConnection {
                     onOpen.forEach(c -> c.onSuccess(null));
                     onOpen.clear();
 
-                    // // start a heartbeat to check if connection is properly alive
-                    // ping(success.getAuthSessionToken());
                     startExportNotificationsStream();
 
-                    return Promise.resolve(handshakeResponse);
+                    maybeRestartLogStream();
+
+                    return Promise.resolve((Object) null);
                 }, fail -> {
                     // this is non-recoverable, connection/auth/registration failed, but we'll let it start again when
                     // state changes
                     state = State.Failed;
                     JsLog.debug("Failed to connect to worker.");
 
-                    final String failure = fail.toString();
+                    final String failure = String.valueOf(fail);
 
                     // notify all pending fetches that they failed
                     onOpen.forEach(c -> c.onFailure(failure));
@@ -333,7 +349,7 @@ public class WorkerConnection {
                     // }
 
                     // signal that we should try again
-                    newSessionReconnect.failed();
+                    connectionLost();
 
                     // inform the UI that it failed to connect
                     info.failureHandled("Failed to connect: " + failure);
@@ -341,34 +357,64 @@ public class WorkerConnection {
                 });
     }
 
+
+    private boolean checkStatus(ResponseStreamWrapper.ServiceError fail) {
+        return checkStatus(ResponseStreamWrapper.Status.of(fail.getCode(), fail.getMessage(), fail.getMetadata()));
+    }
+
     public boolean checkStatus(ResponseStreamWrapper.Status status) {
-        // TODO provide simpler hooks to retry auth, restart the stream
-        final long now = System.currentTimeMillis();
+        if (state == State.Disconnected) {
+            return false;
+        }
         if (status.isOk()) {
             // success, ignore
-            lastSuccessResponseTime = now;
             return true;
         } else if (status.getCode() == Code.Unauthenticated) {
-            // TODO re-create session once?
-            // for now treating this as fatal, UI should encourage refresh to try again
+            // fire deprecated event for now
             info.notifyConnectionError(status);
-        } else if (status.getCode() == Code.Internal || status.getCode() == Code.Unknown) {
-            // for now treating these as fatal also
+
+            // signal that the user needs to re-authenticate, make a new session
+            // TODO (deephaven-core#3501) in theory we could make a new session for some auth types
+            info.fireCriticalEvent(CoreClient.EVENT_RECONNECT_AUTH_FAILED);
+        } else if (status.isTransportError()) {
+            // fire deprecated event for now
             info.notifyConnectionError(status);
-        } else if (status.getCode() == Code.Unavailable) {
-            // TODO skip re-authing for now, just backoff and try again
-            if (lastSuccessResponseTime == 0) {
-                lastSuccessResponseTime = now;
-                return true;
-            } else if (now - lastSuccessResponseTime >= GIVE_UP_TIMEOUT_MS) {
-                // this actually seems to be a problem; likely the worker has unexpectedly exited
-                // UI should encourage refresh to try again (which will probably fail; but at least doesn't look "OK")
-                info.notifyConnectionError(status);
-            } else {
-                return true;
-            }
+
+            // signal that there has been a connection failure of some kind and attempt to reconnect
+            info.fireEvent(CoreClient.EVENT_DISCONNECT);
+
+            // Try again after a backoff, this may happen several times
+            connectionLost();
         } // others probably are meaningful to the caller
         return false;
+    }
+
+    private void maybeRestartLogStream() {
+        if (logCallbacks.size == 0) {
+            return;
+        }
+        if (logStream != null) {
+            logStream.cancel();
+        }
+        LogSubscriptionRequest logSubscriptionRequest = new LogSubscriptionRequest();
+        if (pastLogs.size() > 0) {
+            // only ask for messages seen after the last message we recieved
+            logSubscriptionRequest
+                    .setLastSeenLogTimestamp(String.valueOf((long) pastLogs.get(pastLogs.size() - 1).getMicros()));
+        }
+        logStream = ResponseStreamWrapper
+                .of(consoleServiceClient.subscribeToLogs(logSubscriptionRequest, metadata));
+        logStream.onData(data -> {
+            LogItem logItem = new LogItem();
+            logItem.setLogLevel(data.getLogLevel());
+            logItem.setMessage(data.getMessage());
+            logItem.setMicros((double) java.lang.Long.parseLong(data.getMicros()));
+
+            for (JsConsumer<LogItem> callback : JsItr.iterate(logCallbacks.keys())) {
+                callback.apply(logItem);
+            }
+        });
+        logStream.onEnd(this::checkStatus);
     }
 
     private void startExportNotificationsStream() {
@@ -379,8 +425,9 @@ public class WorkerConnection {
                 .of(tableServiceClient.exportedTableUpdates(new ExportedTableUpdatesRequest(), metadata()));
         exportNotifications.onData(update -> {
             if (update.getUpdateFailureMessage() != null && !update.getUpdateFailureMessage().isEmpty()) {
-                exportedTableUpdateMessageError(new TableTicket(update.getExportId().getTicket_asU8()),
-                        update.getUpdateFailureMessage());
+                cache.get(new TableTicket(update.getExportId().getTicket_asU8())).ifPresent(state1 -> {
+                    state1.setResolution(ClientTableState.ResolutionState.FAILED, update.getUpdateFailureMessage());
+                });
             } else {
                 exportedTableUpdateMessage(new TableTicket(update.getExportId().getTicket_asU8()),
                         java.lang.Long.parseLong(update.getSize()));
@@ -391,176 +438,115 @@ public class WorkerConnection {
         exportNotifications.onStatus(this::checkStatus);
     }
 
-    private void authUpdate(HandshakeResponse handshakeResponse) {
-        // store the token and schedule refresh calls to keep it alive
-        sessionToken = new String(Js.uncheckedCast(handshakeResponse.getSessionToken_asU8()), Charset.forName("UTF-8"));
-        String sessionHeaderName =
-                new String(Js.uncheckedCast(handshakeResponse.getMetadataHeader_asU8()), Charset.forName("UTF-8"));
-        metadata.set(sessionHeaderName, sessionToken);
-
-        // TODO maybe accept server advice on refresh rates, or just do our own thing
-        DomGlobal.setTimeout((ignore) -> {
-            HandshakeRequest req = new HandshakeRequest();
-            req.setAuthProtocol(0);
-            req.setPayload(handshakeResponse.getSessionToken_asU8());
-            sessionServiceClient.refreshSessionToken(req, metadata, (fail, success) -> {
-                if (fail != null) {
-                    // TODO set a flag so others know not to try until we re-trigger initial auth
-                    // TODO re-trigger auth; but for now let's try again using our last successful auth
-                    checkStatus((ResponseStreamWrapper.Status) fail);
-                    authUpdate(handshakeResponse);
-                    return;
-                }
-                // mark the new token, schedule a new check
-                authUpdate(success);
-            });
-        }, 2500);
-    }
-
-    private void subscribeToTerminationNotification() {
-        sessionServiceClient.terminationNotification(new TerminationNotificationRequest(), metadata(),
-                (fail, success) -> {
-                    if (fail != null) {
-                        if (checkStatus((ResponseStreamWrapper.Status) fail)) {
-                            // restart the termination notification
-                            subscribeToTerminationNotification();
-                            return;
+    /**
+     * Manages auth token update and rotation. A typical grpc/grpc-web client would support something like an
+     * interceptor to be able to tweak requests and responses slightly, but our client doesn't have an easy way to add
+     * something like that. Instead, this client will continue to call FlightService/Handshake at the specified
+     * interval, with empty payloads.
+     *
+     * @return a promise for when this auth is completed
+     */
+    private Promise<Void> authUpdate() {
+        if (scheduledAuthUpdate != null) {
+            DomGlobal.clearTimeout(scheduledAuthUpdate);
+            scheduledAuthUpdate = null;
+        }
+        return UnaryWithHeaders.<ConfigurationConstantsRequest, ConfigurationConstantsResponse>call(
+                info.getServerUrl(),
+                metadata(), info.makeRpcOptions(), ConfigService.GetConfigurationConstants,
+                new ConfigurationConstantsRequest())
+                .then(result -> {
+                    BrowserHeaders headers = result.getHeaders();
+                    // unchecked cast is required here due to "aliasing" in ts/webpack resulting in BrowserHeaders !=
+                    // Metadata
+                    JsArray<String> authorization =
+                            Js.<BrowserHeaders>uncheckedCast(headers).get(FLIGHT_AUTH_HEADER_NAME);
+                    if (authorization.length > 0) {
+                        JsArray<String> existing = metadata().get(FLIGHT_AUTH_HEADER_NAME);
+                        if (!existing.getAt(0).equals(authorization.getAt(0))) {
+                            // use this new token
+                            metadata().set(FLIGHT_AUTH_HEADER_NAME, authorization);
                         }
                     }
 
-                    // welp; the server is gone -- let everyone know
-                    info.notifyConnectionError(new ResponseStreamWrapper.Status() {
-                        @Override
-                        public double getCode() {
-                            return Code.Unavailable;
-                        }
+                    // Read the timeout from the server, we'll refresh at less than that
+                    constants = result.getMessage();
+                    ConfigValue sessionDuration = constants.getConfigValuesMap().get("http.session.durationMs");
+                    if (sessionDuration != null && sessionDuration.hasStringValue()) {
+                        sessionTimeoutMs = Double.parseDouble(sessionDuration.getStringValue());
+                    }
 
-                        @SuppressWarnings("StringConcatenationInLoop")
-                        @Override
-                        public String getDetails() {
-                            if (!success.getAbnormalTermination()) {
-                                return "Server exited normally.";
+                    // schedule an update based on our currently configured delay
+                    scheduledAuthUpdate = DomGlobal.setTimeout(ignore -> {
+                        authUpdate();
+                    }, sessionTimeoutMs / 2);
+
+                    return Promise.resolve((Void) null);
+                }).catch_(err -> {
+                    UnaryOutput<?> result = (UnaryOutput<?>) err;
+                    if (result.getStatus() == Code.Unauthenticated) {
+                        // explicitly clear out any metadata for authentication, and signal that auth failed
+                        metadata.delete(FLIGHT_AUTH_HEADER_NAME);
+
+                        // Fire an event for the UI to attempt to re-auth
+                        info.fireCriticalEvent(CoreClient.EVENT_RECONNECT_AUTH_FAILED);
+
+                        // We return here rather than continue and call checkStatus()
+                        return Promise.reject("Authentication failed, please reconnect");
+                    }
+                    checkStatus(ResponseStreamWrapper.Status.of(result.getStatus(), result.getStatusMessage(),
+                            result.getTrailers()));
+                    if (result.getStatusMessage() != null && !result.getStatusMessage().isEmpty()) {
+                        return Promise.reject(result.getStatusMessage());
+                    } else {
+                        return Promise.reject("Error occurred while authenticating, gRPC status " + result.getStatus());
+                    }
+                });
+    }
+
+    private void subscribeToTerminationNotification() {
+        terminationStream =
+                sessionServiceClient.terminationNotification(new TerminationNotificationRequest(), metadata(),
+                        (fail, success) -> {
+                            if (state == State.Disconnected) {
+                                // already disconnected, no need to respond
+                                return;
                             }
-
-                            String retval;
-                            if (!success.getReason().isEmpty()) {
-                                retval = success.getReason();
-                            } else {
-                                retval = "Server exited abnormally.";
-                            }
-
-                            final JsArray<StackTrace> traces = success.getStackTracesList();
-                            for (int ii = 0; ii < traces.length; ++ii) {
-                                final StackTrace trace = traces.getAt(ii);
-                                retval += "\n\n";
-                                if (ii != 0) {
-                                    retval += "Caused By: " + trace.getType() + ": " + trace.getMessage();
+                            if (fail != null) {
+                                // Errors are treated like connection issues, won't signal any shutdown
+                                if (checkStatus((ResponseStreamWrapper.ServiceError) fail)) {
+                                    // restart the termination notification
+                                    subscribeToTerminationNotification();
                                 } else {
-                                    retval += trace.getType() + ": " + trace.getMessage();
+                                    info.notifyConnectionError(Js.cast(fail));
+                                    connectionLost();
                                 }
-
-                                final JsArray<String> elements = trace.getElementsList();
-                                for (int jj = 0; jj < elements.length; ++jj) {
-                                    retval += "\n" + elements.getAt(jj);
-                                }
+                                return;
                             }
+                            assert success != null;
 
-                            return retval;
-                        }
+                            // welp; the server is gone -- let everyone know
+                            connectionLost();
 
-                        @Override
-                        public BrowserHeaders getMetadata() {
-                            return new BrowserHeaders(); // nothing to offer
-                        }
-                    });
-                });
-    }
-
-    private void notifyLog(LogItem log) {
-        for (JsConsumer<LogItem> callback : JsItr.iterate(logCallbacks.keys())) {
-            callback.apply(log);
-        }
-    }
-
-    // @Override
-    public void initialSnapshot(TableTicket handle, TableSnapshot snapshot) {
-        LazyPromise.runLater(() -> {
-            // notify table that it has a snapshot available to replace viewport rows
-            // TODO looping in this way is not ideal, means that we're roughly O(n*m), where
-            // n is the number of rows, and m the number of tables with viewports.
-            // Instead, we should track all rows here in WorkerConnection, and then
-            // tell every table who might be interested about the rows it is interested in.
-            if (!cache.get(handle).isPresent()) {
-                JsLog.debug("Discarding snapshot for ", handle, " : ", snapshot);
-            }
-            cache.get(handle).ifPresent(s -> {
-                s.setSize(snapshot.getTableSize());
-                s.forActiveTables(table -> {
-                    table.handleSnapshot(handle, snapshot);
-                });
-            });
-        });
-    }
-
-    // @Override
-    public void incrementalUpdates(TableTicket tableHandle, DeltaUpdates updates) {
-        LazyPromise.runLater(() -> {
-            // notify table that it has individual row updates
-            final Optional<ClientTableState> cts = cache.get(tableHandle);
-            if (!cts.isPresent()) {
-                JsLog.debug("Discarding delta for disconnected state ", tableHandle, " : ", updates);
-            }
-            JsLog.debug("Delta received", tableHandle, updates);
-            cts.ifPresent(s -> {
-                if (!s.isSubscribed()) {
-                    JsLog.debug("Discarding delta for unsubscribed table", tableHandle, updates);
-                    return;
-                }
-                s.handleDelta(updates);
-            });
-        });
+                            info.notifyServerShutdown(success);
+                        });
     }
 
     // @Override
     public void exportedTableUpdateMessage(TableTicket clientId, long size) {
         cache.get(clientId).ifPresent(state -> {
-            if (!state.isSubscribed()) {
-                // not presently subscribed so this is the only way to be informed of size changes
-                state.setSize(size);
-            }
+            state.setSize(size);
         });
     }
 
     // @Override
-    public void exportedTableUpdateMessageError(TableTicket clientId, String errorMessage) {
-        cache.get(clientId).ifPresent(state -> {
-            state.forActiveTables(t -> t.failureHandled(errorMessage));
-        });
-    }
 
-    // @Override
-    public void onOpen() {
-        // never actually called - this instance isn't configured to be the "client" in the connection until auth
-        // has succeeded.
-        assert false
-                : "WorkerConnection.onOpen() should not be invoked directly, check the stack trace to see how this was triggered";
-    }
-
-    // @Override
-    public void onClose(int code, String message) {
-        // notify all active tables, tablemaps, and figures that the connection is closed
-        tableMaps.values().forEach(tableMap -> {
+    public void connectionLost() {
+        // notify all active tables and widgets that the connection is closed
+        // TODO(deephaven-core#3604) when a new session is created, refetch all widgets and use that to drive reconnect
+        simpleReconnectableInstances.forEach((item, index, array) -> {
             try {
-                tableMap.fireEvent(TableMap.EVENT_DISCONNECT);
-                tableMap.suppressEvents();
-            } catch (Exception e) {
-                JsLog.warn("Error in firing TableMap.EVENT_DISCONNECT event", e);
-            }
-        });
-        figures.forEach((p0, p1, p2) -> {
-            try {
-                p0.fireEvent(JsFigure.EVENT_DISCONNECT);
-                p0.suppressEvents();
+                item.disconnected();
             } catch (Exception e) {
                 JsLog.warn("Error in firing Figure.EVENT_DISCONNECT event", e);
             }
@@ -570,6 +556,7 @@ public class WorkerConnection {
         for (ClientTableState cts : cache.getAllStates()) {
             cts.forActiveLifecycles(HasLifecycle::disconnected);
         }
+
 
         if (state == State.Disconnected) {
             // deliberately closed, don't try to reopen at this time
@@ -584,48 +571,14 @@ public class WorkerConnection {
         newSessionReconnect.failed();
 
         // fail outstanding promises, if any
-        onOpen.forEach(c -> c.onFailure("Connection to server closed (" + code + "): " + message));
+        onOpen.forEach(c -> c.onFailure("Connection to server closed"));
         onOpen.clear();
     }
-
-    // TODO #730 fold this into the auth reconnect and "my stream puked" check"
-    // @Override
-    // public void ping(final String lastKnownSessionToken) {
-    // // note that lastKnownSessionToken may be null when client manually tries to ping
-    //
-    // if (state == State.Disconnected) {
-    // // deliberately closed, stop the ping/pong
-    // JsLog.debug("WorkerConnection.ping Disconnected, ignoring");
-    // return;
-    // }
-    //
-    // // cancel the last timeout check, and schedule a new one
-    // DomGlobal.clearTimeout(killTimerCancelation);
-    // final double now = Duration.currentTimeMillis();
-    // killTimerCancelation = DomGlobal.setTimeout(ignore -> {
-    // boolean keepWaiting = isDevMode() && (Duration.currentTimeMillis() - now > 45_000);
-    // if (keepWaiting) {
-    // // it took quite a bit more than 30s, user was probably stuck in debugger,
-    // // or laptop was shut down in some way. Ping again.
-    // ping(null);
-    // } else {
-    // JsLog.debug("Haven't heard from the server in 30s, reconnecting...");
-    // forceReconnect();
-    // }
-    // }, 30_000);
-    //
-    // // wait 5s, and tell the server that we're here to continue the cycle
-    // DomGlobal.setTimeout(ignore -> server.pong(), 5000);
-    // }
 
     @JsMethod
     public void forceReconnect() {
         JsLog.debug("pending: ", definitionCallbacks, handleCallbacks);
 
-        // stop the current connection
-        // if (server != null) {
-        // server.close();
-        // }
         // just in case it wasn't already running, mark us as reconnecting
         state = State.Reconnecting;
         newSessionReconnect.failed();
@@ -635,16 +588,80 @@ public class WorkerConnection {
     public void forceClose() {
         // explicitly mark as disconnected so reconnect isn't attempted
         state = State.Disconnected;
-        // if (server != null) {
-        // server.close();
-        // }
+
+        // forcibly clean up the log stream and its listeners
+        if (logStream != null) {
+            logStream.cancel();
+            logStream = null;
+        }
+        pastLogs.clear();
+        logCallbacks.clear();
+
+        // Stop server streams, will not reconnect
+        if (terminationStream != null) {
+            terminationStream.cancel();
+            terminationStream = null;
+        }
+        if (exportNotifications != null) {
+            exportNotifications.cancel();
+            exportNotifications = null;
+        }
+
         newSessionReconnect.disconnected();
-        DomGlobal.clearTimeout(killTimerCancelation);
+        if (scheduledAuthUpdate != null) {
+            DomGlobal.clearTimeout(scheduledAuthUpdate);
+            scheduledAuthUpdate = null;
+        }
+    }
+
+    public void setSessionTimeoutMs(double sessionTimeoutMs) {
+        this.sessionTimeoutMs = sessionTimeoutMs;
     }
 
     // @Override
     public void onError(Throwable throwable) {
         info.failureHandled(throwable.toString());
+    }
+
+    public Promise<JsVariableDefinition> getVariableDefinition(String name, String type) {
+        LazyPromise<JsVariableDefinition> promise = new LazyPromise<>();
+
+        final class Listener implements Consumer<JsVariableChanges> {
+            final JsRunnable subscription;
+
+            Listener() {
+                subscription = subscribeToFieldUpdates(this::accept);
+            }
+
+            @Override
+            public void accept(JsVariableChanges changes) {
+                JsVariableDefinition foundField = changes.getCreated()
+                        .find((field, p1, p2) -> field.getTitle().equals(name)
+                                && field.getType().equalsIgnoreCase(type));
+
+                if (foundField == null) {
+                    foundField = changes.getUpdated().find((field, p1, p2) -> field.getTitle().equals(name)
+                            && field.getType().equalsIgnoreCase(type));
+                }
+
+                if (foundField != null) {
+                    subscription.run();
+                    promise.succeed(foundField);
+                }
+            }
+        }
+
+        Listener listener = new Listener();
+
+        return promise
+                .timeout(10_000)
+                .asPromise()
+                .then(Promise::resolve, fail -> {
+                    listener.subscription.run();
+                    // noinspection unchecked, rawtypes
+                    return (Promise<JsVariableDefinition>) (Promise) Promise
+                            .reject(fail);
+                });
     }
 
     public Promise<JsTable> getTable(JsVariableDefinition varDef, @Nullable Boolean applyPreviewColumns) {
@@ -657,12 +674,12 @@ public class WorkerConnection {
                         // TODO (deephaven-core#188): eliminate this branch by applying preview cols before subscribing
                         if (applyPreviewColumns == null || applyPreviewColumns) {
                             ApplyPreviewColumnsRequest req = new ApplyPreviewColumnsRequest();
-                            req.setSourceId(TableTicket.createTableRef(varDef));
+                            req.setSourceId(Tickets.createTableRef(varDef));
                             req.setResultId(cts.getHandle().makeTicket());
                             tableServiceClient.applyPreviewColumns(req, metadata, c::apply);
                         } else {
                             FetchTableRequest req = new FetchTableRequest();
-                            req.setSourceId(TableTicket.createTableRef(varDef));
+                            req.setSourceId(Tickets.createTableRef(varDef));
                             req.setResultId(cts.getHandle().makeTicket());
                             tableServiceClient.fetchTable(req, metadata, c::apply);
                         }
@@ -674,45 +691,157 @@ public class WorkerConnection {
         });
     }
 
-    public Promise<JsTable> getPandas(JsVariableDefinition varDef) {
-        return whenServerReady("get a pandas table").then(serve -> {
-            JsLog.debug("innerGetPandasTable", varDef.getTitle(), " started");
-            return newState(info,
-                    (c, cts, metadata) -> {
-                        JsLog.debug("performing fetch for ", varDef.getTitle(), " / ", cts,
-                                " (" + LazyString.of(cts::getHandle), ")");
-                        throw new UnsupportedOperationException("getPandas");
-
-                    }, "fetch pandas table " + varDef.getTitle()).then(cts -> {
-                        JsLog.debug("innerGetPandasTable", varDef.getTitle(), " succeeded ", cts);
-                        JsTable table = new JsTable(this, cts);
-                        return Promise.resolve(table);
+    public Promise<?> getObject(JsVariableDefinition definition) {
+        if (JsVariableType.TABLE.equalsIgnoreCase(definition.getType())) {
+            return getTable(definition, null);
+        } else if (JsVariableType.FIGURE.equalsIgnoreCase(definition.getType())) {
+            return getFigure(definition);
+        } else if (JsVariableType.PANDAS.equalsIgnoreCase(definition.getType())) {
+            return getWidget(definition)
+                    .then(JsWidget::refetch)
+                    .then(widget -> {
+                        widget.close();
+                        return widget.getExportedObjects()[0].fetch();
                     });
-        });
-    }
-
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    public Promise<Object> getObject(JsVariableDefinition definition) {
-        switch (VariableType.valueOf(definition.getType())) {
-            case Table:
-                return (Promise) getTable(definition, null);
-            case TreeTable:
-                return (Promise) getTreeTable(definition);
-            case Figure:
-                return (Promise) getFigure(definition);
-            case Pandas:
-                return (Promise) getPandas(definition);
-            // case OtherWidget:
-            // return (Promise) getWidget(definition.getName());
-            // case TableMap:
-            // return (Promise) getTableMap(definition.getName());
-            default:
-                return Promise.reject(
-                        new Error("Object " + definition.getTitle() + " unknown type " + definition.getType() + "."));
+        } else if (JsVariableType.PARTITIONEDTABLE.equalsIgnoreCase(definition.getType())) {
+            return getPartitionedTable(definition);
+        } else if (JsVariableType.HIERARCHICALTABLE.equalsIgnoreCase(definition.getType())) {
+            return getHierarchicalTable(definition);
+        } else {
+            warnLegacyTicketTypes(definition.getType());
+            return getWidget(definition).then(JsWidget::refetch);
         }
     }
 
-    @JsMethod
+    public Promise<?> getJsObject(JsPropertyMap<Object> definitionObject) {
+        if (definitionObject instanceof JsVariableDefinition) {
+            return getObject((JsVariableDefinition) definitionObject);
+        }
+
+        if (!definitionObject.has("type")) {
+            throw new IllegalArgumentException("no type field; could not getObject");
+        }
+        String type = definitionObject.getAsAny("type").asString();
+
+        boolean hasName = definitionObject.has("name");
+        boolean hasId = definitionObject.has("id");
+        if (hasName && hasId) {
+            throw new IllegalArgumentException("has both name and id field; could not getObject");
+        } else if (hasName) {
+            String name = definitionObject.getAsAny("name").asString();
+            return getVariableDefinition(name, type)
+                    .then(this::getObject);
+        } else if (hasId) {
+            String id = definitionObject.getAsAny("id").asString();
+            return getObject(new JsVariableDefinition(type, null, id, null));
+        } else {
+            throw new IllegalArgumentException("no name/id field; could not construct getObject");
+        }
+    }
+
+    public Promise<?> getObject(TypedTicket typedTicket) {
+        if (JsVariableType.TABLE.equalsIgnoreCase(typedTicket.getType())) {
+            throw new IllegalArgumentException("wrong way to get a table from a ticket");
+        } else if (JsVariableType.FIGURE.equalsIgnoreCase(typedTicket.getType())) {
+            return new JsFigure(this, c -> {
+                JsWidget widget = new JsWidget(this, typedTicket);
+                widget.refetch().then(ignore -> {
+                    c.apply(null, makeFigureFetchResponse(widget));
+                    return null;
+                });
+            }).refetch();
+        } else if (JsVariableType.PANDAS.equalsIgnoreCase(typedTicket.getType())) {
+            return getWidget(typedTicket)
+                    .then(JsWidget::refetch)
+                    .then(widget -> {
+                        widget.close();
+                        return widget.getExportedObjects()[0].fetch();
+                    });
+        } else if (JsVariableType.PARTITIONEDTABLE.equalsIgnoreCase(typedTicket.getType())) {
+            return new JsPartitionedTable(this, new JsWidget(this, typedTicket)).refetch();
+        } else if (JsVariableType.HIERARCHICALTABLE.equalsIgnoreCase(typedTicket.getType())) {
+            return new JsWidget(this, typedTicket).refetch().then(w -> Promise.resolve(new JsTreeTable(this, w)));
+        } else {
+            warnLegacyTicketTypes(typedTicket.getType());
+            return getWidget(typedTicket).then(JsWidget::refetch);
+        }
+    }
+
+    private static void warnLegacyTicketTypes(String ticketType) {
+        if (JsVariableType.TABLEMAP.equalsIgnoreCase(ticketType)) {
+            JsLog.warn(
+                    "TableMap is now known as PartitionedTable, fetching as a plain widget. To fetch as a PartitionedTable use that as the type.");
+        }
+        if (JsVariableType.TREETABLE.equalsIgnoreCase(ticketType)) {
+            JsLog.warn(
+                    "TreeTable is now HierarchicalTable, fetching as a plain widget. To fetch as a HierarchicalTable use that as this type.");
+        }
+    }
+
+    public Promise<SharedExportBytesUnion> shareObject(ServerObject object, SharedExportBytesUnion sharedTicketBytes) {
+        if (object.getConnection() != this) {
+            return Promise.reject("Cannot share an object that comes from another server instance");
+        }
+        PublishRequest request = new PublishRequest();
+        request.setSourceId(object.typedTicket().getTicket());
+
+        Ticket ticket = sharedTicketFromStringOrBytes(sharedTicketBytes);
+        request.setResultId(ticket);
+
+        return Callbacks.grpcUnaryPromise(c -> {
+            sessionServiceClient().publishFromTicket(request, metadata(), c::apply);
+        }).then(ignore -> Promise.resolve(sharedTicketBytes));
+    }
+
+    private Ticket sharedTicketFromStringOrBytes(SharedExportBytesUnion sharedTicketBytes) {
+        final TypedArray.SetArrayUnionType array;
+        if (sharedTicketBytes.isString()) {
+            byte[] arr = sharedTicketBytes.asString().getBytes(StandardCharsets.UTF_8);
+            array = TypedArray.SetArrayUnionType.of(arr);
+        } else {
+            Uint8Array bytes = sharedTicketBytes.asUint8Array();
+            array = TypedArray.SetArrayUnionType.of(bytes);
+        }
+        return tickets.sharedTicket(array);
+    }
+
+    public Promise<?> getSharedObject(SharedExportBytesUnion sharedExportBytes, String type) {
+        if (type.equalsIgnoreCase(JsVariableType.TABLE)) {
+            return newState((callback, newState, metadata) -> {
+                Ticket ticket = newState.getHandle().makeTicket();
+
+                ExportRequest request = new ExportRequest();
+                request.setSourceId(sharedTicketFromStringOrBytes(sharedExportBytes));
+                request.setResultId(ticket);
+
+                Callbacks.grpcUnaryPromise(c -> {
+                    sessionServiceClient().exportFromTicket(request, metadata(), c::apply);
+                }).then(ignore -> {
+                    tableServiceClient().getExportedTableCreationResponse(ticket, metadata(), callback::apply);
+                    return null;
+                }, err -> {
+                    callback.apply(err, null);
+                    return null;
+                });
+
+            }, "getSharedObject")
+                    .refetch(null, metadata())
+                    .then(state -> Promise.resolve(new JsTable(this, state)));
+        }
+
+        TypedTicket result = new TypedTicket();
+        result.setTicket(getTickets().newExportTicket());
+        result.setType(type);
+
+        ExportRequest request = new ExportRequest();
+        request.setSourceId(sharedTicketFromStringOrBytes(sharedExportBytes));
+        request.setResultId(result.getTicket());
+
+        return Callbacks.grpcUnaryPromise(c -> {
+            sessionServiceClient().exportFromTicket(request, metadata(), c::apply);
+        }).then(ignore -> getObject(result));
+    }
+
     @SuppressWarnings("ConstantConditions")
     public JsRunnable subscribeToFieldUpdates(JsConsumer<JsVariableChanges> callback) {
         fieldUpdatesCallback.add(callback);
@@ -726,7 +855,7 @@ public class WorkerConnection {
 
                 JsArray<FieldInfo> removedFI = data.getRemovedList();
                 for (int i = 0; i < removedFI.length; ++i) {
-                    String removedId = removedFI.getAt(i).getTicket().getTicket_asB64();
+                    String removedId = removedFI.getAt(i).getTypedTicket().getTicket().getTicket_asB64();
                     JsVariableDefinition result = knownFields.get(removedId);
                     removed[removed.length] = result;
                     knownFields.remove(removedId);
@@ -792,44 +921,86 @@ public class WorkerConnection {
                 return Promise.resolve(this);
             default:
                 // not possible, means null state
-                // noinspection unchecked
-                return (Promise) Promise.reject("Can't " + operationName + " while connection is in state " + state);
+                return Promise.reject("Can't " + operationName + " while connection is in state " + state);
         }
     }
 
-    public Promise<TableMap> getTableMap(String tableMapName) {
-        return whenServerReady("get a tablemap")
-                .then(server -> Promise.resolve(new TableMap(this, tableMapName))
-                        .then(TableMap::refetch));
+    private TicketAndPromise<?> exportScopeTicket(JsVariableDefinition varDef) {
+        Ticket ticket = getTickets().newExportTicket();
+        return new TicketAndPromise<>(ticket, whenServerReady("exportScopeTicket").then(server -> {
+            ExportRequest req = new ExportRequest();
+            req.setSourceId(createTypedTicket(varDef).getTicket());
+            req.setResultId(ticket);
+            return Callbacks.<ExportResponse, Object>grpcUnaryPromise(
+                    c -> sessionServiceClient().exportFromTicket(req, metadata(), c::apply));
+        }), this);
     }
 
-    public void registerTableMap(TableMapHandle handle, TableMap tableMap) {
-        tableMaps.put(handle, tableMap);
+    public Promise<JsPartitionedTable> getPartitionedTable(JsVariableDefinition varDef) {
+        return whenServerReady("get a partitioned table")
+                .then(server -> getWidget(varDef))
+                .then(widget -> new JsPartitionedTable(this, widget).refetch());
     }
 
-    public Promise<JsTreeTable> getTreeTable(JsVariableDefinition varDef) {
-        return getTable(varDef, null).then(t -> {
-            Promise<JsTreeTable> result = Promise.resolve(new JsTreeTable(t.state(), this).finishFetch());
-            t.close();
-            return result;
-        });
+    public Promise<JsTreeTable> getHierarchicalTable(JsVariableDefinition varDef) {
+        return getWidget(varDef).then(JsWidget::refetch).then(w -> Promise.resolve(new JsTreeTable(this, w)));
     }
 
     public Promise<JsFigure> getFigure(JsVariableDefinition varDef) {
+        if (!varDef.getType().equalsIgnoreCase("Figure")) {
+            throw new IllegalArgumentException("Can't load as a figure: " + varDef.getType());
+        }
         return whenServerReady("get a figure")
-                .then(server -> new JsFigure(this, c -> {
-                    FetchFigureRequest request = new FetchFigureRequest();
-                    request.setSourceId(TableTicket.createTicket(varDef));
-                    consoleServiceClient().fetchFigure(request, metadata(), c::apply);
-                }).refetch());
+                .then(server -> new JsFigure(this,
+                        c -> {
+                            getWidget(varDef).then(JsWidget::refetch).then(widget -> {
+                                c.apply(null, makeFigureFetchResponse(widget));
+                                widget.close();
+                                return null;
+                            }, error -> {
+                                c.apply(error, null);
+                                return null;
+                            });
+                        }).refetch());
     }
 
-    public void registerFigure(JsFigure figure) {
-        this.figures.add(figure);
+    private static FetchObjectResponse makeFigureFetchResponse(JsWidget widget) {
+        FetchObjectResponse legacyResponse = new FetchObjectResponse();
+        legacyResponse.setData(widget.getDataAsU8());
+        legacyResponse.setType(widget.getType());
+        legacyResponse.setTypedExportIdsList(Arrays.stream(widget.getExportedObjects())
+                .map(JsWidgetExportedObject::typedTicket).toArray(TypedTicket[]::new));
+        return legacyResponse;
     }
 
-    public void releaseFigure(JsFigure figure) {
-        this.figures.delete(figure);
+    private TypedTicket createTypedTicket(JsVariableDefinition varDef) {
+        TypedTicket typedTicket = new TypedTicket();
+        typedTicket.setTicket(Tickets.createTicket(varDef));
+        typedTicket.setType(varDef.getType());
+        return typedTicket;
+    }
+
+    public Promise<JsWidget> getWidget(JsVariableDefinition varDef) {
+        return exportScopeTicket(varDef)
+                .race(ticket -> {
+                    TypedTicket typedTicket = new TypedTicket();
+                    typedTicket.setType(varDef.getType());
+                    typedTicket.setTicket(ticket);
+                    return getWidget(typedTicket);
+                }).promise();
+    }
+
+    public Promise<JsWidget> getWidget(TypedTicket typedTicket) {
+        return whenServerReady("get a widget")
+                .then(response -> Promise.resolve(new JsWidget(this, typedTicket)));
+    }
+
+    public void registerSimpleReconnectable(HasLifecycle figure) {
+        this.simpleReconnectableInstances.add(figure);
+    }
+
+    public void unregisterSimpleReconnectable(HasLifecycle figure) {
+        this.simpleReconnectableInstances.delete(figure);
     }
 
 
@@ -849,8 +1020,32 @@ public class WorkerConnection {
         return flightServiceClient;
     }
 
+    public BrowserFlightServiceClient browserFlightServiceClient() {
+        return browserFlightServiceClient;
+    }
+
     public InputTableServiceClient inputTableServiceClient() {
         return inputTableServiceClient;
+    }
+
+    public ObjectServiceClient objectServiceClient() {
+        return objectServiceClient;
+    }
+
+    public PartitionedTableServiceClient partitionedTableServiceClient() {
+        return partitionedTableServiceClient;
+    }
+
+    public StorageServiceClient storageServiceClient() {
+        return storageServiceClient;
+    }
+
+    public ConfigServiceClient configServiceClient() {
+        return configServiceClient;
+    }
+
+    public HierarchicalTableServiceClient hierarchicalTableServiceClient() {
+        return hierarchicalTableServiceClient;
     }
 
     public BrowserHeaders metadata() {
@@ -858,7 +1053,7 @@ public class WorkerConnection {
     }
 
     public <ReqT, RespT> BiDiStream.Factory<ReqT, RespT> streamFactory() {
-        return new BiDiStream.Factory<>(this::metadata, config::newTicketInt, useWebsockets);
+        return new BiDiStream.Factory<>(info.supportsClientStreaming(), this::metadata, tickets::newTicketInt);
     }
 
     public Promise<JsTable> newTable(String[] columnNames, String[] types, Object[][] data, String userTimeZone,
@@ -875,12 +1070,12 @@ public class WorkerConnection {
             dataRef[0] = null;
 
             // make a schema that we can embed in the first DoPut message
-            Builder schema = new Builder(1024);
+            FlatBufferBuilder schema = new FlatBufferBuilder(1024);
 
             // while we're examining columns, build the copiers for data
             List<JsDataHandler> columns = new ArrayList<>();
 
-            double[] fields = new double[columnNames.length];
+            int[] fields = new int[columnNames.length];
             for (int i = 0; i < columnNames.length; i++) {
                 String columnName = columnNames[i];
                 String columnType = types[i];
@@ -888,9 +1083,9 @@ public class WorkerConnection {
                 JsDataHandler writer = JsDataHandler.getHandler(columnType);
                 columns.add(writer);
 
-                double nameOffset = schema.createString(columnName);
-                double typeOffset = writer.writeType(schema);
-                double metadataOffset = Field.createCustomMetadataVector(schema, new double[] {
+                int nameOffset = schema.createString(columnName);
+                int typeOffset = writer.writeType(schema);
+                int metadataOffset = Field.createCustomMetadataVector(schema, new int[] {
                         KeyValue.createKeyValue(schema, schema.createString("deephaven:type"),
                                 schema.createString(writer.deephavenType()))
                 });
@@ -905,7 +1100,7 @@ public class WorkerConnection {
 
                 fields[i] = Field.endField(schema);
             }
-            double fieldsOffset = Schema.createFieldsVector(schema, fields);
+            int fieldsOffset = Schema.createFieldsVector(schema, fields);
 
             Schema.startSchema(schema);
             Schema.addFields(schema, fieldsOffset);
@@ -916,16 +1111,16 @@ public class WorkerConnection {
                     createMessage(schema, MessageHeader.Schema, Schema.endSchema(schema), 0, 0);
             schemaMessage.setDataHeader(schemaMessagePayload);
 
-            schemaMessage.setAppMetadata(BarrageUtils.emptyMessage());
+            schemaMessage.setAppMetadata(WebBarrageUtils.emptyMessage());
             schemaMessage.setFlightDescriptor(cts.getHandle().makeFlightDescriptor());
 
             // we wait for any errors in this response to pass to the caller, but success is determined by the eventual
             // table's creation, which can race this
             BiDiStream<FlightData, FlightData> stream = this.<FlightData, FlightData>streamFactory().create(
                     headers -> flightServiceClient.doPut(headers),
-                    (firstPayload, headers) -> browserFlightServiceClient.openDoPut(firstPayload, headers),
-                    (nextPayload, headers, callback) -> browserFlightServiceClient.nextDoPut(nextPayload, headers,
-                            callback::apply));
+                    (first, headers) -> browserFlightServiceClient.openDoPut(first, headers),
+                    (next, headers, callback) -> browserFlightServiceClient.nextDoPut(next, headers, callback::apply),
+                    new FlightData());
             stream.send(schemaMessage);
 
             stream.onEnd(status -> {
@@ -945,9 +1140,9 @@ public class WorkerConnection {
                 }
             });
             FlightData bodyMessage = new FlightData();
-            bodyMessage.setAppMetadata(BarrageUtils.emptyMessage());
+            bodyMessage.setAppMetadata(WebBarrageUtils.emptyMessage());
 
-            Builder bodyData = new Builder(1024);
+            FlatBufferBuilder bodyData = new FlatBufferBuilder(1024);
 
             // iterate each column, building buffers and fieldnodes, as well as building the actual payload
             List<Uint8Array> buffers = new ArrayList<>();
@@ -971,25 +1166,25 @@ public class WorkerConnection {
             for (int i = buffers.size() - 1; i >= 0; i--) {
                 Uint8Array buffer = buffers.get(i);
                 cumulativeOffset -= buffer.byteLength;
-                Buffer.createBuffer(bodyData, Long.create(cumulativeOffset, 0), Long.create(buffer.byteLength, 0));
+                Buffer.createBuffer(bodyData, cumulativeOffset, buffer.byteLength);
             }
             assert cumulativeOffset == 0;
-            double buffersOffset = bodyData.endVector();
+            int buffersOffset = bodyData.endVector();
 
             RecordBatch.startNodesVector(bodyData, nodes.size());
             for (int i = nodes.size() - 1; i >= 0; i--) {
                 JsDataHandler.Node node = nodes.get(i);
-                FieldNode.createFieldNode(bodyData, Long.create(node.length(), 0), Long.create(node.nullCount(), 0));
+                FieldNode.createFieldNode(bodyData, node.length(), node.nullCount());
             }
-            double nodesOffset = bodyData.endVector();
+            int nodesOffset = bodyData.endVector();
 
             RecordBatch.startRecordBatch(bodyData);
 
             RecordBatch.addBuffers(bodyData, buffersOffset);
             RecordBatch.addNodes(bodyData, nodesOffset);
-            RecordBatch.addLength(bodyData, Long.create(data[0].length, 0));
+            RecordBatch.addLength(bodyData, data[0].length);
 
-            double recordBatchOffset = RecordBatch.endRecordBatch(bodyData);
+            int recordBatchOffset = RecordBatch.endRecordBatch(bodyData);
             bodyMessage.setDataHeader(createMessage(bodyData, MessageHeader.RecordBatch, recordBatchOffset, length, 0));
             bodyMessage.setDataBody(padAndConcat(buffers, length));
 
@@ -1010,11 +1205,11 @@ public class WorkerConnection {
         return all;
     }
 
-    private static Uint8Array createMessage(Builder payload, int messageHeaderType, double messageHeaderOffset,
-            int bodyLength, double customMetadataOffset) {
+    private static Uint8Array createMessage(FlatBufferBuilder payload, byte messageHeaderType, int messageHeaderOffset,
+            int bodyLength, int customMetadataOffset) {
         payload.finish(Message.createMessage(payload, MetadataVersion.V5, messageHeaderType, messageHeaderOffset,
-                Long.create(bodyLength, 0), customMetadataOffset));
-        return payload.asUint8Array();
+                bodyLength, customMetadataOffset));
+        return WebBarrageUtils.bbToUint8ArrayView(payload.dataBuffer());
     }
 
     public Promise<JsTable> mergeTables(JsTable[] tables, HasEventHandling failHandler) {
@@ -1051,35 +1246,6 @@ public class WorkerConnection {
         return null;
     }
 
-    // @Override
-    public void tableMapStringKeyAdded(TableMapHandle handle, String key) {
-        tableMapKeyAdded(handle, key);
-    }
-
-    // @Override
-    public void tableMapStringArrayKeyAdded(TableMapHandle handle, String[] key) {
-        tableMapKeyAdded(handle, key);
-    }
-
-    private void tableMapKeyAdded(TableMapHandle handle, Object key) {
-        TableMap tableMap = tableMaps.get(handle);
-        if (tableMap != null) {
-            tableMap.notifyKeyAdded(key);
-        }
-    }
-
-    public void releaseTableMap(TableMap tableMap, TableMapHandle tableMapHandle) {
-        // server.releaseTableMap(tableMapHandle);
-        LazyPromise.runLater(() -> {
-            TableMap removed = tableMaps.remove(tableMapHandle);
-            assert removed == tableMap;
-        });
-    }
-
-    private TableTicket newHandle() {
-        return new TableTicket(config.newTicketRaw());
-    }
-
     public RequestBatcher getBatcher(JsTable table) {
         // LATER: consider a global client.batch(()=>{}) method which causes all table statements to be batched
         // together.
@@ -1114,7 +1280,8 @@ public class WorkerConnection {
     }
 
     public ClientTableState newState(JsTableFetch fetcher, String fetchSummary) {
-        return cache.create(newHandle(), handle -> new ClientTableState(this, handle, fetcher, fetchSummary));
+        return cache.create(tickets.newTableTicket(),
+                handle -> new ClientTableState(this, handle, fetcher, fetchSummary));
     }
 
     /**
@@ -1125,13 +1292,13 @@ public class WorkerConnection {
      *         TODO: consider a fetch timeout.
      */
     public Promise<ClientTableState> newState(HasEventHandling failHandler, JsTableFetch fetcher, String fetchSummary) {
-        final TableTicket handle = newHandle();
+        final TableTicket handle = tickets.newTableTicket();
         final ClientTableState s = cache.create(handle, h -> new ClientTableState(this, h, fetcher, fetchSummary));
         return s.refetch(failHandler, metadata);
     }
 
     public ClientTableState newState(ClientTableState from, TableConfig to) {
-        return newState(from, to, newHandle());
+        return newState(from, to, tickets.newTableTicket());
     }
 
     public ClientTableState newState(ClientTableState from, TableConfig to, TableTicket handle) {
@@ -1143,7 +1310,7 @@ public class WorkerConnection {
     }
 
     /**
-     * Schedules a deferred command to check the given state for active tables and adjust viewports accordingly.
+     * Schedules a deferred command to check the given state for active tables.
      */
     public void scheduleCheck(ClientTableState state) {
         if (flushable.isEmpty()) {
@@ -1168,191 +1335,23 @@ public class WorkerConnection {
         sessionServiceClient.release(releaseRequest, metadata, null);
     }
 
-
-    /**
-     * For those calls where we don't really care what happens
-     */
-    private static final Callback<Void, String> DONOTHING_CALLBACK = new Callback<Void, String>() {
-        @Override
-        public void onSuccess(Void value) {
-            // Do nothing.
-        }
-
-        @Override
-        public void onFailure(String error) {
-            JsLog.error("Callback failed: " + error);
-        }
-    };
-
     private void flush() {
-        // LATER: instead of running a bunch of serial operations,
-        // condense these all into a single batch operation.
-        // All three server calls made by this method are _only_ called by this method,
-        // so we can reasonably merge all three into a single batched operation.
         ArrayList<ClientTableState> statesToFlush = new ArrayList<>(flushable);
         flushable.clear();
 
-
         for (ClientTableState state : statesToFlush) {
-            if (state.hasNoSubscriptions()) {
-                // state may be retained if it is held by at least one paused binding;
-                // it is either an unsubscribed active table, an interim state for an
-                // active table, or a pending rollback for an operation that has not
-                // yet completed (we leave orphaned nodes paused until a request completes).
-                if (state.isSubscribed()) {
-                    state.setSubscribed(false);
+            if (state.isEmpty()) {
+                // completely empty; perform release
+                final ClientTableState.ResolutionState previousState = state.getResolution();
+                state.setResolution(ClientTableState.ResolutionState.RELEASED);
+                if (previousState != ClientTableState.ResolutionState.RELEASED) {
+                    cache.release(state);
+
+                    JsLog.debug("Releasing state", state, LazyString.of(state.getHandle()));
+                    // don't send a release message to the server if the table isn't really there
                     if (state.getHandle().isConnected()) {
-                        BiDiStream<FlightData, FlightData> stream = subscriptionStreams.remove(state);
-                        if (stream != null) {
-                            stream.end();
-                            stream.cancel();
-                        }
+                        releaseHandle(state.getHandle());
                     }
-                }
-
-                if (state.isEmpty()) {
-                    // completely empty; perform release
-                    final ClientTableState.ResolutionState previousState = state.getResolution();
-                    state.setResolution(ClientTableState.ResolutionState.RELEASED);
-                    state.setSubscribed(false);
-                    if (previousState != ClientTableState.ResolutionState.RELEASED) {
-                        cache.release(state);
-
-                        JsLog.debug("Releasing state", state, LazyString.of(state.getHandle()));
-                        // don't send a release message to the server if the table isn't really there
-                        if (state.getHandle().isConnected()) {
-                            releaseHandle(state.getHandle());
-                        }
-                    }
-                }
-            } else {
-                List<TableSubscriptionRequest> vps = new ArrayList<>();
-                state.forActiveSubscriptions((table, subscription) -> {
-                    assert table.isActive(state) : "Inactive table has a viewport still attached";
-                    vps.add(new TableSubscriptionRequest(table.getSubscriptionId(), subscription.getRows(),
-                            subscription.getColumns()));
-                });
-
-                boolean isViewport = vps.stream().allMatch(req -> req.getRows() != null);
-                assert isViewport || vps.stream().noneMatch(req -> req.getRows() != null)
-                        : "All subscriptions to a given handle must be consistently viewport or non-viewport";
-
-
-                BitSet includedColumns = vps.stream().map(TableSubscriptionRequest::getColumns).reduce((bs1, bs2) -> {
-                    BitSet result = new BitSet();
-                    result.or(bs1);
-                    result.or(bs2);
-                    return result;
-                }).orElseThrow(() -> new IllegalStateException("Cannot call subscribe with zero subscriptions"));
-                String[] columnTypes = Arrays.stream(state.getAllColumns())
-                        .map(Column::getType)
-                        .toArray(String[]::new);
-
-                state.setSubscribed(true);
-
-                Builder subscriptionReq = new Builder(1024);
-
-                double columnsOffset = BarrageSubscriptionRequest.createColumnsVector(subscriptionReq,
-                        makeUint8ArrayFromBitset(includedColumns));
-                double viewportOffset = 0;
-                if (isViewport) {
-                    viewportOffset = BarrageSubscriptionRequest.createViewportVector(subscriptionReq, serializeRanges(
-                            vps.stream().map(TableSubscriptionRequest::getRows).collect(Collectors.toSet())));
-                }
-                // TODO #188 support minUpdateIntervalMs
-                double serializationOptionsOffset = BarrageSubscriptionOptions
-                        .createBarrageSubscriptionOptions(subscriptionReq, ColumnConversionMode.Stringify, true, 1000,
-                                0);
-                double tableTicketOffset =
-                        BarrageSubscriptionRequest.createTicketVector(subscriptionReq, state.getHandle().getTicket());
-                BarrageSubscriptionRequest.startBarrageSubscriptionRequest(subscriptionReq);
-                BarrageSubscriptionRequest.addColumns(subscriptionReq, columnsOffset);
-                BarrageSubscriptionRequest.addSubscriptionOptions(subscriptionReq, serializationOptionsOffset);
-                BarrageSubscriptionRequest.addViewport(subscriptionReq, viewportOffset);
-                BarrageSubscriptionRequest.addTicket(subscriptionReq, tableTicketOffset);
-                subscriptionReq.finish(BarrageSubscriptionRequest.endBarrageSubscriptionRequest(subscriptionReq));
-
-                FlightData request = new FlightData();
-                request.setAppMetadata(
-                        BarrageUtils.wrapMessage(subscriptionReq, BarrageMessageType.BarrageSubscriptionRequest));
-
-                BiDiStream<FlightData, FlightData> stream = this.<FlightData, FlightData>streamFactory().create(
-                        headers -> flightServiceClient.doExchange(headers),
-                        (firstPayload, headers) -> browserFlightServiceClient.openDoExchange(firstPayload, headers),
-                        (nextPayload, headers, c) -> browserFlightServiceClient.nextDoExchange(nextPayload, headers,
-                                c::apply));
-
-                stream.send(request);
-                stream.onData(new JsConsumer<FlightData>() {
-                    @Override
-                    public void apply(FlightData data) {
-                        ByteBuffer body = typedArrayToLittleEndianByteBuffer(data.getDataBody_asU8());
-                        Message headerMessage = Message
-                                .getRootAsMessage(new io.deephaven.javascript.proto.dhinternal.flatbuffers.ByteBuffer(
-                                        data.getDataHeader_asU8()));
-                        if (body.limit() == 0 && headerMessage.headerType() != MessageHeader.RecordBatch) {
-                            // a subscription stream presently ignores schemas and other message types
-                            // TODO hang on to the schema to better handle the now-Utf8 columns
-                            return;
-                        }
-                        RecordBatch header = headerMessage.header(new RecordBatch());
-                        BarrageMessageWrapper barrageMessageWrapper =
-                                BarrageMessageWrapper.getRootAsBarrageMessageWrapper(
-                                        new io.deephaven.javascript.proto.dhinternal.flatbuffers.ByteBuffer(
-                                                data.getAppMetadata_asU8()));
-                        if (barrageMessageWrapper.msgType() == 0) {
-                            // continue previous message, just read RecordBatch
-                            appendAndMaybeFlush(header, body);
-                        } else {
-                            assert barrageMessageWrapper.msgType() == BarrageMessageType.BarrageUpdateMetadata;
-                            BarrageUpdateMetadata barrageUpdate = BarrageUpdateMetadata.getRootAsBarrageUpdateMetadata(
-                                    new io.deephaven.javascript.proto.dhinternal.flatbuffers.ByteBuffer(
-                                            new Uint8Array(barrageMessageWrapper.msgPayloadArray())));
-                            startAndMaybeFlush(barrageUpdate.isSnapshot(), header, body, barrageUpdate, isViewport,
-                                    columnTypes);
-                        }
-                    }
-
-                    private DeltaUpdatesBuilder nextDeltaUpdates;
-
-                    private void appendAndMaybeFlush(RecordBatch header, ByteBuffer body) {
-                        // using existing barrageUpdate, append to the current snapshot/delta
-                        assert nextDeltaUpdates != null;
-                        boolean shouldFlush = nextDeltaUpdates.appendRecordBatch(header, body);
-                        if (shouldFlush) {
-                            incrementalUpdates(state.getHandle(), nextDeltaUpdates.build());
-                            nextDeltaUpdates = null;
-                        }
-                    }
-
-                    private void startAndMaybeFlush(boolean isSnapshot, RecordBatch header, ByteBuffer body,
-                            BarrageUpdateMetadata barrageUpdate, boolean isViewport, String[] columnTypes) {
-                        if (isSnapshot) {
-                            TableSnapshot snapshot =
-                                    createSnapshot(header, body, barrageUpdate, isViewport, columnTypes);
-
-                            // for now we always expect snapshots to arrive in a single payload
-                            initialSnapshot(state.getHandle(), snapshot);
-                        } else {
-                            nextDeltaUpdates = deltaUpdates(barrageUpdate, isViewport, columnTypes);
-                            appendAndMaybeFlush(header, body);
-                        }
-                    }
-                });
-                stream.onStatus(err -> {
-                    checkStatus(err);
-                    if (!err.isOk()) {
-                        // TODO (core#1181): fix this hack that enables barrage errors to propagate to the UI widget
-                        state.forActiveSubscriptions((table, subscription) -> {
-                            table.failureHandled(err.getDetails());
-                        });
-                    }
-                });
-                BiDiStream<FlightData, FlightData> oldStream = subscriptionStreams.put(state, stream);
-                if (oldStream != null) {
-                    // cancel any old stream, we presently expect a fresh instance
-                    oldStream.end();
-                    oldStream.cancel();
                 }
             }
         }
@@ -1374,8 +1373,12 @@ public class WorkerConnection {
         return false;
     }
 
-    public ClientConfiguration getConfig() {
-        return config;
+    public Tickets getTickets() {
+        return tickets;
+    }
+
+    public ConfigValue getServerConfigValue(String key) {
+        return constants.getConfigValuesMap().get(key);
     }
 
     public void onOpen(BiConsumer<Void, String> callback) {
@@ -1398,18 +1401,7 @@ public class WorkerConnection {
         logCallbacks.add(callback);
         if (mustSub) {
             logCallbacks.add(recordLog);
-            // TODO core#225 track latest message seen and only sub after that
-            logStream = ResponseStreamWrapper
-                    .of(consoleServiceClient.subscribeToLogs(new LogSubscriptionRequest(), metadata));
-            logStream.onData(data -> {
-                LogItem logItem = new LogItem();
-                logItem.setLogLevel(data.getLogLevel());
-                logItem.setMessage(data.getMessage());
-                logItem.setMicros(data.getMicros());
-
-                notifyLog(logItem);
-            });
-            logStream.onEnd(this::checkStatus);
+            maybeRestartLogStream();
         } else {
             pastLogs.forEach(callback::apply);
         }

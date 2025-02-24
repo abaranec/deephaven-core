@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources.regioned;
 
 import io.deephaven.chunk.attributes.Any;
@@ -26,8 +29,10 @@ public interface ColumnRegionReferencing<ATTR extends Any, REFERENCED_COLUMN_REG
          * Converts all the native source values represented by {@code rowSequence} <em>from a single region</em> into
          * the {@code destination} chunk by appending.
          */
-        void convertRegion(WritableChunk<? super ATTR> destination, Chunk<? extends ATTR> source,
-                RowSequence rowSequence);
+        void convertRegion(
+                @NotNull WritableChunk<? super ATTR> destination,
+                @NotNull Chunk<? extends ATTR> source,
+                @NotNull RowSequence rowSequence);
     }
 
     class Null<ATTR extends Any, REFERENCED_COLUMN_REGION extends ColumnRegion<ATTR>>

@@ -1,8 +1,10 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit CharSsmBackedSource and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit CharSsmBackedSource and run "./gradlew replicateSegmentedSortedMultiset" to regenerate
+//
+// @formatter:off
 package io.deephaven.engine.table.impl.by.ssmcountdistinct;
 
 import io.deephaven.vector.ByteVector;
@@ -17,27 +19,27 @@ import io.deephaven.engine.rowset.RowSet;
  * A {@link SsmBackedColumnSource} for Bytes.
  */
 public class ByteSsmBackedSource extends AbstractColumnSource<ByteVector>
-                                 implements ColumnSourceGetDefaults.ForObject<ByteVector>,
-                                            MutableColumnSourceGetDefaults.ForObject<ByteVector>,
-                                            SsmBackedColumnSource<ByteSegmentedSortedMultiset, ByteVector> {
+        implements ColumnSourceGetDefaults.ForObject<ByteVector>,
+        MutableColumnSourceGetDefaults.ForObject<ByteVector>,
+        SsmBackedColumnSource<ByteSegmentedSortedMultiset, ByteVector> {
     private final ObjectArraySource<ByteSegmentedSortedMultiset> underlying;
     private boolean trackingPrevious = false;
 
-    //region Constructor
+    // region Constructor
     public ByteSsmBackedSource() {
         super(ByteVector.class, byte.class);
         underlying = new ObjectArraySource<>(ByteSegmentedSortedMultiset.class, byte.class);
     }
-    //endregion Constructor
+    // endregion Constructor
 
-    //region SsmBackedColumnSource
+    // region SsmBackedColumnSource
     @Override
     public ByteSegmentedSortedMultiset getOrCreate(long key) {
         ByteSegmentedSortedMultiset ssm = underlying.getUnsafe(key);
-        if(ssm == null) {
-            //region CreateNew
-            underlying.set(key, ssm = new ByteSegmentedSortedMultiset(DistinctOperatorFactory.NODE_SIZE));
-            //endregion CreateNew
+        if (ssm == null) {
+            // region CreateNew
+            underlying.set(key, ssm = new ByteSegmentedSortedMultiset(SsmDistinctContext.NODE_SIZE));
+            // endregion CreateNew
         }
         ssm.setTrackDeltas(trackingPrevious);
         return ssm;
@@ -62,7 +64,7 @@ public class ByteSsmBackedSource extends AbstractColumnSource<ByteVector>
     public ObjectArraySource<ByteSegmentedSortedMultiset> getUnderlyingSource() {
         return underlying;
     }
-    //endregion
+    // endregion
 
     @Override
     public boolean isImmutable() {
@@ -70,13 +72,13 @@ public class ByteSsmBackedSource extends AbstractColumnSource<ByteVector>
     }
 
     @Override
-    public ByteVector get(long index) {
-        return underlying.get(index);
+    public ByteVector get(long rowKey) {
+        return underlying.get(rowKey);
     }
 
     @Override
-    public ByteVector getPrev(long index) {
-        final ByteSegmentedSortedMultiset maybePrev = underlying.getPrev(index);
+    public ByteVector getPrev(long rowKey) {
+        final ByteSegmentedSortedMultiset maybePrev = underlying.getPrev(rowKey);
         return maybePrev == null ? null : maybePrev.getPrevValues();
     }
 
@@ -90,7 +92,7 @@ public class ByteSsmBackedSource extends AbstractColumnSource<ByteVector>
     public void clearDeltas(RowSet indices) {
         indices.iterator().forEachLong(key -> {
             final ByteSegmentedSortedMultiset ssm = getCurrentSsm(key);
-            if(ssm != null) {
+            if (ssm != null) {
                 ssm.clearDeltas();
             }
             return true;

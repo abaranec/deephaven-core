@@ -1,34 +1,37 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.plot.datasets.ohlc;
 
-import io.deephaven.base.testing.BaseArrayTestCase;
-import io.deephaven.time.DateTimeUtils;
-import io.deephaven.plot.BaseFigureImpl;
-import io.deephaven.plot.datasets.data.IndexableNumericDataArrayDateTime;
-import io.deephaven.plot.util.tables.TableBackedTableMapHandle;
-import io.deephaven.time.DateTime;
+import io.deephaven.engine.table.Table;
+import io.deephaven.engine.testutil.testcase.RefreshingTableTestCase;
+import io.deephaven.engine.util.TableTools;
 import io.deephaven.gui.color.Color;
+import io.deephaven.plot.BaseFigureImpl;
 import io.deephaven.plot.datasets.data.IndexableNumericData;
 import io.deephaven.plot.datasets.data.IndexableNumericDataArrayDouble;
+import io.deephaven.plot.datasets.data.IndexableNumericDataArrayInstant;
 import io.deephaven.plot.datasets.xy.TestAbstractXYDataSeries;
 import io.deephaven.plot.util.tables.SwappableTable;
+import io.deephaven.plot.util.tables.TableBackedPartitionedTableHandle;
 import io.deephaven.plot.util.tables.TableHandle;
-import io.deephaven.engine.table.Table;
-import io.deephaven.engine.util.TableTools;
+import io.deephaven.time.DateTimeUtils;
 
+import java.time.Instant;
 import java.util.ArrayList;
 
-public class TestOHLCDataSeries extends BaseArrayTestCase {
-    private final DateTime[] datesA = {new DateTime(DateTimeUtils.DAY), new DateTime(2 * DateTimeUtils.DAY),
-            new DateTime(3 * DateTimeUtils.DAY), new DateTime(4 * DateTimeUtils.DAY)};
+public class TestOHLCDataSeries extends RefreshingTableTestCase {
+    private final Instant[] datesA = {
+            DateTimeUtils.epochNanosToInstant(DateTimeUtils.DAY),
+            DateTimeUtils.epochNanosToInstant(2 * DateTimeUtils.DAY),
+            DateTimeUtils.epochNanosToInstant(3 * DateTimeUtils.DAY),
+            DateTimeUtils.epochNanosToInstant(4 * DateTimeUtils.DAY)
+    };
     private final double[] openA = {1.0, 2.0, 1.5, 2.0};
     private final double[] closeA = {1.8, 1.8, 1.7, 2.2};
     private final double[] highA = {2.0, 2.0, 1.8, 2.5};
     private final double[] lowA = {0.9, 1.5, 1.5, 1.8};
-    private final IndexableNumericData dates = new IndexableNumericDataArrayDateTime(datesA, null);
+    private final IndexableNumericData dates = new IndexableNumericDataArrayInstant(datesA, null);
     private final IndexableNumericData open = new IndexableNumericDataArrayDouble(openA, null);
     private final IndexableNumericData close = new IndexableNumericDataArrayDouble(closeA, null);
     private final IndexableNumericData high = new IndexableNumericDataArrayDouble(highA, null);
@@ -39,21 +42,17 @@ public class TestOHLCDataSeries extends BaseArrayTestCase {
     private final OHLCDataSeriesInternal dataSeries2 = new OHLCDataSeriesArray(
             new BaseFigureImpl().newChart().newAxes(), 1, "Test2", dates, close, high, low, open);
 
-
-    @Override
-    public void setUp() {}
-
     public void testOHLCDataSeriesArray() {
         checkOHLCDataSeriesArray(dataSeries, datesA, openA, highA, lowA, closeA);
         checkOHLCDataSeriesArray(dataSeries2, datesA, closeA, highA, lowA, openA);
     }
 
-    private void checkOHLCDataSeriesArray(OHLCDataSeriesInternal dataSeries, DateTime[] time, double[] open,
+    private void checkOHLCDataSeriesArray(OHLCDataSeriesInternal dataSeries, Instant[] time, double[] open,
             double[] high, double[] low, double[] close) {
         assertEquals(dataSeries.size(), time.length);
 
         for (int i = 0; i < dataSeries.size(); i++) {
-            assertEquals(dataSeries.getX(i), (double) time[i].getNanos());
+            assertEquals(dataSeries.getX(i), (double) DateTimeUtils.epochNanos(time[i]));
             assertEquals(dataSeries.getY(i), close[i]);
             assertEquals(dataSeries.getOpen(i), open[i]);
             assertEquals(dataSeries.getHigh(i), high[i]);
@@ -80,12 +79,10 @@ public class TestOHLCDataSeries extends BaseArrayTestCase {
         ohlc2.addTableHandle(new TableHandle(TableTools.emptyTable(2).updateView("A=i", "B=i"), "A", "B"));
         ohlc2.addTableHandle(new TableHandle(TableTools.emptyTable(2).updateView("C=i"), "C"));
         final SwappableTable swappableTable =
-                new SwappableTable(new TableBackedTableMapHandle(TableTools.emptyTable(2).updateView("A=i", "B=i"),
-                        new ArrayList<>(), new String[0], null) {}) {
+                new SwappableTable(new TableBackedPartitionedTableHandle(
+                        TableTools.emptyTable(2).updateView("A=i", "B=i"), new ArrayList<>(), new String[0], null)) {
                     @Override
-                    public void addColumn(String column) {
-
-                    }
+                    public void addColumn(String column) {}
                 };
         ohlc2.addSwappableTable(swappableTable);
 

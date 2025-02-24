@@ -1,7 +1,9 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl;
 
 import io.deephaven.base.verify.Assert;
-import io.deephaven.datastructures.util.CollectionUtil;
 import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.engine.rowset.RowSetFactory;
 import io.deephaven.engine.rowset.RowSetShiftData;
@@ -9,8 +11,6 @@ import io.deephaven.engine.rowset.TrackingWritableRowSet;
 import io.deephaven.engine.table.ModifiedColumnSet;
 import io.deephaven.engine.table.Table;
 import io.deephaven.engine.table.TableUpdate;
-import io.deephaven.engine.updategraph.UpdateGraphProcessor;
-import io.deephaven.engine.updategraph.NotificationQueue;
 import io.deephaven.engine.table.impl.sources.SwitchColumnSource;
 import io.deephaven.engine.table.impl.sources.sparse.SparseConstants;
 import io.deephaven.util.annotations.VisibleForTesting;
@@ -95,7 +95,7 @@ public class SelectOverheadLimiter {
             return input.flatten();
         }
 
-        UpdateGraphProcessor.DEFAULT.checkInitiateTableOperation();
+        input.getUpdateGraph().checkInitiateSerialTableOperation();
 
         // now we know we are refreshing, so should update our overhead structure
         final OverheadTracker overheadTracker = new OverheadTracker();
@@ -115,12 +115,12 @@ public class SelectOverheadLimiter {
 
         final MutableObject<ListenerRecorder> inputRecorder =
                 new MutableObject<>(new ListenerRecorder("clampSelectOverhead.input()", input, result));
-        input.listenForUpdates(inputRecorder.getValue());
+        input.addUpdateListener(inputRecorder.getValue());
         final List<ListenerRecorder> recorders = Collections.synchronizedList(new ArrayList<>());
         recorders.add(inputRecorder.getValue());
 
         final MergedListener mergedListener = new MergedListener(recorders,
-                Collections.singletonList((NotificationQueue.Dependency) input), "clampSelectOverhead", result) {
+                Collections.singletonList(input), "clampSelectOverhead", result) {
             Table flatResult = null;
             ListenerRecorder flatRecorder;
             ModifiedColumnSet.Transformer flatTransformer;
@@ -129,7 +129,7 @@ public class SelectOverheadLimiter {
             {
                 inputRecorder.getValue().setMergedListener(this);
                 inputTransformer = ((QueryTable) input).newModifiedColumnSetTransformer(result,
-                        result.getColumnSourceMap().keySet().toArray(CollectionUtil.ZERO_LENGTH_STRING_ARRAY));
+                        result.getDefinition().getColumnNamesArray());
             }
 
             @Override
@@ -139,8 +139,8 @@ public class SelectOverheadLimiter {
                     rowSet.remove(upstream.removed());
                     upstream.shifted().apply(rowSet);
                     rowSet.insert(upstream.added());
-                    final TableUpdateImpl copy = TableUpdateImpl.copy(upstream);
-                    copy.modifiedColumnSet = result.getModifiedColumnSetForUpdates();
+                    final TableUpdateImpl copy =
+                            TableUpdateImpl.copy(upstream, result.getModifiedColumnSetForUpdates());
                     flatTransformer.clearAndTransform(upstream.modifiedColumnSet(), copy.modifiedColumnSet());
                     result.notifyListeners(copy);
                     return;
@@ -155,8 +155,8 @@ public class SelectOverheadLimiter {
                 rowSet.insert(upstream.added());
 
                 if (overheadTracker.overhead() <= permittedOverhead) {
-                    final TableUpdateImpl copy = TableUpdateImpl.copy(upstream);
-                    copy.modifiedColumnSet = result.getModifiedColumnSetForUpdates();
+                    final TableUpdateImpl copy =
+                            TableUpdateImpl.copy(upstream, result.getModifiedColumnSetForUpdates());
                     inputTransformer.clearAndTransform(upstream.modifiedColumnSet(), copy.modifiedColumnSet());
                     result.notifyListeners(copy);
                     return;
@@ -169,9 +169,9 @@ public class SelectOverheadLimiter {
                         new ListenerRecorder("clampSelectOverhead.flatResult()", flatResult, result);
                 flatRecorder.setMergedListener(this);
                 flatTransformer = ((QueryTable) flatResult).newModifiedColumnSetTransformer(result,
-                        result.getColumnSourceMap().keySet().toArray(CollectionUtil.ZERO_LENGTH_STRING_ARRAY));
+                        result.getDefinition().getColumnNamesArray());
 
-                flatResult.listenForUpdates(flatRecorder);
+                flatResult.addUpdateListener(flatRecorder);
                 synchronized (recorders) {
                     recorders.clear();
                     recorders.add(flatRecorder);

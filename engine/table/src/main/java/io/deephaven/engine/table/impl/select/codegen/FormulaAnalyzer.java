@@ -1,58 +1,81 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.select.codegen;
 
-import io.deephaven.datastructures.util.CollectionUtil;
+import io.deephaven.api.util.NameValidator;
+import io.deephaven.engine.context.ExecutionContext;
+import io.deephaven.engine.context.QueryLibrary;
 import io.deephaven.engine.table.ColumnDefinition;
 import io.deephaven.engine.table.impl.lang.QueryLanguageParser;
 import io.deephaven.engine.table.impl.select.QueryScopeParamTypeUtil;
-import io.deephaven.engine.table.lang.QueryScopeParam;
-import io.deephaven.time.DateTimeUtils;
+import io.deephaven.time.TimeLiteralReplacedExpression;
 import io.deephaven.vector.ObjectVector;
-import io.deephaven.engine.table.lang.QueryLibrary;
-import io.deephaven.engine.table.lang.QueryScope;
 import io.deephaven.engine.table.impl.select.DhFormulaColumn;
-import io.deephaven.engine.table.impl.select.FormulaCompilationException;
 import io.deephaven.engine.table.impl.select.formula.FormulaSourceDescriptor;
-import io.deephaven.engine.table.WritableColumnSource;
-import io.deephaven.engine.rowset.TrackingWritableRowSet;
 import io.deephaven.internal.log.LoggerFactory;
 import io.deephaven.io.logger.Logger;
+import org.jetbrains.annotations.NotNull;
 
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.*;
+import java.util.function.BiConsumer;
+
+import static io.deephaven.engine.table.impl.select.AbstractFormulaColumn.COLUMN_SUFFIX;
 
 public class FormulaAnalyzer {
     private static final Logger log = LoggerFactory.getLogger(FormulaAnalyzer.class);
 
-    public static Result analyze(final String rawFormulaString,
-            final Map<String, ColumnDefinition<?>> columnDefinitionMap,
-            Map<String, Class<?>> otherVariables) {
-        try {
-            return analyzeHelper(rawFormulaString, columnDefinitionMap, otherVariables);
-        } catch (Exception e) {
-            throw new FormulaCompilationException("Formula compilation error for: " + rawFormulaString, e);
+    /**
+     * A container to hold a single copy of imports required to compile formulas for one operation.
+     */
+    public static final class Imports {
+        private final Map<String, Object> queryScopeVariables;
+        private final Collection<Package> packageImports;
+        private final Collection<Class<?>> classImports;
+        private final Collection<Class<?>> staticImports;
+
+        public Imports() {
+            final ExecutionContext context = ExecutionContext.getContext();
+            queryScopeVariables = Collections.unmodifiableMap(
+                    context.getQueryScope().toMap((name, value) -> NameValidator.isValidQueryParameterName(name)));
+            final QueryLibrary queryLibrary = context.getQueryLibrary();
+            packageImports = Set.copyOf(queryLibrary.getPackageImports());
+            classImports = Set.copyOf(queryLibrary.getClassImports());
+            staticImports = Set.copyOf(queryLibrary.getStaticImports());
+        }
+
+        public Map<String, Object> getQueryScopeVariables() {
+            return queryScopeVariables;
+        }
+
+        public Collection<Package> getPackageImports() {
+            return packageImports;
+        }
+
+        public Collection<Class<?>> getClassImports() {
+            return classImports;
+        }
+
+        public Collection<Class<?>> getStaticImports() {
+            return staticImports;
         }
     }
 
-    private static Result analyzeHelper(final String rawFormulaString,
+    public static Result analyze(final String rawFormulaString,
             final Map<String, ColumnDefinition<?>> columnDefinitionMap,
-            Map<String, Class<?>> otherVariables) throws Exception {
-        final Map<String, QueryScopeParam<?>> possibleParams = new HashMap<>();
-        final QueryScope queryScope = QueryScope.getScope();
-        for (QueryScopeParam<?> param : queryScope.getParams(queryScope.getParamNames())) {
-            possibleParams.put(param.getName(), param);
-        }
+            final QueryLanguageParser.Result queryLanguageResult) {
 
-        final DateTimeUtils.Result timeConversionResult = DateTimeUtils.convertExpression(rawFormulaString);
-        final QueryLanguageParser.Result result = getCompiledFormula(columnDefinitionMap, timeConversionResult,
-                otherVariables);
-
-        log.debug().append("Expression (after language conversion) : ").append(result.getConvertedExpression()).endl();
+        log.debug().append("Expression (after language conversion) : ")
+                .append(queryLanguageResult.getConvertedExpression())
+                .append(" isConstantValueExpression=").append(queryLanguageResult.isConstantValueExpression())
+                .endl();
 
         final List<String> usedColumns = new ArrayList<>();
         final List<String> userParams = new ArrayList<>();
         final List<String> usedColumnArrays = new ArrayList<>();
-        for (String variable : result.getVariablesUsed()) {
+        for (String variable : queryLanguageResult.getVariablesUsed()) {
             final String colSuffix = DhFormulaColumn.COLUMN_SUFFIX;
             final String bareName;
             if (variable.equals("i") || variable.equals("ii") || variable.equals("k")) {
@@ -63,48 +86,139 @@ public class FormulaAnalyzer {
                     null != columnDefinitionMap
                             .get(bareName = variable.substring(0, variable.length() - colSuffix.length()))) {
                 usedColumnArrays.add(bareName);
-            } else if (possibleParams.containsKey(variable)) {
+            } else if (queryLanguageResult.getPossibleParams().containsKey(variable)) {
                 userParams.add(variable);
             }
         }
-        Class<?> returnedType = result.getType();
+        Class<?> returnedType = queryLanguageResult.getType();
         if (returnedType == boolean.class) {
             returnedType = Boolean.class;
         }
-        final String cookedFormulaString = result.getConvertedExpression();
-        final String timeInstanceVariables = timeConversionResult.getInstanceVariablesString();
+        final String cookedFormulaString = queryLanguageResult.getConvertedExpression();
+        final String timeInstanceVariables = queryLanguageResult.getTimeConversionResult().getInstanceVariablesString();
         return new Result(returnedType,
-                usedColumns.toArray(CollectionUtil.ZERO_LENGTH_STRING_ARRAY),
-                usedColumnArrays.toArray(CollectionUtil.ZERO_LENGTH_STRING_ARRAY),
-                userParams.toArray(CollectionUtil.ZERO_LENGTH_STRING_ARRAY),
-                rawFormulaString, cookedFormulaString, timeInstanceVariables);
+                usedColumns.toArray(String[]::new),
+                usedColumnArrays.toArray(String[]::new),
+                userParams.toArray(String[]::new),
+                rawFormulaString, cookedFormulaString, timeInstanceVariables,
+                queryLanguageResult.isConstantValueExpression());
     }
 
-    public static QueryLanguageParser.Result getCompiledFormula(Map<String, ColumnDefinition<?>> availableColumns,
-            DateTimeUtils.Result timeConversionResult,
-            Map<String, Class<?>> otherVariables) throws Exception {
+    /**
+     * Get the compiled formula for a given formula string.
+     *
+     * @param formulaString The raw formula string
+     * @param availableColumns The columns available for use in the formula
+     * @param columnRenames Outer to inner column name mapping
+     * @param imports The query scope variables, package, class, and static imports
+     * @return The parsed formula {@link QueryLanguageParser.Result result}
+     * @throws Exception If the formula cannot be parsed
+     */
+    public static QueryLanguageParser.Result parseFormula(
+            @NotNull final String formulaString,
+            @NotNull final Map<String, ColumnDefinition<?>> availableColumns,
+            @NotNull final Map<String, String> columnRenames,
+            @NotNull final Imports imports) throws Exception {
+        return parseFormula(formulaString, availableColumns, columnRenames, imports, true);
+    }
+
+    /**
+     * Get the compiled formula for a given formula string.
+     *
+     * @param formulaString The raw formula string
+     * @param availableColumns The columns available for use in the formula
+     * @param columnRenames Outer to inner column name mapping
+     * @param imports The query scope variables, package, class, and static imports
+     * @param unboxArguments If true it will unbox the query scope arguments
+     * @return The parsed formula {@link QueryLanguageParser.Result result}
+     * @throws Exception If the formula cannot be parsed
+     */
+    public static QueryLanguageParser.Result parseFormula(
+            @NotNull final String formulaString,
+            @NotNull final Map<String, ColumnDefinition<?>> availableColumns,
+            @NotNull final Map<String, String> columnRenames,
+            @NotNull final Imports imports,
+            final boolean unboxArguments) throws Exception {
+
+        final TimeLiteralReplacedExpression timeConversionResult =
+                TimeLiteralReplacedExpression.convertExpression(formulaString);
+
         final Map<String, Class<?>> possibleVariables = new HashMap<>();
         possibleVariables.put("i", int.class);
         possibleVariables.put("ii", long.class);
         possibleVariables.put("k", long.class);
 
+        final Set<String> columnVariables = new HashSet<>();
+        columnVariables.add("i");
+        columnVariables.add("ii");
+        columnVariables.add("k");
+
         final Map<String, Class<?>[]> possibleVariableParameterizedTypes = new HashMap<>();
 
-        for (ColumnDefinition<?> columnDefinition : availableColumns.values()) {
-            final String columnSuffix = DhFormulaColumn.COLUMN_SUFFIX;
-            final Class<?> vectorType = DhFormulaColumn.getVectorType(columnDefinition.getDataType());
-
-            possibleVariables.put(columnDefinition.getName() + columnSuffix, vectorType);
-
-            if (vectorType == ObjectVector.class) {
-                possibleVariableParameterizedTypes.put(columnDefinition.getName() + columnSuffix,
-                        new Class[] {columnDefinition.getDataType()});
+        // Column names get the highest priority.
+        final BiConsumer<String, ColumnDefinition<?>> processColumn = (columnName, column) -> {
+            if (!columnVariables.add(columnName)) {
+                // this column was renamed
+                return;
             }
+
+            possibleVariables.put(columnName, column.getDataType());
+
+            final Class<?> compType = column.getComponentType();
+            if (compType != null && !compType.isPrimitive()) {
+                possibleVariableParameterizedTypes.put(columnName, new Class[] {compType});
+            }
+        };
+
+        // Renames trump the original columns; so they go first.
+        for (Map.Entry<String, String> columnRename : columnRenames.entrySet()) {
+            final String columnName = columnRename.getKey();
+            final ColumnDefinition<?> column = availableColumns.get(columnRename.getValue());
+            processColumn.accept(columnName, column);
         }
 
-        final QueryScope queryScope = QueryScope.getScope();
-        for (QueryScopeParam<?> param : queryScope.getParams(queryScope.getParamNames())) {
-            possibleVariables.put(param.getName(), QueryScopeParamTypeUtil.getDeclaredClass(param.getValue()));
+        // Now process the original columns.
+        for (ColumnDefinition<?> columnDefinition : availableColumns.values()) {
+            processColumn.accept(columnDefinition.getName(), columnDefinition);
+        }
+
+        // Column arrays come between columns and parameters.
+        final BiConsumer<String, ColumnDefinition<?>> processColumnArray = (columnName, column) -> {
+            final String columnArrayName = columnName + COLUMN_SUFFIX;
+
+            if (!columnVariables.add(columnArrayName)) {
+                // Either this is a rename or overloads an existing column name.
+                return;
+            }
+
+            final Class<?> vectorType = DhFormulaColumn.getVectorType(column.getDataType());
+            possibleVariables.put(columnArrayName, vectorType);
+
+            if (vectorType == ObjectVector.class) {
+                possibleVariableParameterizedTypes.put(columnArrayName, new Class[] {column.getDataType()});
+            }
+        };
+
+        // Renames still trump the original columns; so they go first.
+        for (Map.Entry<String, String> columnRename : columnRenames.entrySet()) {
+            final String columnName = columnRename.getKey();
+            final ColumnDefinition<?> column = availableColumns.get(columnRename.getValue());
+            processColumnArray.accept(columnName, column);
+        }
+
+        // Now process the original columns.
+        for (ColumnDefinition<?> columnDefinition : availableColumns.values()) {
+            processColumnArray.accept(columnDefinition.getName(), columnDefinition);
+        }
+
+        // Parameters come last.
+        for (Map.Entry<String, Object> param : imports.queryScopeVariables.entrySet()) {
+            if (possibleVariables.containsKey(param.getKey())) {
+                // Columns and column arrays take precedence over parameters.
+                continue;
+            }
+
+            possibleVariables.put(param.getKey(), QueryScopeParamTypeUtil.getDeclaredClass(param.getValue()));
 
             Type declaredType = QueryScopeParamTypeUtil.getDeclaredType(param.getValue());
             if (declaredType instanceof ParameterizedType) {
@@ -112,34 +226,19 @@ public class FormulaAnalyzer {
                 Class<?>[] paramTypes = Arrays.stream(pt.getActualTypeArguments())
                         .map(QueryScopeParamTypeUtil::classFromType)
                         .toArray(Class<?>[]::new);
-                possibleVariableParameterizedTypes.put(param.getName(), paramTypes);
+                possibleVariableParameterizedTypes.put(param.getKey(), paramTypes);
             }
         }
-
-        for (ColumnDefinition<?> columnDefinition : availableColumns.values()) {
-            possibleVariables.put(columnDefinition.getName(), columnDefinition.getDataType());
-            final Class<?> compType = columnDefinition.getComponentType();
-            if (compType != null && !compType.isPrimitive()) {
-                possibleVariableParameterizedTypes.put(columnDefinition.getName(), new Class[] {compType});
-            }
-        }
-
-        // log.debug().append("Expression (before) : ").append(formulaString).endl();
 
         log.debug().append("Expression (after time conversion) : ").append(timeConversionResult.getConvertedFormula())
                 .endl();
 
         possibleVariables.putAll(timeConversionResult.getNewVariables());
-        if (otherVariables != null) {
-            possibleVariables.putAll(otherVariables);
-        }
 
-        final Set<Class<?>> classImports = new HashSet<>(QueryLibrary.getClassImports());
-        classImports.add(TrackingWritableRowSet.class);
-        classImports.add(WritableColumnSource.class);
-        return new QueryLanguageParser(timeConversionResult.getConvertedFormula(), QueryLibrary.getPackageImports(),
-                classImports, QueryLibrary.getStaticImports(), possibleVariables, possibleVariableParameterizedTypes)
-                        .getResult();
+        return new QueryLanguageParser(timeConversionResult.getConvertedFormula(), imports.getPackageImports(),
+                imports.getClassImports(), imports.getStaticImports(), possibleVariables,
+                possibleVariableParameterizedTypes, imports.getQueryScopeVariables(), columnVariables, unboxArguments,
+                timeConversionResult).getResult();
     }
 
     public static class Result {
@@ -147,13 +246,16 @@ public class FormulaAnalyzer {
         public final String rawFormulaString;
         public final String cookedFormulaString;
         public final String timeInstanceVariables;
+        public final boolean isConstantValueFormula;
 
         public Result(Class<?> returnedType, String[] usedColumns, String[] usedArrays, String[] usedParams,
-                String rawFormulaString, String cookedFormulaString, String timeInstanceVariables) {
+                String rawFormulaString, String cookedFormulaString, String timeInstanceVariables,
+                boolean isConstantValueFormula) {
             this.sourceDescriptor = new FormulaSourceDescriptor(returnedType, usedColumns, usedArrays, usedParams);
             this.rawFormulaString = rawFormulaString;
             this.cookedFormulaString = cookedFormulaString;
             this.timeInstanceVariables = timeInstanceVariables;
+            this.isConstantValueFormula = isConstantValueFormula;
         }
     }
 }

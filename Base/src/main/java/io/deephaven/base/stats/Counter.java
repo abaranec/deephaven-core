@@ -1,10 +1,9 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.base.stats;
 
-import io.deephaven.base.Function;
+import java.util.function.LongFunction;
 
 // --------------------------------------------------------------------
 /**
@@ -21,7 +20,7 @@ import io.deephaven.base.Function;
  */
 public class Counter extends Value {
 
-    public static char TYPE_TAG = 'C';
+    public static final char TYPE_TAG = 'C';
 
     public Counter(long now) {
         super(now);
@@ -40,9 +39,5 @@ public class Counter extends Value {
         return TYPE_TAG;
     }
 
-    public static final Function.Unary<Counter, Long> FACTORY = new Function.Unary<Counter, Long>() {
-        public Counter call(Long now) {
-            return new Counter(now);
-        }
-    };
+    public static final LongFunction<Counter> FACTORY = Counter::new;
 }

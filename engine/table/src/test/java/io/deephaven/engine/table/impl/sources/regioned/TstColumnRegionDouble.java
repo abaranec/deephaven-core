@@ -1,12 +1,10 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit TstColumnRegionChar and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit TstColumnRegionChar and run "./gradlew replicateRegionAndRegionedSourceTests" to regenerate
+//
+// @formatter:off
 package io.deephaven.engine.table.impl.sources.regioned;
 
 import io.deephaven.chunk.attributes.Values;
@@ -30,6 +28,11 @@ public class TstColumnRegionDouble {
     static class Identity implements ColumnRegionDouble<Values>, Page.WithDefaults<Values> {
 
         @Override
+        public void invalidate() {
+            // NOTHNG TO DO
+        }
+
+        @Override
         public long mask() {
             return Long.MAX_VALUE;
         }
@@ -40,13 +43,13 @@ public class TstColumnRegionDouble {
         }
 
         @Override
-        public void fillChunkAppend(@NotNull FillContext context, @NotNull WritableChunk<? super Values> destination, @NotNull RowSequence rowSequence) {
+        public void fillChunkAppend(@NotNull FillContext context, @NotNull WritableChunk<? super Values> destination,
+                @NotNull RowSequence rowSequence) {
             WritableDoubleChunk<? super Values> doubleDestination = destination.asWritableDoubleChunk();
             int size = destination.size();
             int length = (int) rowSequence.size();
 
-            rowSequence.forAllRowKeys(key ->
-            {
+            rowSequence.forAllRowKeys(key -> {
                 for (int i = 0; i < length; ++i) {
                     doubleDestination.set(size + i, (double) key);
                 }
@@ -79,12 +82,14 @@ public class TstColumnRegionDouble {
         @Override
         public void setUp() throws Exception {
             super.setUp();
-            //noinspection unchecked
+            // noinspection unchecked
             regionSupplier = mock(Supplier.class, "R1");
-            checking(new Expectations() {{
-                oneOf(regionSupplier).get();
-                will(returnValue(new Identity()));
-            }});
+            checking(new Expectations() {
+                {
+                    oneOf(regionSupplier).get();
+                    will(returnValue(new Identity()));
+                }
+            });
             SUT = new DeferredColumnRegionDouble<>(Long.MAX_VALUE, regionSupplier);
         }
 

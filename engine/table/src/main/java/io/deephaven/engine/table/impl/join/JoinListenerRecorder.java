@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.join;
 
 import io.deephaven.engine.table.Table;
@@ -19,6 +18,6 @@ import io.deephaven.engine.table.impl.ListenerRecorder;
 public class JoinListenerRecorder extends ListenerRecorder {
 
     public JoinListenerRecorder(boolean isLeft, final String description, Table parent, BaseTable dependent) {
-        super(isLeft ? "leftTable: " : "rightTable: " + description, parent, dependent);
+        super((isLeft ? "leftTable: " : "rightTable: ") + description, parent, dependent);
     }
 }

@@ -1,8 +1,12 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources.regioned;
 
 import io.deephaven.chunk.attributes.Any;
 import io.deephaven.chunk.ChunkType;
 import io.deephaven.chunk.WritableChunk;
+import io.deephaven.engine.page.PagingContextHolder;
 import io.deephaven.util.QueryConstants;
 import io.deephaven.util.annotations.FinalDefault;
 import org.jetbrains.annotations.NotNull;
@@ -25,8 +29,8 @@ public interface ColumnRegionByte<ATTR extends Any> extends ColumnRegion<ATTR> {
     /**
      * Get a single byte from this region.
      *
-     * @param context      A {@link RegionContextHolder} to enable resource caching where suitable, with current
-     *                     region index pointing to this region
+     * @param context A {@link PagingContextHolder} to enable resource caching where suitable, with current region index
+     *        pointing to this region
      * @param elementIndex Element row key in the table's address space
      * @return The byte value at the specified element row ket
      */
@@ -39,16 +43,15 @@ public interface ColumnRegionByte<ATTR extends Any> extends ColumnRegion<ATTR> {
      * meaningful.
      *
      * @param firstElementIndex First element row keyt in the table's address space
-     * @param destination       Array to store results
+     * @param destination Array to store results
      * @param destinationOffset Offset into {@code destination} to begin storing at
-     * @param length            Number of bytes to get
+     * @param length Number of bytes to get
      * @return {@code destination}, to enable method chaining
      */
     byte[] getBytes(long firstElementIndex,
-                    @NotNull byte[] destination,
-                    int destinationOffset,
-                    int length
-    );
+            @NotNull byte[] destination,
+            int destinationOffset,
+            int length);
 
     @Override
     @FinalDefault
@@ -57,13 +60,14 @@ public interface ColumnRegionByte<ATTR extends Any> extends ColumnRegion<ATTR> {
     }
 
     static <ATTR extends Any> ColumnRegionByte<ATTR> createNull(final long pageMask) {
-        //noinspection unchecked
+        // noinspection unchecked
         return pageMask == Null.DEFAULT_INSTANCE.mask() ? Null.DEFAULT_INSTANCE : new Null<ATTR>(pageMask);
     }
 
     final class Null<ATTR extends Any> extends ColumnRegion.Null<ATTR> implements ColumnRegionByte<ATTR> {
         @SuppressWarnings("rawtypes")
-        private static final ColumnRegionByte DEFAULT_INSTANCE = new ColumnRegionByte.Null(RegionedColumnSourceBase.PARAMETERS.regionMask);
+        private static final ColumnRegionByte DEFAULT_INSTANCE =
+                new ColumnRegionByte.Null(RegionedColumnSourceBase.PARAMETERS.regionMask);
 
         private Null(final long pageMask) {
             super(pageMask);
@@ -75,7 +79,8 @@ public interface ColumnRegionByte<ATTR extends Any> extends ColumnRegion<ATTR> {
         }
 
         @Override
-        public byte[] getBytes(final long firstElementIndex, @NotNull final byte[] destination, final int destinationOffset, final int length) {
+        public byte[] getBytes(final long firstElementIndex, @NotNull final byte[] destination,
+                final int destinationOffset, final int length) {
             Arrays.fill(destination, destinationOffset, destinationOffset + length, QueryConstants.NULL_BYTE);
             return destination;
         }
@@ -98,14 +103,16 @@ public interface ColumnRegionByte<ATTR extends Any> extends ColumnRegion<ATTR> {
         }
 
         @Override
-        public void fillChunkAppend(@NotNull final FillContext context, @NotNull final WritableChunk<? super ATTR> destination, final int length) {
+        public void fillChunkAppend(@NotNull final FillContext context,
+                @NotNull final WritableChunk<? super ATTR> destination, final int length) {
             final int offset = destination.size();
             destination.asWritableByteChunk().fillWithValue(offset, length, value);
             destination.setSize(offset + length);
         }
 
         @Override
-        public byte[] getBytes(final long firstElementIndex, @NotNull final byte[] destination, final int destinationOffset, final int length) {
+        public byte[] getBytes(final long firstElementIndex, @NotNull final byte[] destination,
+                final int destinationOffset, final int length) {
             Arrays.fill(destination, destinationOffset, destinationOffset + length, value);
             return destination;
         }
@@ -120,6 +127,13 @@ public interface ColumnRegionByte<ATTR extends Any> extends ColumnRegion<ATTR> {
         }
 
         @Override
+        public void invalidate() {
+            for (int ii = 0; ii < getRegionCount(); ii++) {
+                getRegion(ii).invalidate();
+            }
+        }
+
+        @Override
         public byte getByte(final long elementIndex) {
             return lookupRegion(elementIndex).getByte(elementIndex);
         }
@@ -130,7 +144,8 @@ public interface ColumnRegionByte<ATTR extends Any> extends ColumnRegion<ATTR> {
         }
 
         @Override
-        public byte[] getBytes(final long firstElementIndex, @NotNull final byte[] destination, final int destinationOffset, final int length) {
+        public byte[] getBytes(final long firstElementIndex, @NotNull final byte[] destination,
+                final int destinationOffset, final int length) {
             return lookupRegion(firstElementIndex).getBytes(firstElementIndex, destination, destinationOffset, length);
         }
     }

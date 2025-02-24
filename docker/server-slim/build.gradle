@@ -2,7 +2,7 @@ import io.deephaven.tools.License
 
 plugins {
     id 'com.bmuschko.docker-remote-api'
-    id 'base'
+    id 'io.deephaven.project.register'
 }
 
 evaluationDependsOn Docker.registryProject('slim-base')
@@ -12,7 +12,7 @@ configurations {
 }
 
 dependencies {
-    serverApplicationDist project(path: ':server-netty', configuration: 'applicationDist')
+    serverApplicationDist project(path: ':server-netty-app', configuration: 'applicationDist')
 }
 
 def dockerContext = project.layout.buildDirectory.dir('context')

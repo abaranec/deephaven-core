@@ -1,14 +1,17 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.rowset.impl;
 
 import io.deephaven.base.verify.Assert;
 import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.engine.rowset.chunkattributes.OrderedRowKeyRanges;
-import io.deephaven.engine.rowset.chunkattributes.RowKeys;
+import io.deephaven.engine.rowset.chunkattributes.OrderedRowKeys;
 import io.deephaven.util.datastructures.LongAbortableConsumer;
 import io.deephaven.engine.rowset.RowSequence;
 import io.deephaven.chunk.WritableLongChunk;
 import io.deephaven.util.datastructures.LongRangeAbortableConsumer;
-import org.apache.commons.lang3.mutable.MutableInt;
+import io.deephaven.util.mutable.MutableInt;
 
 public class ShiftedRowSequence extends RowSequenceAsChunkImpl implements RowSequence {
 
@@ -36,7 +39,7 @@ public class ShiftedRowSequence extends RowSequenceAsChunkImpl implements RowSeq
         this.wrappedOK = null;
     }
 
-    public void reset(RowSequence toWrap, long shiftAmount) {
+    public RowSequence reset(RowSequence toWrap, long shiftAmount) {
         if (toWrap instanceof ShiftedRowSequence) {
             final ShiftedRowSequence orig = ((ShiftedRowSequence) toWrap);
             this.shiftAmount = shiftAmount + orig.shiftAmount;
@@ -46,6 +49,7 @@ public class ShiftedRowSequence extends RowSequenceAsChunkImpl implements RowSeq
             this.wrappedOK = toWrap;
         }
         invalidateRowSequenceAsChunkImpl();
+        return this;
     }
 
     public final void clear() {
@@ -102,7 +106,7 @@ public class ShiftedRowSequence extends RowSequenceAsChunkImpl implements RowSeq
     }
 
     @Override
-    public Iterator getRowSequenceIterator() {
+    public RowSequence.Iterator getRowSequenceIterator() {
         return new Iterator();
     }
 
@@ -127,7 +131,7 @@ public class ShiftedRowSequence extends RowSequenceAsChunkImpl implements RowSeq
     }
 
     @Override
-    public void fillRowKeyChunk(WritableLongChunk<? extends RowKeys> chunkToFill) {
+    public void fillRowKeyChunk(WritableLongChunk<? super OrderedRowKeys> chunkToFill) {
         wrappedOK.fillRowKeyChunk(chunkToFill);
         shiftIndicesChunk(chunkToFill);
     }
@@ -175,7 +179,7 @@ public class ShiftedRowSequence extends RowSequenceAsChunkImpl implements RowSeq
 
     @Override
     public void close() {
-        closeRowSequenceAsChunkImpl();
+        super.close();
         clear();
     }
 
@@ -183,10 +187,10 @@ public class ShiftedRowSequence extends RowSequenceAsChunkImpl implements RowSeq
     public long rangesCountUpperBound() {
         final MutableInt mi = new MutableInt(0);
         wrappedOK.forAllRowKeyRanges((final long start, final long end) -> mi.increment());
-        return mi.intValue();
+        return mi.get();
     }
 
-    private void shiftIndicesChunk(WritableLongChunk<? extends RowKeys> chunkToFill) {
+    private void shiftIndicesChunk(WritableLongChunk<? super OrderedRowKeys> chunkToFill) {
         for (int ii = 0; ii < chunkToFill.size(); ++ii) {
             chunkToFill.set(ii, chunkToFill.get(ii) + shiftAmount);
         }

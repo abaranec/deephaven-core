@@ -1,14 +1,13 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.base.stats;
 
-import io.deephaven.base.Function;
+import java.util.function.BiFunction;
 
 public class HistogramState extends State {
 
-    public static char TYPE_TAG = 'H';
+    public static final char TYPE_TAG = 'H';
 
     private long rangeMin, rangeMax;
     private double rangeBucket;
@@ -83,10 +82,5 @@ public class HistogramState extends State {
         }
     }
 
-    public static final Function.Binary<HistogramState, Long, Spec> FACTORY =
-            new Function.Binary<HistogramState, Long, Spec>() {
-                public HistogramState call(Long now, Spec spec) {
-                    return new HistogramState(now, spec);
-                }
-            };
+    public static final BiFunction<Long, Spec, HistogramState> FACTORY = HistogramState::new;
 }

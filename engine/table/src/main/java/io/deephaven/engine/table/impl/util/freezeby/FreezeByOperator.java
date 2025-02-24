@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2020 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.util.freezeby;
 
 import io.deephaven.chunk.attributes.ChunkLengths;
@@ -11,7 +10,6 @@ import io.deephaven.engine.table.ColumnSource;
 import io.deephaven.engine.table.TableUpdate;
 import io.deephaven.engine.table.WritableColumnSource;
 import io.deephaven.engine.rowset.chunkattributes.RowKeys;
-import io.deephaven.time.DateTime;
 import io.deephaven.engine.table.impl.by.IterativeChunkedAggregationOperator;
 import io.deephaven.engine.table.impl.sources.*;
 import io.deephaven.chunk.*;
@@ -19,6 +17,7 @@ import io.deephaven.engine.rowset.RowSequence;
 import io.deephaven.engine.rowset.RowSet;
 import org.jetbrains.annotations.NotNull;
 
+import java.time.Instant;
 import java.util.Collections;
 import java.util.Map;
 
@@ -117,8 +116,8 @@ public class FreezeByOperator implements IterativeChunkedAggregationOperator {
             case Double:
                 return new DoubleFreezeByHelper(source, rowCount);
             case Object:
-                if (source.getType() == DateTime.class) {
-                    return new LongFreezeByHelper(source, rowCount);
+                if (source.getType() == Instant.class) {
+                    return new LongFreezeByHelper(((NanosBasedTimeArraySource<?>) source).toEpochNano(), rowCount);
                 } else if (source.getType() == Boolean.class) {
                     return new BooleanFreezeByHelper(source, rowCount);
                 } else {

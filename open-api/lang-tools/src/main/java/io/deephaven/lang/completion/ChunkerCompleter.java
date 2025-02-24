@@ -1,11 +1,13 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.lang.completion;
 
+import io.deephaven.engine.context.QueryScope;
 import io.deephaven.engine.table.ColumnDefinition;
 import io.deephaven.engine.table.Table;
 import io.deephaven.engine.table.TableDefinition;
-import io.deephaven.engine.table.lang.QueryScope.MissingVariableException;
-import io.deephaven.time.DateTime;
-import io.deephaven.engine.util.VariableProvider;
+import io.deephaven.engine.context.QueryScope.MissingVariableException;
 import io.deephaven.io.logger.Logger;
 import io.deephaven.lang.api.HasScope;
 import io.deephaven.lang.api.IsScope;
@@ -19,6 +21,7 @@ import io.deephaven.proto.backplane.script.grpc.*;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.regex.Pattern;
@@ -41,16 +44,16 @@ public class ChunkerCompleter implements CompletionHandler {
     public static final String PROP_SUGGEST_STATIC_METHODS = "suggest.all.static.methods";
 
     private final Logger log;
-    private final VariableProvider variables;
+    private final QueryScope variables;
     private final CompletionLookups lookups;
     private String defaultQuoteType;
     private ParsedDocument doc;
 
-    public ChunkerCompleter(final Logger log, VariableProvider variables) {
-        this(log, variables, new CompletionLookups());
+    public ChunkerCompleter(final Logger log, QueryScope variables) {
+        this(log, variables, new CompletionLookups(Collections.emptySet()));
     }
 
-    public ChunkerCompleter(final Logger log, VariableProvider variables, CompletionLookups lookups) {
+    public ChunkerCompleter(final Logger log, QueryScope variables, CompletionLookups lookups) {
         this.log = log;
         this.variables = variables;
         this.lookups = lookups;
@@ -199,7 +202,7 @@ public class ChunkerCompleter implements CompletionHandler {
      * Due to this unfortunate complexity, we are doing this in a post-processing phase (here), so that individual
      * completion provider logic only has to handle "replace text X with Y", and we'll figure out the correct
      * incantation to keep monaco happy here.
-     * 
+     *
      * @param parsed The parsed document (bag of state related to the source document).
      * @param res A set of CompletionItem to fixup.
      * @param node The original node we started the search from (for ~O(1) token searching)
@@ -351,7 +354,7 @@ public class ChunkerCompleter implements CompletionHandler {
     }
 
 
-    private String sortable(int i) {
+    public static String sortable(int i) {
         StringBuilder res = new StringBuilder(Integer.toString(i, 36));
         while (res.length() < 5) {
             res.insert(0, "0");
@@ -571,7 +574,7 @@ public class ChunkerCompleter implements CompletionHandler {
             // no value for this assignment... offer up anything from scope.
             FuzzyList<String> sorted = new FuzzyList<>("");
 
-            for (String varName : variables.getVariableNames()) {
+            for (String varName : variables.getParamNames()) {
                 sorted.add(varName, varName);
             }
             for (String varName : sorted) {
@@ -590,7 +593,7 @@ public class ChunkerCompleter implements CompletionHandler {
             // Really, we should be adding all variable names like we do, then visiting all source,
             // removing anything which occurs later than here in source, and adding any assignments which
             // occur earlier in source-but-not-in-runtime-variable-pool. IDS-1517-23
-            for (String varName : variables.getVariableNames()) {
+            for (String varName : variables.getParamNames()) {
                 if (camelMatch(varName, startWith)) {
                     sorted.add(varName, varName);
                 }
@@ -636,6 +639,10 @@ public class ChunkerCompleter implements CompletionHandler {
             // user wants completion on the ident itself...
             String src = node.toSource();
             final Token tok = node.jjtGetFirstToken();
+            if (tok.startIndex > request.getCandidate()) {
+                // would result in a negative substring, abort
+                return;
+            }
             src = src.substring(0, request.getCandidate() - tok.startIndex);
             addMethodsAndVariables(results, node.jjtGetFirstToken(), request, Collections.singletonList(node), src);
         }
@@ -777,7 +784,7 @@ public class ChunkerCompleter implements CompletionHandler {
         // for now, this will be a naive replacement, but later we'll want to look at _where_
         // in the invoke the cursor is; when on the ending paren, we'd likely want to look at
         // whether we are the argument to something, and if so, do a type check, and suggest useful .coercions().
-        String name = node.getName().trim();
+        String name = node.getName();
 
         // Now, for our magic-named methods that we want to handle...
         boolean inArguments = node.isCursorInArguments(request.getCandidate());
@@ -876,7 +883,7 @@ public class ChunkerCompleter implements CompletionHandler {
     private void doVariableCompletion(Collection<CompletionItem.Builder> results, String variablePrefix,
             Token replacing, CompletionRequest request) {
         FuzzyList<String> sorter = new FuzzyList<>(variablePrefix);
-        for (String name : variables.getVariableNames()) {
+        for (String name : variables.getParamNames()) {
             if (!name.equals(variablePrefix) && camelMatch(name, variablePrefix)) {
                 // only suggest names which are camel-case-matches (ignoring same-as-existing-variable names)
                 sorter.add(name, name);
@@ -977,6 +984,9 @@ public class ChunkerCompleter implements CompletionHandler {
                 maybeColumnComplete(results, node, replaceNode, request, direction);
                 break;
         }
+        // Try to delegate to another implementation
+        lookups.getCustomCompletions().methodArgumentCompletion(this, node, replaceNode, request, direction, results);
+
         if (node.getEndIndex() < request.getOffset()) {
             // user's cursor is actually past the end of our method...
             Class<?> scopeType;
@@ -996,24 +1006,35 @@ public class ChunkerCompleter implements CompletionHandler {
 
     private Optional<Class<?>> resolveScopeType(
             CompletionRequest request, List<IsScope> scope) {
+        return resolveScopeType(request, scope, new HashSet<>());
+    }
+
+    private Optional<Class<?>> resolveScopeType(
+            CompletionRequest request, List<IsScope> scope, Set<List<IsScope>> alreadyVisited) {
         if (scope == null || scope.isEmpty()) {
             return Optional.empty();
         }
+        alreadyVisited.add(scope);
+
         IsScope o = scope.get(0);
 
-        final Class<?> type = variables.getVariableType(o.getName());
-        if (type != null) {
-            return Optional.of(type);
+        final Object instance = variables.readParamValue(o.getName(), null);
+        if (instance != null) {
+            if (instance instanceof Table) {
+                return Optional.of(Table.class);
+            }
+            return Optional.of(instance.getClass());
         }
         Optional<Class<?>> result = resolveScope(scope)
                 .map(Object::getClass);
         if (result.isPresent()) {
             return result;
         }
-        switch (o.getName()) {
-            // This used to be where we'd intercept certain well-known-service-variables, like "engine";
-            // leaving this here in case we have add and such service to the OSS completer.
+        Optional<Class<?>> customResult = lookups.getCustomCompletions().resolveScopeType(o);
+        if (customResult.isPresent()) {
+            return customResult;
         }
+
         // Ok, maybe the user hasn't run the query yet.
         // See if there's any named assign's that have a value of engine.i|t|etc
 
@@ -1022,8 +1043,8 @@ public class ChunkerCompleter implements CompletionHandler {
             // This is pretty hacky, but our only use case here is looking for table loads, so...
             if (assignment.getValue() instanceof IsScope) {
                 final List<IsScope> subscope = ((IsScope) assignment.getValue()).asScopeList();
-                if (!subscope.equals(scope)) {
-                    result = resolveScopeType(request, subscope);
+                if (alreadyVisited.add(subscope)) {
+                    result = resolveScopeType(request, subscope, alreadyVisited);
                     if (result.isPresent()) {
                         return result;
                     }
@@ -1081,7 +1102,7 @@ public class ChunkerCompleter implements CompletionHandler {
         // TODO: also handle static classes / variables only present in source (code not run yet) IDS-1517-23
         try {
 
-            final Object var = variables.getVariable(o.getName(), null);
+            final Object var = variables.readParamValue(o.getName(), null);
             if (var == null) {
                 return Optional.empty();
             }
@@ -1338,10 +1359,17 @@ public class ChunkerCompleter implements CompletionHandler {
             }
             return definition;
         } else if (previous instanceof ChunkerInvoke) {
+            ChunkerInvoke invoke = (ChunkerInvoke) previous;
             // recurse into each scope node and use the result of our parent's type to compute our own.
             // This allows us to hack in special support for statically analyzing expressions which return tables.
+            TableDefinition attempt = findTableDefinition(invoke.getScope(), offset);
 
-            return findTableDefinition(((ChunkerInvoke) previous).getScope(), offset);
+            if (attempt != null) {
+                return attempt;
+            }
+
+            // If that fails, try a custom implementation
+            return lookups.getCustomCompletions().resolveTableDefinition(invoke, offset).orElse(null);
         }
         return null;
     }
@@ -1357,21 +1385,15 @@ public class ChunkerCompleter implements CompletionHandler {
         if (scope != null && scope.size() > 0) {
             IsScope root = scope.get(0);
             if (root instanceof ChunkerIdent) {
-                if ("engine".equals(root.getName())) {
-                    if (scope.size() > 1) {
-                        root = scope.get(1);
-                    }
-                } else {
-                    // look for the table in binding
-                    final TableDefinition def = offset.getTableDefinition(this, doc, variables, root.getName());
-                    if (def != null) {
-                        final ColumnDefinition col = def.getColumn(columnName);
-                        if (col == null) {
-                            // might happen if user did someTable.update("NewCol=123").update("NewCol=
-                            // we can handle this by inspecting the scope chain, but leaving edge case out for now.
-                        } else {
-                            return col.getDataType();
-                        }
+                // look for the table in binding
+                final TableDefinition def = offset.getTableDefinition(this, doc, variables, root.getName());
+                if (def != null) {
+                    final ColumnDefinition col = def.getColumn(columnName);
+                    if (col == null) {
+                        // might happen if user did someTable.update("NewCol=123").update("NewCol=
+                        // we can handle this by inspecting the scope chain, but leaving edge case out for now.
+                    } else {
+                        return col.getDataType();
                     }
                 }
             }
@@ -1381,7 +1403,7 @@ public class ChunkerCompleter implements CompletionHandler {
             case "Date":
                 return String.class;
             case "Timestamp":
-                return DateTime.class;
+                return Instant.class;
         }
 
         // failure; allow anything...

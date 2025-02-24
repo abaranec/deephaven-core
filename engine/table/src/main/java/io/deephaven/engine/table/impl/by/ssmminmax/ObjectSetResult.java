@@ -1,13 +1,16 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit CharSetResult and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit CharSetResult and run "./gradlew replicateSegmentedSortedMultiset" to regenerate
+//
+// @formatter:off
 package io.deephaven.engine.table.impl.by.ssmminmax;
 
 import java.util.Objects;
+import io.deephaven.util.compare.ObjectComparisons;
 
-import io.deephaven.engine.table.impl.sources.ArrayBackedColumnSource;
+import io.deephaven.engine.table.WritableColumnSource;
 import io.deephaven.engine.table.impl.sources.ObjectArraySource;
 import io.deephaven.engine.table.impl.ssms.ObjectSegmentedSortedMultiset;
 import io.deephaven.engine.table.impl.ssms.SegmentedSortedMultiSet;
@@ -17,7 +20,7 @@ public class ObjectSetResult implements SsmChunkedMinMaxOperator.SetResult {
     private final boolean minimum;
     private final ObjectArraySource resultColumn;
 
-    public ObjectSetResult(boolean minimum, ArrayBackedColumnSource resultColumn) {
+    public ObjectSetResult(boolean minimum, WritableColumnSource resultColumn) {
         this.minimum = minimum;
         this.resultColumn = (ObjectArraySource) resultColumn;
     }

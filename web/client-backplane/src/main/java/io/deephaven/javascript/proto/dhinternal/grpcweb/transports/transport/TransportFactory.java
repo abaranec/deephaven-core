@@ -1,11 +1,11 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.javascript.proto.dhinternal.grpcweb.transports.transport;
 
-import jsinterop.annotations.JsPackage;
-import jsinterop.annotations.JsType;
+import jsinterop.annotations.JsFunction;
 
-@JsType(
-        isNative = true,
-        name = "dhinternal.grpcWeb.transports.Transport.TransportFactory",
-        namespace = JsPackage.GLOBAL)
+@JsFunction
 public interface TransportFactory {
+    Transport onInvoke(TransportOptions options);
 }

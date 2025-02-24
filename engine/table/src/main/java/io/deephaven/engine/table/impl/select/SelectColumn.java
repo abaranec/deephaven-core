@@ -1,20 +1,34 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.select;
 
 import io.deephaven.api.ColumnName;
 import io.deephaven.api.RawString;
 import io.deephaven.api.Selectable;
+import io.deephaven.api.Strings;
 import io.deephaven.api.expression.Expression;
-import io.deephaven.api.value.Value;
-import io.deephaven.engine.table.*;
-import io.deephaven.engine.table.WritableColumnSource;
+import io.deephaven.api.expression.Function;
+import io.deephaven.api.expression.Method;
+import io.deephaven.api.filter.Filter;
+import io.deephaven.api.literal.Literal;
+import io.deephaven.engine.context.ExecutionContext;
+import io.deephaven.engine.context.QueryCompiler;
 import io.deephaven.engine.rowset.TrackingRowSet;
+import io.deephaven.engine.table.ColumnDefinition;
+import io.deephaven.engine.table.ColumnSource;
+import io.deephaven.engine.table.impl.MatchPair;
+import io.deephaven.engine.table.WritableColumnSource;
+import io.deephaven.engine.table.impl.BaseTable;
+import io.deephaven.engine.table.impl.QueryCompilerRequestProcessor;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.*;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * The interface for a query table to perform retrieve values from a column for select like operations.
@@ -24,7 +38,7 @@ public interface SelectColumn extends Selectable {
     static SelectColumn of(Selectable selectable) {
         return (selectable instanceof SelectColumn)
                 ? (SelectColumn) selectable
-                : selectable.expression().walk(new ExpressionAdapter(selectable.newColumn())).getOut();
+                : selectable.expression().walk(new ExpressionAdapter(selectable.newColumn()));
     }
 
     static SelectColumn[] from(Selectable... selectables) {
@@ -35,19 +49,39 @@ public interface SelectColumn extends Selectable {
         return selectables.stream().map(SelectColumn::of).toArray(SelectColumn[]::new);
     }
 
+    static SelectColumn[] copyFrom(SelectColumn[] selectColumns) {
+        return Arrays.stream(selectColumns).map(SelectColumn::copy).toArray(SelectColumn[]::new);
+    }
+
+    static Collection<SelectColumn> copyFrom(Collection<SelectColumn> selectColumns) {
+        return selectColumns.stream().map(SelectColumn::copy).collect(Collectors.toList());
+    }
+
+    /**
+     * Produce a {@link #isStateless() stateless} SelectColumn from {@code selectable}.
+     * 
+     * @param selectable The {@link Selectable} to adapt and mark as stateless
+     * @return The resulting SelectColumn
+     */
+    static SelectColumn ofStateless(@NotNull final Selectable selectable) {
+        return new StatelessSelectColumn(of(selectable));
+    }
+
+    /**
+     * Produce a SelectColumn that {@link #recomputeOnModifiedRow()} recomputes values on any modified row} from
+     * {@code selectable}.
+     *
+     * @param selectable The {@link Selectable} to adapt and mark as requiring row-level recomputation
+     * @return The resulting SelectColumn
+     */
+    static SelectColumn ofRecomputeOnModifiedRow(Selectable selectable) {
+        return new RecomputeOnModifiedRowSelectColumn(of(selectable));
+    }
+
     /**
      * Convenient static final instance of a zero length Array of SelectColumns for use in toArray calls.
      */
     SelectColumn[] ZERO_LENGTH_SELECT_COLUMN_ARRAY = new SelectColumn[0];
-
-    /**
-     * Initialize the SelectColumn using the input table and return a list of underlying columns that this SelectColumn
-     * is dependent upon.
-     *
-     * @param table the table to initialize internals from
-     * @return a list containing all columns from 'table' that the result depends on
-     */
-    List<String> initInputs(Table table);
 
     /**
      * Initialize the column from the provided set of underlying columns and row set.
@@ -60,13 +94,37 @@ public interface SelectColumn extends Selectable {
     List<String> initInputs(TrackingRowSet rowSet, Map<String, ? extends ColumnSource<?>> columnsOfInterest);
 
     /**
-     * Initialize any internal column definitions from the provided initial.
+     * Initialize any internal column definitions from the provided initial. Any formulae will be compiled immediately
+     * using the {@link QueryCompiler} in the current {@link ExecutionContext}.
      *
-     * @param columnDefinitionMap the starting set of column definitions
+     * @param columnDefinitionMap the starting set of column definitions; valid for this call only
      *
      * @return a list of columns on which the result of this is dependent
+     * @apiNote Any {@link io.deephaven.engine.context.QueryLibrary}, {@link io.deephaven.engine.context.QueryScope}, or
+     *          {@link QueryCompiler} usage needs to be resolved within initDef. Implementations must be idempotent.
+     *          Implementations that want to hold on to the {@code columnDefinitionMap} must make a defensive copy.
      */
-    List<String> initDef(Map<String, ColumnDefinition<?>> columnDefinitionMap);
+    List<String> initDef(@NotNull Map<String, ColumnDefinition<?>> columnDefinitionMap);
+
+    /**
+     * Initialize any internal column definitions from the provided initial. A compilation request consumer is provided
+     * to allow for deferred compilation of expressions that belong to the same query.
+     * <p>
+     * Compilations must be resolved before using this {@code SelectColumn}.
+     *
+     * @param columnDefinitionMap the starting set of column definitions; valid for this call only
+     * @param compilationRequestProcessor a consumer to submit compilation requests; valid for this call only
+     *
+     * @return a list of columns on which the result of this is dependent
+     * @apiNote Any {@link io.deephaven.engine.context.QueryLibrary}, {@link io.deephaven.engine.context.QueryScope}, or
+     *          {@link QueryCompiler} usage needs to be resolved within initDef. Implementations must be idempotent.
+     *          Implementations that want to hold on to the {@code columnDefinitionMap} must make a defensive copy.
+     */
+    default List<String> initDef(
+            @NotNull final Map<String, ColumnDefinition<?>> columnDefinitionMap,
+            @NotNull final QueryCompilerRequestProcessor compilationRequestProcessor) {
+        return initDef(columnDefinitionMap);
+    }
 
     /**
      * Get the data type stored in the resultant column.
@@ -74,6 +132,13 @@ public interface SelectColumn extends Selectable {
      * @return the type
      */
     Class<?> getReturnedType();
+
+    /**
+     * Get the data component type stored in the resultant column.
+     *
+     * @return the component type
+     */
+    Class<?> getReturnedComponentType();
 
     /**
      * Get a list of the names of columns used in this SelectColumn. Behavior is undefined if none of the init* methods
@@ -117,7 +182,7 @@ public interface SelectColumn extends Selectable {
     /**
      * Get a MatchPair for this column, if applicable.
      *
-     * @return
+     * @return the MatchPair for this column, if applicable.
      */
     MatchPair getMatchPair();
 
@@ -150,12 +215,26 @@ public interface SelectColumn extends Selectable {
     boolean isRetain();
 
     /**
-     * Should we disallow use of this column for refreshing tables?
+     * Validate that this {@code SelectColumn} is safe to use in the context of the provided sourceTable.
      *
-     * Some formulas can not be reliably computed with a refreshing table, therefore we will refuse to compute those
-     * values.
+     * @param sourceTable the source table
      */
-    boolean disallowRefresh();
+    default void validateSafeForRefresh(final BaseTable<?> sourceTable) {
+        // nothing to validate by default
+    }
+
+    /**
+     * Returns true if this column is stateless (i.e. one row does not depend on the order of evaluation for another
+     * row).
+     */
+    boolean isStateless();
+
+    /**
+     * Returns true if this column uses row virtual offset columns of {@code i}, {@code ii} or {@code k}.
+     */
+    default boolean hasVirtualRowVariables() {
+        return false;
+    }
 
     /**
      * Create a copy of this SelectColumn.
@@ -164,36 +243,62 @@ public interface SelectColumn extends Selectable {
      */
     SelectColumn copy();
 
-    class ExpressionAdapter implements Expression.Visitor, Value.Visitor {
+    /**
+     * Should we ignore modified column sets, and always re-evaluate this column when the row changes?
+     * 
+     * @return true if this column should be evaluated on every row modification
+     */
+    default boolean recomputeOnModifiedRow() {
+        return false;
+    }
+
+    /**
+     * Create a copy of this SelectColumn that always re-evaluates itself when a row is modified.
+     */
+    default SelectColumn withRecomputeOnModifiedRow() {
+        return new RecomputeOnModifiedRowSelectColumn(copy());
+    }
+
+    class ExpressionAdapter implements Expression.Visitor<SelectColumn> {
         private final ColumnName lhs;
-        private SelectColumn out;
 
         ExpressionAdapter(ColumnName lhs) {
             this.lhs = Objects.requireNonNull(lhs);
         }
 
-        public SelectColumn getOut() {
-            return Objects.requireNonNull(out);
+        @Override
+        public SelectColumn visit(ColumnName rhs) {
+            return new SourceColumn(rhs.name(), lhs.name());
         }
 
         @Override
-        public void visit(Value rhs) {
-            rhs.walk((Value.Visitor) this);
+        public SelectColumn visit(Literal rhs) {
+            return makeSelectColumn(Strings.of(rhs));
         }
 
         @Override
-        public void visit(ColumnName rhs) {
-            out = new SourceColumn(rhs.name(), lhs.name());
+        public SelectColumn visit(Filter rhs) {
+            return FilterSelectColumn.of(lhs.name(), rhs);
         }
 
         @Override
-        public void visit(RawString rhs) {
-            out = SelectColumnFactory.getExpression(String.format("%s=%s", lhs.name(), rhs.value()));
+        public SelectColumn visit(Function rhs) {
+            return makeSelectColumn(Strings.of(rhs));
         }
 
         @Override
-        public void visit(long rhs) {
-            out = SelectColumnFactory.getExpression(String.format("%s=%dL", lhs.name(), rhs));
+        public SelectColumn visit(Method rhs) {
+            return makeSelectColumn(Strings.of(rhs));
+        }
+
+        @Override
+        public SelectColumn visit(RawString rhs) {
+            return makeSelectColumn(Strings.of(rhs));
+        }
+
+        private SelectColumn makeSelectColumn(String rhs) {
+            // TODO(deephaven-core#3740): Remove engine crutch on io.deephaven.api.Strings
+            return SelectColumnFactory.getExpression(String.format("%s=%s", lhs.name(), rhs));
         }
     }
 

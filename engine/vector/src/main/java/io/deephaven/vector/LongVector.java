@@ -1,14 +1,14 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit CharVector and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit CharVector and run "./gradlew replicateVectors" to regenerate
+//
+// @formatter:off
 package io.deephaven.vector;
 
+import io.deephaven.base.verify.Require;
+import io.deephaven.engine.primitive.iterator.CloseablePrimitiveIteratorOfLong;
 import io.deephaven.qst.type.LongType;
 import io.deephaven.qst.type.PrimitiveVectorType;
 import io.deephaven.util.QueryConstants;
@@ -18,31 +18,76 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.Arrays;
 
-public interface LongVector extends Vector<LongVector> {
+/**
+ * A {@link Vector} of primitive longs.
+ */
+public interface LongVector extends Vector<LongVector>, Iterable<Long> {
 
     long serialVersionUID = -1373264425081841175L;
 
     static PrimitiveVectorType<LongVector, Long> type() {
-        return PrimitiveVectorType.of(LongVector.class, LongType.instance());
+        return PrimitiveVectorType.of(LongVector.class, LongType.of());
     }
 
-    long get(long i);
+    /**
+     * Get the element of this LongVector at offset {@code index}. If {@code index} is not within range
+     * {@code [0, size())}, will return the {@link QueryConstants#NULL_LONG null long}.
+     *
+     * @param index An offset into this LongVector
+     * @return The element at the specified offset, or the {@link QueryConstants#NULL_LONG null long}
+     */
+    long get(long index);
 
     @Override
-    LongVector subVector(long fromIndex, long toIndex);
+    LongVector subVector(long fromIndexInclusive, long toIndexExclusive);
 
     @Override
-    LongVector subVectorByPositions(long [] positions);
+    LongVector subVectorByPositions(long[] positions);
 
     @Override
     long[] toArray();
 
     @Override
-    long size();
+    long[] copyToArray();
+
+    @Override
+    LongVector getDirect();
 
     @Override
     @FinalDefault
-    default Class getComponentType() {
+    default CloseablePrimitiveIteratorOfLong iterator() {
+        return iterator(0, size());
+    }
+
+    /**
+     * Returns an iterator over a slice of this vector, with equivalent semantics to
+     * {@code subVector(fromIndexInclusive, toIndexExclusive).iterator()}.
+     *
+     * @param fromIndexInclusive The first position to include
+     * @param toIndexExclusive The first position after {@code fromIndexInclusive} to not include
+     * @return An iterator over the requested slice
+     */
+    default CloseablePrimitiveIteratorOfLong iterator(final long fromIndexInclusive, final long toIndexExclusive) {
+        Require.leq(fromIndexInclusive, "fromIndexInclusive", toIndexExclusive, "toIndexExclusive");
+        return new CloseablePrimitiveIteratorOfLong() {
+
+            long nextIndex = fromIndexInclusive;
+
+            @Override
+            public long nextLong() {
+                return get(nextIndex++);
+            }
+
+            @Override
+            public boolean hasNext() {
+                return nextIndex < toIndexExclusive;
+            }
+        };
+    }
+
+    @Override
+    @FinalDefault
+    default Class<?> getComponentType() {
         return long.class;
     }
 
@@ -52,12 +97,8 @@ public interface LongVector extends Vector<LongVector> {
         return toString(this, prefixLength);
     }
 
-    /** Return a version of this Vector that is flattened out to only reference memory.  */
-    @Override
-    LongVector getDirect();
-
     static String longValToString(final Object val) {
-        return val == null ? NULL_ELEMENT_STRING : primitiveLongValToString((Long)val);
+        return val == null ? NULL_ELEMENT_STRING : primitiveLongValToString((Long) val);
     }
 
     static String primitiveLongValToString(final long val) {
@@ -67,21 +108,22 @@ public interface LongVector extends Vector<LongVector> {
     /**
      * Helper method for implementing {@link Object#toString()}.
      *
-     * @param array       The LongVector to convert to a String
-     * @param prefixLength The maximum prefix of the array to convert
-     * @return The String representation of array
+     * @param vector The LongVector to convert to a String
+     * @param prefixLength The maximum prefix of {@code vector} to convert
+     * @return The String representation of {@code vector}
      */
-    static String toString(@NotNull final LongVector array, final int prefixLength) {
-        if (array.isEmpty()) {
+    static String toString(@NotNull final LongVector vector, final int prefixLength) {
+        if (vector.isEmpty()) {
             return "[]";
         }
         final StringBuilder builder = new StringBuilder("[");
-        final int displaySize = (int) Math.min(array.size(), prefixLength);
-        builder.append(primitiveLongValToString(array.get(0)));
-        for (int ei = 1; ei < displaySize; ++ei) {
-            builder.append(',').append(primitiveLongValToString(array.get(ei)));
+        final int displaySize = (int) Math.min(vector.size(), prefixLength);
+        try (final CloseablePrimitiveIteratorOfLong iterator = vector.iterator(0, displaySize)) {
+            builder.append(primitiveLongValToString(iterator.nextLong()));
+            iterator.forEachRemaining(
+                    (final long value) -> builder.append(',').append(primitiveLongValToString(value)));
         }
-        if (displaySize == array.size()) {
+        if (displaySize == vector.size()) {
             builder.append(']');
         } else {
             builder.append(", ...]");
@@ -92,44 +134,53 @@ public interface LongVector extends Vector<LongVector> {
     /**
      * Helper method for implementing {@link Object#equals(Object)}.
      *
-     * @param aArray The LHS of the equality test (always a LongVector)
-     * @param b      The RHS of the equality test
+     * @param aVector The LHS of the equality test (always a LongVector)
+     * @param bObj The RHS of the equality test
      * @return Whether the two inputs are equal
      */
-    static boolean equals(@NotNull final LongVector aArray, @Nullable final Object b) {
-        if (aArray == b) {
+    static boolean equals(@NotNull final LongVector aVector, @Nullable final Object bObj) {
+        if (aVector == bObj) {
             return true;
         }
-        if (!(b instanceof LongVector)) {
+        if (!(bObj instanceof LongVector)) {
             return false;
         }
-        final LongVector bArray = (LongVector) b;
-        final long size = aArray.size();
-        if (size != bArray.size()) {
+        final LongVector bVector = (LongVector) bObj;
+        final long size = aVector.size();
+        if (size != bVector.size()) {
             return false;
         }
-        for (long ei = 0; ei < size; ++ei) {
-            // region elementEquals
-            if (aArray.get(ei) != bArray.get(ei)) {
-                return false;
+        if (size == 0) {
+            return true;
+        }
+        try (final CloseablePrimitiveIteratorOfLong aIterator = aVector.iterator();
+                final CloseablePrimitiveIteratorOfLong bIterator = bVector.iterator()) {
+            while (aIterator.hasNext()) {
+                // region ElementEquals
+                if (aIterator.nextLong() != bIterator.nextLong()) {
+                    return false;
+                }
+                // endregion ElementEquals
             }
-            // endregion elementEquals
         }
         return true;
     }
 
     /**
-     * Helper method for implementing {@link Object#hashCode()}. Follows the pattern in
-     * {@link Arrays#hashCode(Object[])}.
+     * Helper method for implementing {@link Object#hashCode()}. Follows the pattern in {@link Arrays#hashCode(long[])}.
      *
-     * @param array The LongVector to hash
+     * @param vector The LongVector to hash
      * @return The hash code
      */
-    static int hashCode(@NotNull final LongVector array) {
-        final long size = array.size();
+    static int hashCode(@NotNull final LongVector vector) {
         int result = 1;
-        for (long ei = 0; ei < size; ++ei) {
-            result = 31 * result + Long.hashCode(array.get(ei));
+        if (vector.isEmpty()) {
+            return result;
+        }
+        try (final CloseablePrimitiveIteratorOfLong iterator = vector.iterator()) {
+            while (iterator.hasNext()) {
+                result = 31 * result + Long.hashCode(iterator.nextLong());
+            }
         }
         return result;
     }
@@ -139,7 +190,22 @@ public interface LongVector extends Vector<LongVector> {
      */
     abstract class Indirect implements LongVector {
 
-        private static final long serialVersionUID = 1L;
+        @Override
+        public long[] toArray() {
+            final int size = intSize("LongVector.toArray");
+            final long[] result = new long[size];
+            try (final CloseablePrimitiveIteratorOfLong iterator = iterator()) {
+                for (int ei = 0; ei < size; ++ei) {
+                    result[ei] = iterator.nextLong();
+                }
+            }
+            return result;
+        }
+
+        @Override
+        public long[] copyToArray() {
+            return toArray();
+        }
 
         @Override
         public LongVector getDirect() {
@@ -163,7 +229,7 @@ public interface LongVector extends Vector<LongVector> {
         }
 
         protected final Object writeReplace() {
-            return new LongVectorDirect(toArray());
+            return getDirect();
         }
     }
 }

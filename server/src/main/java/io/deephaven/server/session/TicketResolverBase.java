@@ -1,37 +1,28 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.server.session;
 
-import org.apache.commons.codec.binary.Hex;
+import io.deephaven.server.auth.AuthorizationProvider;
 
-import java.nio.ByteBuffer;
+import java.util.Objects;
 
-public abstract class TicketResolverBase implements TicketResolver {
+public abstract class TicketResolverBase extends PathResolverPrefixedBase {
+
+    protected final Authorization authorization;
     private final byte ticketPrefix;
-    private final String flightDescriptorRoute;
 
-    public TicketResolverBase(final byte ticketPrefix, final String flightDescriptorRoute) {
+    public TicketResolverBase(
+            final AuthorizationProvider authProvider,
+            final byte ticketPrefix,
+            final String flightDescriptorRoute) {
+        super(flightDescriptorRoute);
+        this.authorization = Objects.requireNonNull(authProvider.getTicketResolverAuthorization());
         this.ticketPrefix = ticketPrefix;
-        this.flightDescriptorRoute = flightDescriptorRoute;
     }
 
     @Override
-    public byte ticketRoute() {
+    public final byte ticketRoute() {
         return ticketPrefix;
-    }
-
-    @Override
-    public String flightDescriptorRoute() {
-        return flightDescriptorRoute;
-    }
-
-    protected static String byteBufToHex(final ByteBuffer ticket) {
-        final int initialPosition = ticket.position();
-        final byte[] buf = new byte[ticket.remaining()];
-        ticket.get(buf);
-        ticket.position(initialPosition);
-        return Hex.encodeHexString(buf);
     }
 }

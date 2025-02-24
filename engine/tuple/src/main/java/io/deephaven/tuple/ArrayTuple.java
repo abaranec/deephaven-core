@@ -1,15 +1,19 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.tuple;
 
-import io.deephaven.datastructures.util.CollectionUtil;
 import io.deephaven.tuple.serialization.SerializationUtils;
 import io.deephaven.tuple.serialization.StreamingExternalizable;
 import gnu.trove.map.TIntObjectMap;
 import io.deephaven.util.compare.ObjectComparisons;
+import io.deephaven.util.type.ArrayTypeUtils;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.*;
 import java.util.Arrays;
 import java.util.function.UnaryOperator;
+import java.util.stream.Stream;
 
 /**
  * <p>
@@ -20,7 +24,7 @@ public class ArrayTuple
 
     private static final long serialVersionUID = 1L;
 
-    private Object elements[];
+    private Object[] elements;
 
     private transient int cachedHashCode;
 
@@ -31,7 +35,7 @@ public class ArrayTuple
      * @param elements The array to wrap
      */
     public ArrayTuple(final Object... elements) {
-        initialize(elements == null ? CollectionUtil.ZERO_LENGTH_OBJECT_ARRAY : elements);
+        initialize(elements == null ? ArrayTypeUtils.EMPTY_OBJECT_ARRAY : elements);
     }
 
     /**
@@ -39,7 +43,7 @@ public class ArrayTuple
      */
     public ArrayTuple() {}
 
-    private void initialize(@NotNull final Object elements[]) {
+    private void initialize(@NotNull final Object[] elements) {
         this.elements = elements;
         cachedHashCode = Arrays.hashCode(elements);
     }
@@ -56,9 +60,18 @@ public class ArrayTuple
      * @return A new array of the elements of this tuple
      */
     public final Object[] getElements() {
-        final Object exportedElements[] = new Object[elements.length];
+        final Object[] exportedElements = new Object[elements.length];
         System.arraycopy(elements, 0, exportedElements, 0, elements.length);
         return exportedElements;
+    }
+
+    /**
+     * Get the elements of this tuple as a {@link Stream}.
+     *
+     * @return A new {@link Stream} of the elements of this tuple
+     */
+    public Stream<Object> elementStream() {
+        return Arrays.stream(elements);
     }
 
     @Override
@@ -110,7 +123,7 @@ public class ArrayTuple
     @Override
     public void readExternal(@NotNull final ObjectInput in) throws IOException, ClassNotFoundException {
         final int inLength = in.readInt();
-        final Object inElements[] = new Object[inLength];
+        final Object[] inElements = new Object[inLength];
         for (int ei = 0; ei < inLength; ++ei) {
             inElements[ei] = in.readObject();
         }
@@ -131,7 +144,7 @@ public class ArrayTuple
     public void readExternalStreaming(@NotNull final ObjectInput in,
             @NotNull final TIntObjectMap<SerializationUtils.Reader> cachedReaders) throws Exception {
         final int inLength = in.readInt();
-        final Object inElements[] = new Object[inLength];
+        final Object[] inElements = new Object[inLength];
         for (int ei = 0; ei < inLength; ++ei) {
             inElements[ei] = StreamingExternalizable.readObjectElement(in, cachedReaders, ei);
         }
@@ -146,7 +159,7 @@ public class ArrayTuple
     @Override
     public ArrayTuple canonicalize(@NotNull final UnaryOperator<Object> canonicalizer) {
         final int thisLength = elements.length;
-        Object canonicalElements[] = null;
+        Object[] canonicalElements = null;
         for (int ei = 0; ei < thisLength; ++ei) {
             final Object element = elements[ei];
             final Object canonicalElement = canonicalizer.apply(element);

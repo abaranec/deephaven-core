@@ -1,6 +1,10 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.qst.array;
 
 import io.deephaven.qst.type.ShortType;
+import io.deephaven.util.QueryConstants;
 
 import java.util.Arrays;
 import java.util.Collection;
@@ -58,19 +62,29 @@ public final class ShortArray extends PrimitiveArrayBase<Short> {
     }
 
     @Override
+    public Short value(int index) {
+        short value = values[index];
+        return value == QueryConstants.NULL_SHORT ? null : value;
+    }
+
+    @Override
+    public boolean isNull(int index) {
+        return values[index] == QueryConstants.NULL_SHORT;
+    }
+
+    @Override
     public final int size() {
         return values().length;
     }
 
     @Override
     public final ShortType componentType() {
-        return ShortType.instance();
+        return ShortType.of();
     }
 
     @Override
-    public final <V extends PrimitiveArray.Visitor> V walk(V visitor) {
-        visitor.visit(this);
-        return visitor;
+    public final <R> R walk(PrimitiveArray.Visitor<R> visitor) {
+        return visitor.visit(this);
     }
 
     @Override

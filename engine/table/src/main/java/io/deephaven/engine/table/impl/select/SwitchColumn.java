@@ -1,12 +1,14 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.select;
 
 import io.deephaven.base.verify.Require;
 import io.deephaven.engine.table.*;
 import io.deephaven.api.util.NameValidator;
+import io.deephaven.engine.table.impl.BaseTable;
+import io.deephaven.engine.table.impl.MatchPair;
+import io.deephaven.engine.table.impl.QueryCompilerRequestProcessor;
 import io.deephaven.engine.table.impl.select.python.FormulaColumnPython;
 import io.deephaven.engine.table.WritableColumnSource;
 import io.deephaven.engine.rowset.TrackingRowSet;
@@ -32,18 +34,6 @@ public class SwitchColumn implements SelectColumn {
     }
 
     @Override
-    public List<String> initInputs(Table table) {
-        if (realColumn == null) {
-            if (table.getDefinition().getColumn(expression) != null) {
-                realColumn = new SourceColumn(expression, columnName);
-            } else {
-                realColumn = FormulaColumn.createFormulaColumn(columnName, expression, parser);
-            }
-        }
-        return realColumn.initInputs(table);
-    }
-
-    @Override
     public List<String> initInputs(TrackingRowSet rowSet, Map<String, ? extends ColumnSource<?>> columnsOfInterest) {
         if (realColumn == null) {
             if (columnsOfInterest.get(expression) != null) {
@@ -56,7 +46,14 @@ public class SwitchColumn implements SelectColumn {
     }
 
     @Override
-    public List<String> initDef(Map<String, ColumnDefinition<?>> columnDefinitionMap) {
+    public List<String> initDef(@NotNull Map<String, ColumnDefinition<?>> columnDefinitionMap) {
+        return initDef(columnDefinitionMap, QueryCompilerRequestProcessor.immediate());
+    }
+
+    @Override
+    public List<String> initDef(
+            @NotNull final Map<String, ColumnDefinition<?>> columnDefinitionMap,
+            @NotNull final QueryCompilerRequestProcessor compilationRequestProcessor) {
         if (realColumn == null) {
             if (columnDefinitionMap.get(expression) != null) {
                 realColumn = new SourceColumn(expression, columnName);
@@ -64,7 +61,7 @@ public class SwitchColumn implements SelectColumn {
                 realColumn = FormulaColumn.createFormulaColumn(columnName, expression, parser);
             }
         }
-        List<String> usedColumns = realColumn.initDef(columnDefinitionMap);
+        final List<String> usedColumns = realColumn.initDef(columnDefinitionMap, compilationRequestProcessor);
         if (realColumn instanceof DhFormulaColumn) {
             FormulaColumnPython formulaColumnPython = ((DhFormulaColumn) realColumn).getFormulaColumnPython();
             realColumn = formulaColumnPython != null ? formulaColumnPython : realColumn;
@@ -74,29 +71,34 @@ public class SwitchColumn implements SelectColumn {
 
     @Override
     public Class<?> getReturnedType() {
-        return realColumn.getReturnedType();
+        return getRealColumn().getReturnedType();
+    }
+
+    @Override
+    public Class<?> getReturnedComponentType() {
+        return getRealColumn().getReturnedComponentType();
     }
 
     @Override
     public List<String> getColumns() {
-        return realColumn.getColumns();
+        return getRealColumn().getColumns();
     }
 
     @Override
     public List<String> getColumnArrays() {
-        return realColumn.getColumnArrays();
+        return getRealColumn().getColumnArrays();
     }
 
     @NotNull
     @Override
     public ColumnSource<?> getDataView() {
-        return realColumn.getDataView();
+        return getRealColumn().getDataView();
     }
 
     @NotNull
     @Override
     public ColumnSource<?> getLazyView() {
-        return realColumn.getLazyView();
+        return getRealColumn().getLazyView();
     }
 
     @Override
@@ -111,12 +113,12 @@ public class SwitchColumn implements SelectColumn {
 
     @Override
     public WritableColumnSource<?> newDestInstance(long size) {
-        return realColumn.newDestInstance(size);
+        return getRealColumn().newDestInstance(size);
     }
 
     @Override
     public WritableColumnSource<?> newFlatDestInstance(long size) {
-        return realColumn.newFlatDestInstance(size);
+        return getRealColumn().newFlatDestInstance(size);
     }
 
     @Override
@@ -125,21 +127,34 @@ public class SwitchColumn implements SelectColumn {
     }
 
     @Override
+    public void validateSafeForRefresh(BaseTable<?> sourceTable) {
+        getRealColumn().validateSafeForRefresh(sourceTable);
+    }
+
+    @Override
     public String toString() {
         return columnName + "=" + expression;
     }
 
     public SelectColumn getRealColumn() {
+        if (realColumn == null) {
+            throw new IllegalStateException(
+                    "getRealColumn() is not available until this SwitchColumn is initialized; ensure that initInputs or initDef has been called first");
+        }
         return realColumn;
     }
 
     @Override
-    public boolean disallowRefresh() {
-        return Require.neqNull(realColumn, "realColumn").disallowRefresh();
+    public boolean isStateless() {
+        return getRealColumn().isStateless();
     }
 
     @Override
     public SwitchColumn copy() {
-        return new SwitchColumn(columnName, expression, parser);
+        final SwitchColumn switchColumn = new SwitchColumn(columnName, expression, parser);
+        if (realColumn != null) {
+            switchColumn.realColumn = realColumn.copy();
+        }
+        return switchColumn;
     }
 }

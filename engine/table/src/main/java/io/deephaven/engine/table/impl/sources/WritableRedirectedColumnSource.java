@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources;
 
 import io.deephaven.chunk.attributes.Values;
@@ -11,15 +10,34 @@ import io.deephaven.engine.rowset.chunkattributes.RowKeys;
 import io.deephaven.engine.rowset.RowSequence;
 import io.deephaven.engine.table.ColumnSource;
 import io.deephaven.engine.table.WritableColumnSource;
+import io.deephaven.engine.table.impl.util.RowRedirection;
 import io.deephaven.engine.table.impl.util.WritableRowRedirection;
 import org.jetbrains.annotations.NotNull;
 
 /**
  * A {@link ColumnSource} that provides a redirected view into another {@link ColumnSource} by mapping keys using a
- * {@link WritableRowRedirection}.
+ * {@link RowRedirection}.
  */
 public class WritableRedirectedColumnSource<T> extends RedirectedColumnSource<T> implements WritableColumnSource<T> {
-    private long maxInnerIndex;
+    /**
+     * Redirect the innerSource if it is not agnostic to redirection. Otherwise, return the innerSource.
+     *
+     * @param rowRedirection The row redirection to use
+     * @param innerSource The column source to redirect
+     * @param maxInnerIndex The maximum row key available in innerSource
+     */
+    public static <T> WritableColumnSource<T> maybeRedirect(
+            @NotNull final RowRedirection rowRedirection,
+            @NotNull final WritableColumnSource<T> innerSource,
+            final long maxInnerIndex) {
+        if (innerSource instanceof RowKeyAgnosticChunkSource) {
+            return innerSource;
+        }
+        return new WritableRedirectedColumnSource<>(rowRedirection, innerSource, maxInnerIndex);
+    }
+
+    /** The maximum row key available in innerSource. */
+    private final long maxInnerIndex;
 
     /**
      * Create a type-appropriate WritableRedirectedColumnSource for the supplied {@link WritableRowRedirection} and
@@ -29,11 +47,17 @@ public class WritableRedirectedColumnSource<T> extends RedirectedColumnSource<T>
      * @param innerSource The column source to redirect
      * @param maxInnerIndex The maximum row key available in innerSource
      */
-    public WritableRedirectedColumnSource(@NotNull final WritableRowRedirection rowRedirection,
+    protected WritableRedirectedColumnSource(
+            @NotNull final RowRedirection rowRedirection,
             @NotNull final ColumnSource<T> innerSource,
             final long maxInnerIndex) {
         super(rowRedirection, innerSource);
         this.maxInnerIndex = maxInnerIndex;
+    }
+
+    @Override
+    public void setNull(long key) {
+        ((WritableColumnSource<T>) innerSource).setNull(rowRedirection.get(key));
     }
 
     @Override
@@ -125,5 +149,17 @@ public class WritableRedirectedColumnSource<T> extends RedirectedColumnSource<T>
                 redirectionFillFrom.redirections, keys);
         ((WritableColumnSource<T>) innerSource).fillFromChunkUnordered(redirectionFillFrom.innerFillFromContext, src,
                 redirectionFillFrom.redirections);
+    }
+
+    @Override
+    public <ALTERNATE_DATA_TYPE> boolean allowsReinterpret(@NotNull Class<ALTERNATE_DATA_TYPE> alternateDataType) {
+        return innerSource.allowsReinterpret(alternateDataType);
+    }
+
+    @Override
+    protected <ALTERNATE_DATA_TYPE> ColumnSource<ALTERNATE_DATA_TYPE> doReinterpret(
+            @NotNull Class<ALTERNATE_DATA_TYPE> alternateDataType) {
+        return WritableRedirectedColumnSource.maybeRedirect(rowRedirection,
+                (WritableColumnSource<ALTERNATE_DATA_TYPE>) innerSource.reinterpret(alternateDataType), maxInnerIndex);
     }
 }

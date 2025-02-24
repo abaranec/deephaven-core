@@ -1,7 +1,9 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl;
 
 import io.deephaven.configuration.Configuration;
-import io.deephaven.datastructures.util.CollectionUtil;
 import io.deephaven.chunk.attributes.Values;
 import io.deephaven.chunk.Chunk;
 import io.deephaven.chunk.WritableChunk;
@@ -13,10 +15,10 @@ import io.deephaven.engine.table.impl.perf.QueryPerformanceRecorder;
 import io.deephaven.engine.table.impl.sources.ArrayBackedColumnSource;
 import io.deephaven.engine.table.impl.sources.ObjectSparseArraySource;
 import io.deephaven.engine.table.impl.sources.SparseArrayColumnSource;
-import io.deephaven.engine.updategraph.UpdateGraphProcessor;
 import io.deephaven.util.SafeCloseableArray;
 import io.deephaven.util.SafeCloseablePair;
 import io.deephaven.util.thread.NamingThreadFactory;
+import io.deephaven.util.type.ArrayTypeUtils;
 
 import java.util.*;
 import java.util.concurrent.ExecutionException;
@@ -58,7 +60,7 @@ public class SparseSelect {
 
     private final static ExecutorService executor = SPARSE_SELECT_THREADS == 1 ? null
             : Executors.newFixedThreadPool(SPARSE_SELECT_THREADS,
-                    new NamingThreadFactory(SparseSelect.class, "copyThread", true));
+                    new NamingThreadFactory(SparseSelect.class, "copyThread"));
 
     private SparseSelect() {} // static use only
 
@@ -82,7 +84,7 @@ public class SparseSelect {
      * @return a copy of the source table with materialized column
      */
     public static Table sparseSelect(Table source, String... columnNames) {
-        return sparseSelect((QueryTable) source.coalesce(), CollectionUtil.ZERO_LENGTH_STRING_ARRAY, columnNames);
+        return sparseSelect((QueryTable) source.coalesce(), ArrayTypeUtils.EMPTY_STRING_ARRAY, columnNames);
     }
 
     /**
@@ -94,8 +96,8 @@ public class SparseSelect {
      * @return a copy of the source table with materialized column
      */
     public static Table sparseSelect(Table source, Collection<String> columnNames) {
-        return sparseSelect((QueryTable) source.coalesce(), CollectionUtil.ZERO_LENGTH_STRING_ARRAY,
-                columnNames.toArray(CollectionUtil.ZERO_LENGTH_STRING_ARRAY));
+        return sparseSelect((QueryTable) source.coalesce(), ArrayTypeUtils.EMPTY_STRING_ARRAY,
+                columnNames.toArray(String[]::new));
     }
 
     /**
@@ -109,7 +111,7 @@ public class SparseSelect {
      * @return a copy of the source table with materialized columns
      */
     public static Table partialSparseSelect(Table source, Collection<String> columnNames) {
-        return partialSparseSelect(source, columnNames.toArray(CollectionUtil.ZERO_LENGTH_STRING_ARRAY));
+        return partialSparseSelect(source, columnNames.toArray(String[]::new));
     }
 
     /**
@@ -133,7 +135,7 @@ public class SparseSelect {
         return QueryPerformanceRecorder.withNugget("sparseSelect(" + Arrays.toString(columnNames) + ")",
                 source.sizeForInstrumentation(), () -> {
                     if (source.isRefreshing()) {
-                        UpdateGraphProcessor.DEFAULT.checkInitiateTableOperation();
+                        source.getUpdateGraph().checkInitiateSerialTableOperation();
                     }
 
                     final Map<String, ColumnSource<?>> resultColumns = new LinkedHashMap<>();
@@ -144,7 +146,7 @@ public class SparseSelect {
                     }
 
                     final List<ColumnSource<?>> inputSourcesList = new ArrayList<>(columnNames.length);
-                    final List<SparseArrayColumnSource<?>> outputSourcesList = new ArrayList<>(columnNames.length);
+                    final List<WritableColumnSource<?>> outputSourcesList = new ArrayList<>(columnNames.length);
                     final List<ModifiedColumnSet> modifiedColumnSets = new ArrayList<>(columnNames.length);
 
                     for (final String columnName : columnNames) {
@@ -154,7 +156,7 @@ public class SparseSelect {
                             resultColumns.put(columnName, inputSource);
                         } else {
                             inputSourcesList.add(inputSource);
-                            final SparseArrayColumnSource<?> outputSource = SparseArrayColumnSource
+                            final WritableColumnSource<?> outputSource = SparseArrayColumnSource
                                     .getSparseMemoryColumnSource(inputSource.getType(), inputSource.getComponentType());
                             outputSourcesList.add(outputSource);
                             resultColumns.put(columnName, outputSource);
@@ -164,8 +166,8 @@ public class SparseSelect {
 
                     final ColumnSource<?>[] inputSources =
                             inputSourcesList.toArray(ColumnSource.ZERO_LENGTH_COLUMN_SOURCE_ARRAY);
-                    final SparseArrayColumnSource<?>[] outputSources = outputSourcesList
-                            .toArray(SparseArrayColumnSource.ZERO_LENGTH_SPARSE_ARRAY_COLUMN_SOURCE_ARRAY);
+                    final WritableColumnSource<?>[] outputSources = outputSourcesList
+                            .toArray(WritableColumnSource[]::new);
 
                     doCopy(source.getRowSet(), inputSources, outputSources, null);
 
@@ -177,7 +179,7 @@ public class SparseSelect {
                                 outputSourcesList.stream().filter(x -> x instanceof ObjectSparseArraySource)
                                         .map(x -> (ObjectSparseArraySource<?>) x)
                                         .toArray(ObjectSparseArraySource[]::new);
-                        source.listenForUpdates(new BaseTable.ListenerImpl(
+                        source.addUpdateListener(new BaseTable.ListenerImpl(
                                 "sparseSelect(" + Arrays.toString(columnNames) + ")", source, resultTable) {
                             private final ModifiedColumnSet modifiedColumnSetForUpdates =
                                     resultTable.getModifiedColumnSetForUpdates();
@@ -187,12 +189,12 @@ public class SparseSelect {
 
                             @Override
                             public void onUpdate(TableUpdate upstream) {
-                                final TableUpdateImpl downstream = TableUpdateImpl.copy(upstream);
-                                downstream.modifiedColumnSet = modifiedColumnSetForUpdates;
+                                final TableUpdateImpl downstream =
+                                        TableUpdateImpl.copy(upstream, modifiedColumnSetForUpdates);
                                 if (sparseObjectSources.length > 0) {
                                     try (final RowSet removedOnly = upstream.removed().minus(upstream.added())) {
                                         for (final ObjectSparseArraySource<?> objectSparseArraySource : sparseObjectSources) {
-                                            objectSparseArraySource.remove(removedOnly);
+                                            objectSparseArraySource.setNull(removedOnly);
                                         }
                                     }
                                 }
@@ -259,7 +261,7 @@ public class SparseSelect {
                 });
     }
 
-    private static void doShift(SafeCloseablePair<RowSet, RowSet> shifts, SparseArrayColumnSource<?>[] outputSources,
+    private static void doShift(SafeCloseablePair<RowSet, RowSet> shifts, WritableColumnSource<?>[] outputSources,
             boolean[] toShift) {
         if (executor == null) {
             doShiftSingle(shifts, outputSources, toShift);
@@ -343,7 +345,7 @@ public class SparseSelect {
     }
 
     private static void doShiftSingle(SafeCloseablePair<RowSet, RowSet> shifts,
-            SparseArrayColumnSource<?>[] outputSources,
+            WritableColumnSource<?>[] outputSources,
             boolean[] toShift) {
         // noinspection unchecked
         final WritableChunk<Values>[] values = new WritableChunk[outputSources.length];
@@ -379,7 +381,7 @@ public class SparseSelect {
     }
 
     private static void doShiftThreads(SafeCloseablePair<RowSet, RowSet> shifts,
-            SparseArrayColumnSource<?>[] outputSources,
+            WritableColumnSource<?>[] outputSources,
             boolean[] toShift) {
         final Future<?>[] futures = new Future[outputSources.length];
         for (int columnIndex = 0; columnIndex < outputSources.length; columnIndex++) {
@@ -402,7 +404,7 @@ public class SparseSelect {
     }
 
     private static void doShiftSource(SafeCloseablePair<RowSet, RowSet> shifts,
-            SparseArrayColumnSource<?> outputSource) {
+            WritableColumnSource<?> outputSource) {
         try (final RowSequence.Iterator preIt = shifts.first.getRowSequenceIterator();
                 final RowSequence.Iterator postIt = shifts.second.getRowSequenceIterator();
                 final ChunkSink.FillFromContext ffc =

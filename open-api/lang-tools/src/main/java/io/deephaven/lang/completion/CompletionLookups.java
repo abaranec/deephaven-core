@@ -1,12 +1,17 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.lang.completion;
 
-import io.deephaven.base.Lazy;
+import io.deephaven.engine.context.ExecutionContext;
 import io.deephaven.engine.table.TableDefinition;
-import io.deephaven.engine.table.lang.QueryLibrary;
+import io.deephaven.engine.context.QueryLibrary;
 import io.deephaven.engine.util.ScriptSession;
+import io.deephaven.util.datastructures.CachingSupplier;
 
 import java.util.Collection;
 import java.util.Map;
+import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ForkJoinPool;
@@ -21,25 +26,24 @@ public class CompletionLookups {
 
     private static final WeakHashMap<ScriptSession, CompletionLookups> lookups = new WeakHashMap<>();
 
-    private final Lazy<QueryLibrary> ql;
-    private final Lazy<Collection<Class<?>>> statics;
+    private final CachingSupplier<Collection<Class<?>>> statics;
     private final Map<String, TableDefinition> referencedTables;
+    private final CachingSupplier<CustomCompletion> customCompletions;
 
-    public CompletionLookups() {
-        ql = new Lazy<>(QueryLibrary::getLibrary);
-        statics = new Lazy<>(() -> {
-            ql.get();
-            return QueryLibrary.getStaticImports();
-        });
+    public CompletionLookups(Set<CustomCompletion.Factory> customCompletionFactory) {
+        final QueryLibrary ql = ExecutionContext.getContext().getQueryLibrary();
+        statics = new CachingSupplier<>(ql::getStaticImports);
         referencedTables = new ConcurrentHashMap<>();
+        customCompletions = new CachingSupplier<>(() -> new DelegatingCustomCompletion(customCompletionFactory));
 
         // This can be slow, so lets start it on a background thread right away.
         final ForkJoinPool pool = ForkJoinPool.commonPool();
         pool.execute(statics::get);
     }
 
-    public static CompletionLookups preload(ScriptSession session) {
-        return lookups.computeIfAbsent(session, s -> new CompletionLookups());
+    public static CompletionLookups preload(ScriptSession session,
+            Set<CustomCompletion.Factory> customCompletionFactory) {
+        return lookups.computeIfAbsent(session, s -> new CompletionLookups(customCompletionFactory));
     }
 
     public Collection<Class<?>> getStatics() {
@@ -48,5 +52,9 @@ public class CompletionLookups {
 
     public Map<String, TableDefinition> getReferencedTables() {
         return referencedTables;
+    }
+
+    public CustomCompletion getCustomCompletions() {
+        return customCompletions.get();
     }
 }

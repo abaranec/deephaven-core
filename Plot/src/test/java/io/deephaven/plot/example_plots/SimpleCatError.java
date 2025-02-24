@@ -1,14 +1,13 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.plot.example_plots;
 
 import io.deephaven.time.DateTimeUtils;
 import io.deephaven.plot.Figure;
 import io.deephaven.plot.FigureFactory;
-import io.deephaven.time.DateTime;
 
+import java.time.Instant;
 
 /**
  * Sample catErrorBar plot.
@@ -26,11 +25,11 @@ public class SimpleCatError {
         final double[] yHigh = {5.9, 2.8, 5.9, 4.9};
 
         final long time = 1491946585000000000L;
-        DateTime[] date = {
-                new DateTime(time + DateTimeUtils.DAY * 1),
-                new DateTime(time + DateTimeUtils.DAY * 2),
-                new DateTime(time + DateTimeUtils.DAY * 3),
-                new DateTime(time + DateTimeUtils.DAY * 4)};
+        Instant[] date = {
+                DateTimeUtils.epochNanosToInstant(time + DateTimeUtils.DAY * 1),
+                DateTimeUtils.epochNanosToInstant(time + DateTimeUtils.DAY * 2),
+                DateTimeUtils.epochNanosToInstant(time + DateTimeUtils.DAY * 3),
+                DateTimeUtils.epochNanosToInstant(time + DateTimeUtils.DAY * 4)};
 
         final Number[] open = {3, 4, 3, 5};
         final Number[] high = {5, 6, 5, 7};

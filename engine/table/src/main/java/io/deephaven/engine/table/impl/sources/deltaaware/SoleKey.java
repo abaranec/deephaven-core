@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources.deltaaware;
 
 import io.deephaven.engine.rowset.RowSet;
@@ -5,7 +8,7 @@ import io.deephaven.engine.rowset.RowSetFactory;
 import io.deephaven.engine.rowset.RowSequenceFactory;
 import io.deephaven.engine.rowset.chunkattributes.OrderedRowKeyRanges;
 import io.deephaven.engine.rowset.chunkattributes.OrderedRowKeys;
-import io.deephaven.engine.rowset.chunkattributes.RowKeys;
+import io.deephaven.util.SafeCloseable;
 import io.deephaven.util.datastructures.LongAbortableConsumer;
 import io.deephaven.chunk.LongChunk;
 import io.deephaven.chunk.WritableLongChunk;
@@ -67,7 +70,7 @@ class SoleKey implements RowSequence {
     }
 
     @Override
-    public void fillRowKeyChunk(WritableLongChunk<? extends RowKeys> chunkToFill) {
+    public void fillRowKeyChunk(WritableLongChunk<? super OrderedRowKeys> chunkToFill) {
         chunkToFill.set(0, key);
         chunkToFill.setSize(1);
     }
@@ -112,6 +115,11 @@ class SoleKey implements RowSequence {
     @Override
     public boolean forEachRowKeyRange(LongRangeAbortableConsumer larc) {
         return larc.accept(key, key);
+    }
+
+    @Override
+    public void close() {
+        SafeCloseable.closeAll(keyIndicesChunk, keyRangesChunk);
     }
 
     static class SoleKeyIterator implements Iterator {

@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources;
 
 import io.deephaven.engine.table.ColumnSource;
@@ -10,7 +9,8 @@ import io.deephaven.vector.CharVector;
 
 import static io.deephaven.util.QueryConstants.NULL_CHAR;
 
-public class UngroupedCharVectorColumnSource extends UngroupedColumnSource<Character> implements MutableColumnSourceGetDefaults.ForChar {
+public class UngroupedCharVectorColumnSource extends UngroupedColumnSource<Character>
+        implements MutableColumnSourceGetDefaults.ForChar {
     private ColumnSource<CharVector> innerSource;
     private final boolean isUngroupable;
 
@@ -23,19 +23,20 @@ public class UngroupedCharVectorColumnSource extends UngroupedColumnSource<Chara
     public UngroupedCharVectorColumnSource(ColumnSource<CharVector> innerSource) {
         super(Character.class);
         this.innerSource = innerSource;
-        this.isUngroupable = innerSource instanceof UngroupableColumnSource && ((UngroupableColumnSource)innerSource).isUngroupable();
+        this.isUngroupable = innerSource instanceof UngroupableColumnSource
+                && ((UngroupableColumnSource) innerSource).isUngroupable();
     }
 
     @Override
-    public Character get(long index) {
-        if (index < 0) {
+    public Character get(long rowKey) {
+        if (rowKey < 0) {
             return null;
         }
-        long segment = index>>base;
-        int offset = (int) (index & ((1<<base) - 1));
+        long segment = rowKey >> base;
+        int offset = (int) (rowKey & ((1 << base) - 1));
         final Character result;
         if (isUngroupable) {
-            result = (Character)((UngroupableColumnSource)innerSource).getUngrouped(segment, offset);
+            result = (Character) ((UngroupableColumnSource) innerSource).getUngrouped(segment, offset);
             if (result == null)
                 return null;
         } else {
@@ -47,15 +48,15 @@ public class UngroupedCharVectorColumnSource extends UngroupedColumnSource<Chara
 
 
     @Override
-    public char getChar(long index) {
-        if (index < 0) {
+    public char getChar(long rowKey) {
+        if (rowKey < 0) {
             return NULL_CHAR;
         }
 
-        long segment = index>>base;
-        int offset = (int) (index & ((1<<base) - 1));
+        long segment = rowKey >> base;
+        int offset = (int) (rowKey & ((1 << base) - 1));
         if (isUngroupable) {
-            return ((UngroupableColumnSource)innerSource).getUngroupedChar(segment, offset);
+            return ((UngroupableColumnSource) innerSource).getUngroupedChar(segment, offset);
         }
 
         final CharVector segmentArray = innerSource.get(segment);
@@ -64,16 +65,16 @@ public class UngroupedCharVectorColumnSource extends UngroupedColumnSource<Chara
 
 
     @Override
-    public Character getPrev(long index) {
-        if (index < 0) {
+    public Character getPrev(long rowKey) {
+        if (rowKey < 0) {
             return null;
         }
 
-        long segment = index>> getPrevBase();
-        int offset = (int) (index & ((1<< getPrevBase()) - 1));
+        long segment = rowKey >> getPrevBase();
+        int offset = (int) (rowKey & ((1 << getPrevBase()) - 1));
         final Character result;
         if (isUngroupable) {
-            result = (Character)((UngroupableColumnSource)innerSource).getUngroupedPrev(segment, offset);
+            result = (Character) ((UngroupableColumnSource) innerSource).getUngroupedPrev(segment, offset);
             if (result == null) {
                 return null;
             }
@@ -86,16 +87,16 @@ public class UngroupedCharVectorColumnSource extends UngroupedColumnSource<Chara
     }
 
     @Override
-    public char getPrevChar(long index) {
-        if (index < 0) {
+    public char getPrevChar(long rowKey) {
+        if (rowKey < 0) {
             return NULL_CHAR;
         }
 
-        long segment = index>> getPrevBase();
-        int offset = (int) (index & ((1<< getPrevBase()) - 1));
+        long segment = rowKey >> getPrevBase();
+        int offset = (int) (rowKey & ((1 << getPrevBase()) - 1));
 
         if (isUngroupable) {
-            return ((UngroupableColumnSource)innerSource).getUngroupedPrevChar(segment, offset);
+            return ((UngroupableColumnSource) innerSource).getUngroupedPrevChar(segment, offset);
         }
 
         final CharVector segmentArray = innerSource.getPrev(segment);
@@ -105,5 +106,10 @@ public class UngroupedCharVectorColumnSource extends UngroupedColumnSource<Chara
     @Override
     public boolean isImmutable() {
         return false;
+    }
+
+    @Override
+    public boolean isStateless() {
+        return innerSource.isStateless();
     }
 }

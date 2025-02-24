@@ -17,7 +17,7 @@
 # -- Project information -----------------------------------------------------
 
 project = 'Deephaven'
-copyright = '2021, Deephaven Data Labs'
+copyright = '2024, Deephaven Data Labs'
 author = 'Deephaven Data Labs'
 
 # The full version, including alpha/beta/rc tags
@@ -67,15 +67,65 @@ html_theme_options = {
 add_module_names = False
 # if we allow sphinx to generate type hints for signatures (default), it would make the generated doc cluttered and hard to read
 autodoc_typehints = 'none'
+autoclass_content = 'both'
 
 #########################################################################################################################################################################
 
-import deephaven
+
+# Turn on jpy so the modern deephaven API can reference Java types.
+# The Deephaven wheel can't be used without the JVM running and the
+# server classpath being present, so we must at least set this much
+# up.
+from glob import glob
+import os
+
+workspace = os.environ.get('DEEPHAVEN_WORKSPACE', '.')
+propfile = os.environ.get('DEEPHAVEN_PROPFILE', 'dh-defaults.prop')
+jvm_properties = {
+    'Configuration.rootFile': propfile,
+    'deephaven.dataDir': os.path.realpath(workspace),
+}
+
+jvm_options = {
+    # Allow access to java.nio.Buffer fields
+    '--add-opens=java.base/java.nio=ALL-UNNAMED',
+    # Allow our hotspot-impl project to access internals
+    '--add-exports=java.management/sun.management=ALL-UNNAMED',
+    # Allow our clock-impl project to access internals
+    '--add-exports=java.base/jdk.internal.misc=ALL-UNNAMED',
+}
+
+from deephaven_internal import jvm
+jvm.init_jvm(
+    jvm_maxmem='1G',
+    jvm_classpath=glob(os.environ.get('DEEPHAVEN_CLASSPATH')),
+    jvm_properties=jvm_properties,
+    jvm_options=jvm_options,
+)
+
 import jpy
+py_scope_jpy = jpy.get_type("io.deephaven.engine.util.PythonScopeJpyImpl").ofMainGlobals()
+
+no_op_thread_factory = jpy.get_type("io.deephaven.util.thread.ThreadInitializationFactory").NO_OP
+_JOperationInitializationThreadPool = jpy.get_type("io.deephaven.engine.table.impl.OperationInitializationThreadPool")
+_j_operation_initializer = _JOperationInitializationThreadPool(no_op_thread_factory)
+
+_JUpdateGraph = jpy.get_type("io.deephaven.engine.updategraph.impl.PeriodicUpdateGraph")
+docs_update_graph = _JUpdateGraph.newBuilder("PYTHON_DOCS") \
+        .operationInitializer(_j_operation_initializer) \
+        .build()
+
+_JPythonScriptSession = jpy.get_type("io.deephaven.integrations.python.PythonDeephavenSession")
+py_dh_session = _JPythonScriptSession(docs_update_graph, _j_operation_initializer, no_op_thread_factory, py_scope_jpy)
+py_dh_session.getExecutionContext().open()
+
+
+pygments_style = 'sphinx'
+
+import deephaven
 docs_title = "Deephaven python modules."
 package_roots = [jpy, deephaven]
 package_excludes = ['._']
 
 import dh_sphinx
 dh_sphinx.gen_sphinx_modules(docs_title, package_roots, package_excludes)
-

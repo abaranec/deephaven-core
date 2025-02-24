@@ -1,15 +1,18 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.select;
 
 import io.deephaven.engine.table.Table;
+import io.deephaven.engine.testutil.testcase.RefreshingTableTestCase;
 import io.deephaven.engine.util.TableTools;
 import io.deephaven.engine.table.ColumnSource;
 import io.deephaven.engine.rowset.RowSet;
-import junit.framework.TestCase;
 
 import java.util.ArrayList;
 import java.util.List;
 
-public class TestWhereFilterFactory extends TestCase {
+public class TestWhereFilterFactory extends RefreshingTableTestCase {
 
     private static final String STRING_COLUMN = "Strings";
     private static final String INTEGER_COLUMN = "Integers";
@@ -29,7 +32,7 @@ public class TestWhereFilterFactory extends TestCase {
     private Table table;
 
     @Override
-    protected void setUp() throws Exception {
+    public void setUp() throws Exception {
         super.setUp();
         table = TableTools.newTable(
                 TableTools.col(STRING_COLUMN, NORMAL_STRING, NEEDS_ESCAPE, NO_COMMAS_A, NO_COMMAS_B, WITH_COMMAS_A,

@@ -1,27 +1,28 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit AbstractCharacterColumnSourceTest and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit AbstractCharacterColumnSourceTest and run "./gradlew replicateSourceAndChunkTests" to regenerate
+//
+// @formatter:off
 package io.deephaven.engine.table.impl.sources;
 
 import io.deephaven.chunk.*;
 import io.deephaven.chunk.attributes.Values;
+import io.deephaven.engine.context.ExecutionContext;
 import io.deephaven.engine.rowset.RowSequence;
 import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.engine.rowset.RowSetBuilderSequential;
 import io.deephaven.engine.rowset.RowSetFactory;
 import io.deephaven.engine.rowset.chunkattributes.RowKeys;
-import io.deephaven.engine.table.ChunkSink;
-import io.deephaven.engine.table.ChunkSource;
 import io.deephaven.engine.table.ColumnSource;
 import io.deephaven.engine.table.WritableColumnSource;
 import io.deephaven.engine.table.impl.DefaultGetContext;
 import io.deephaven.engine.table.impl.TestSourceSink;
-import io.deephaven.engine.updategraph.UpdateGraphProcessor;
+import io.deephaven.engine.testutil.ControlledUpdateGraph;
+import io.deephaven.engine.testutil.junit4.EngineCleanup;
 import org.jetbrains.annotations.NotNull;
-import org.junit.After;
-import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 
 import java.util.Arrays;
@@ -29,25 +30,17 @@ import java.util.Random;
 
 import static io.deephaven.util.QueryConstants.NULL_FLOAT;
 import static junit.framework.TestCase.*;
-import static junit.framework.TestCase.assertEquals;
 
 public abstract class AbstractFloatColumnSourceTest {
+
+    @Rule
+    public final EngineCleanup framework = new EngineCleanup();
+
     @NotNull
     abstract WritableColumnSource<Float> makeTestSource();
 
     int getSourceSize() {
         return 16384;
-    }
-
-    @Before
-    public void setUp() throws Exception {
-        UpdateGraphProcessor.DEFAULT.enableUnitTestMode();
-        UpdateGraphProcessor.DEFAULT.resetForUnitTests(false);
-    }
-
-    @After
-    public void tearDown() throws Exception {
-        UpdateGraphProcessor.DEFAULT.resetForUnitTests(true);
     }
 
     @Test
@@ -62,47 +55,48 @@ public abstract class AbstractFloatColumnSourceTest {
     private void testFill(Random random, int chunkSize) {
         final WritableColumnSource<Float> source = makeTestSource();
 
-        final ColumnSource.FillContext fillContext = source.makeFillContext(chunkSize);
-        final WritableFloatChunk dest = WritableFloatChunk.makeWritableChunk(chunkSize);
+        try (final ColumnSource.FillContext fillContext = source.makeFillContext(chunkSize);
+                final WritableFloatChunk dest = WritableFloatChunk.makeWritableChunk(chunkSize)) {
 
-        source.fillChunk(fillContext, dest, RowSetFactory.fromRange(0, 1023));
-        for (int ii = 0; ii < 1024; ++ii) {
-            checkFromSource("null check: " + ii, NULL_FLOAT, dest.get(ii));
-        }
+            source.fillChunk(fillContext, dest, RowSetFactory.fromRange(0, 1023));
+            for (int ii = 0; ii < 1024; ++ii) {
+                checkFromSource("null check: " + ii, NULL_FLOAT, dest.get(ii));
+            }
 
-        final int expectedBlockSize = 1024;
-        final float [] expectations = new float[getSourceSize()];
-        // region arrayFill
-        Arrays.fill(expectations, NULL_FLOAT);
-        // endregion arrayFill
-        final float [] randomFloats = ArrayGenerator.randomFloats(random, expectations.length / 2);
-        for (int ii = 0; ii < expectations.length; ++ii) {
-            final int block = ii / expectedBlockSize;
-            if (block % 2 == 0) {
-                final float randomFloat = randomFloats[(block / 2 * expectedBlockSize) + (ii % expectedBlockSize)];
-                expectations[ii] = randomFloat;
-                source.set(ii, randomFloat);
+            final int expectedBlockSize = 1024;
+            final float[] expectations = new float[getSourceSize()];
+            // region arrayFill
+            Arrays.fill(expectations, NULL_FLOAT);
+            // endregion arrayFill
+            final float[] randomFloats = ArrayGenerator.randomFloats(random, expectations.length / 2);
+            for (int ii = 0; ii < expectations.length; ++ii) {
+                final int block = ii / expectedBlockSize;
+                if (block % 2 == 0) {
+                    final float randomFloat = randomFloats[(block / 2 * expectedBlockSize) + (ii % expectedBlockSize)];
+                    expectations[ii] = randomFloat;
+                    source.set(ii, randomFloat);
+                }
+            }
+
+            // before we have the previous tracking enabled, prev should just fall through to get
+            for (boolean usePrev : new boolean[] {false, true}) {
+                checkRangeFill(chunkSize, source, fillContext, dest, expectations, 0, expectations.length - 1, usePrev);
+                checkRangeFill(chunkSize, source, fillContext, dest, expectations, 100, expectations.length - 100,
+                        usePrev);
+                checkRangeFill(chunkSize, source, fillContext, dest, expectations, 200, expectations.length - 1124,
+                        usePrev);
+                checkRangeFill(chunkSize, source, fillContext, dest, expectations, 100, 700, usePrev);
+                checkRangeFill(chunkSize, source, fillContext, dest, expectations, 100, 1024, usePrev);
+                checkRangeFill(chunkSize, source, fillContext, dest, expectations, 250, 250, usePrev);
+                checkRangeFill(chunkSize, source, fillContext, dest, expectations, 250, 251, usePrev);
+
+                // lets make a few random indices
+                for (int seed = 0; seed < 100; ++seed) {
+                    final RowSet rowSet = generateIndex(random, expectations.length, 1 + random.nextInt(31));
+                    checkRandomFill(chunkSize, source, fillContext, dest, expectations, rowSet, usePrev);
+                }
             }
         }
-
-        // before we have the previous tracking enabled, prev should just fall through to get
-        for (boolean usePrev : new boolean[]{false, true}) {
-            checkRangeFill(chunkSize, source, fillContext, dest, expectations, 0, expectations.length - 1, usePrev);
-            checkRangeFill(chunkSize, source, fillContext, dest, expectations, 100, expectations.length - 100, usePrev);
-            checkRangeFill(chunkSize, source, fillContext, dest, expectations, 200, expectations.length - 1124, usePrev);
-            checkRangeFill(chunkSize, source, fillContext, dest, expectations, 100, 700, usePrev);
-            checkRangeFill(chunkSize, source, fillContext, dest, expectations, 100, 1024, usePrev);
-            checkRangeFill(chunkSize, source, fillContext, dest, expectations, 250, 250, usePrev);
-            checkRangeFill(chunkSize, source, fillContext, dest, expectations, 250, 251, usePrev);
-
-            // lets make a few random indices
-            for (int seed = 0; seed < 100; ++seed) {
-                final RowSet rowSet = generateIndex(random, expectations.length, 1 + random.nextInt(31));
-                checkRandomFill(chunkSize, source, fillContext, dest, expectations, rowSet, usePrev);
-            }
-        }
-
-        fillContext.close();
     }
 
     @Test
@@ -123,17 +117,18 @@ public abstract class AbstractFloatColumnSourceTest {
         assertEquals(emptyResult.size(), 0);
 
         // the asChunk is not needed here, but it's needed when replicated to Boolean
-        final FloatChunk<? extends Values> result = source.getChunk(getContext, RowSetFactory.fromRange(0, 1023)).asFloatChunk();
+        final FloatChunk<? extends Values> result =
+                source.getChunk(getContext, RowSetFactory.fromRange(0, 1023)).asFloatChunk();
         for (int ii = 0; ii < 1024; ++ii) {
             checkFromSource("null check: " + ii, NULL_FLOAT, result.get(ii));
         }
 
         final int expectedBlockSize = 1024;
-        final float [] expectations = new float[getSourceSize()];
+        final float[] expectations = new float[getSourceSize()];
         // region arrayFill
         Arrays.fill(expectations, NULL_FLOAT);
         // endregion arrayFill
-        final float [] randomFloats = ArrayGenerator.randomFloats(random, expectations.length / 2);
+        final float[] randomFloats = ArrayGenerator.randomFloats(random, expectations.length / 2);
         for (int ii = 0; ii < expectations.length; ++ii) {
             final int block = ii / expectedBlockSize;
             if (block % 2 == 0) {
@@ -144,7 +139,7 @@ public abstract class AbstractFloatColumnSourceTest {
         }
 
         // before we have the previous tracking enabled, prev should just fall through to get
-        for (boolean usePrev : new boolean[]{false, true}) {
+        for (boolean usePrev : new boolean[] {false, true}) {
             checkRangeGet(chunkSize, source, getContext, expectations, 0, expectations.length - 1, usePrev);
             checkRangeGet(chunkSize, source, getContext, expectations, 100, expectations.length - 100, usePrev);
             checkRangeGet(chunkSize, source, getContext, expectations, 200, expectations.length - 1124, usePrev);
@@ -169,7 +164,7 @@ public abstract class AbstractFloatColumnSourceTest {
             int lastKey;
             if (random.nextBoolean()) {
                 final int length = Math.min(random.nextInt(runLength) + 1, maxsize - nextKey);
-                lastKey =  nextKey + length - 1;
+                lastKey = nextKey + length - 1;
                 builder.appendRange(nextKey, lastKey);
             } else {
                 builder.appendKey(lastKey = nextKey);
@@ -192,9 +187,10 @@ public abstract class AbstractFloatColumnSourceTest {
         return result;
     }
 
-    private void checkRandomFill(int chunkSize, WritableColumnSource<Float> source, ColumnSource.FillContext fillContext,
-                                 WritableFloatChunk dest, float[] expectations, RowSet rowSet, boolean usePrev) {
-        for (final RowSequence.Iterator rsIt = rowSet.getRowSequenceIterator(); rsIt.hasMore(); ) {
+    private void checkRandomFill(int chunkSize, WritableColumnSource<Float> source,
+            ColumnSource.FillContext fillContext,
+            WritableFloatChunk dest, float[] expectations, RowSet rowSet, boolean usePrev) {
+        for (final RowSequence.Iterator rsIt = rowSet.getRowSequenceIterator(); rsIt.hasMore();) {
             final RowSequence nextOk = rsIt.getNextRowSequenceWithLength(chunkSize);
 
             if (usePrev) {
@@ -206,14 +202,16 @@ public abstract class AbstractFloatColumnSourceTest {
             int ii = 0;
             for (final RowSet.Iterator indexIt = nextOk.asRowSet().iterator(); indexIt.hasNext(); ii++) {
                 final long next = indexIt.nextLong();
-                checkFromValues("expectations[" + next + "] vs. dest[" + ii + "]", expectations[(int)next], dest.get(ii));
+                checkFromValues("expectations[" + next + "] vs. dest[" + ii + "]", expectations[(int) next],
+                        dest.get(ii));
             }
         }
     }
 
     private void checkRandomFillUnordered(WritableColumnSource<Float> source, ColumnSource.FillContext fillContext,
-                                          WritableFloatChunk dest, float[] expectations, LongChunk<RowKeys> keys, boolean usePrev) {
-        final FillUnordered fillUnordered = (FillUnordered)source;
+            WritableFloatChunk dest, float[] expectations, LongChunk<RowKeys> keys, boolean usePrev) {
+        // noinspection unchecked
+        final FillUnordered<Values> fillUnordered = (FillUnordered<Values>) source;
         if (usePrev) {
             fillUnordered.fillChunkUnordered(fillContext, dest, keys);
         } else {
@@ -227,17 +225,19 @@ public abstract class AbstractFloatColumnSourceTest {
                 checkFromValues("null vs. dest[" + ii + "]", NULL_FLOAT, dest.get(ii));
                 // endregion null unordered check
             } else {
-                checkFromValues("expectations[" + next + "] vs. dest[" + ii + "]", expectations[(int) next], dest.get(ii));
+                checkFromValues("expectations[" + next + "] vs. dest[" + ii + "]", expectations[(int) next],
+                        dest.get(ii));
             }
         }
     }
 
-    private void checkRangeFill(int chunkSize, WritableColumnSource<Float> source, ColumnSource.FillContext fillContext,
-                                WritableFloatChunk dest, float[] expectations, int firstKey, int lastKey, boolean usePrev) {
+    private void checkRangeFill(int chunkSize, WritableColumnSource<Float> source,
+            ColumnSource.FillContext fillContext,
+            WritableFloatChunk dest, float[] expectations, int firstKey, int lastKey, boolean usePrev) {
         int offset;
         final RowSet rowSet = RowSetFactory.fromRange(firstKey, lastKey);
         offset = firstKey;
-        for (final RowSequence.Iterator it = rowSet.getRowSequenceIterator(); it.hasMore(); ) {
+        for (final RowSequence.Iterator it = rowSet.getRowSequenceIterator(); it.hasMore();) {
             final RowSequence nextOk = it.getNextRowSequenceWithLength(chunkSize);
 
             if (usePrev) {
@@ -250,11 +250,12 @@ public abstract class AbstractFloatColumnSourceTest {
         }
     }
 
-    private void checkRangeGet(int chunkSize, ColumnSource<Float> source, ColumnSource.GetContext getContext, float[] expectations, int firstKey, int lastKey, boolean usePrev) {
+    private void checkRangeGet(int chunkSize, ColumnSource<Float> source, ColumnSource.GetContext getContext,
+            float[] expectations, int firstKey, int lastKey, boolean usePrev) {
         int offset;
         final RowSet rowSet = RowSetFactory.fromRange(firstKey, lastKey);
         offset = firstKey;
-        for (final RowSequence.Iterator it = rowSet.getRowSequenceIterator(); it.hasMore(); ) {
+        for (final RowSequence.Iterator it = rowSet.getRowSequenceIterator(); it.hasMore();) {
             final RowSequence nextOk = it.getNextRowSequenceWithLength(chunkSize);
 
             final FloatChunk<? extends Values> result;
@@ -275,9 +276,11 @@ public abstract class AbstractFloatColumnSourceTest {
         }
     }
 
-    private void checkRangeResults(float[] expectations, int offset, RowSequence nextOk, FloatChunk<? extends Values> result) {
+    private void checkRangeResults(float[] expectations, int offset, RowSequence nextOk,
+            FloatChunk<? extends Values> result) {
         for (int ii = 0; ii < nextOk.size(); ++ii) {
-            checkFromValues("expectations[" + offset + " + " + ii + " = " + (ii + offset) + "] vs. dest[" + ii + "]", expectations[ii + offset], result.get(ii));
+            checkFromValues("expectations[" + offset + " + " + ii + " = " + (ii + offset) + "] vs. dest[" + ii + "]",
+                    expectations[ii + offset], result.get(ii));
         }
     }
 
@@ -307,17 +310,17 @@ public abstract class AbstractFloatColumnSourceTest {
     // null reference exception at commit time. The fix is to have the chunk methods bail out early if there is nothing
     // to do.
     @Test
-    public void testFilllEmptyChunkWithPrev() {
+    public void testFillEmptyChunkWithPrev() {
         final FloatSparseArraySource src = new FloatSparseArraySource();
         src.startTrackingPrevValues();
-        UpdateGraphProcessor.DEFAULT.startCycleForUnitTests();
+        ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().startCycleForUnitTests();
         try (final RowSet keys = RowSetFactory.empty();
-             final WritableFloatChunk<Values> chunk = WritableFloatChunk.makeWritableChunk(0)) {
+                final WritableFloatChunk<Values> chunk = WritableFloatChunk.makeWritableChunk(0)) {
             // Fill from an empty chunk
             src.fillFromChunkByKeys(keys, chunk);
         }
         // NullPointerException in FloatSparseArraySource.commitUpdates()
-        UpdateGraphProcessor.DEFAULT.completeCycleForUnitTests();
+        ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().completeCycleForUnitTests();
     }
 
     @Test
@@ -329,40 +332,40 @@ public abstract class AbstractFloatColumnSourceTest {
     private void testFillUnordered(Random random, int chunkSize) {
         final WritableColumnSource<Float> source = makeTestSource();
 
-        final ColumnSource.FillContext fillContext = source.makeFillContext(chunkSize);
-        final WritableFloatChunk dest = WritableFloatChunk.makeWritableChunk(chunkSize);
+        try (final ColumnSource.FillContext fillContext = source.makeFillContext(chunkSize);
+                final WritableFloatChunk dest = WritableFloatChunk.makeWritableChunk(chunkSize)) {
 
-        source.fillChunk(fillContext, dest, RowSetFactory.fromRange(0, 1023));
-        for (int ii = 0; ii < 1024; ++ii) {
-            checkFromSource("null check: " + ii, NULL_FLOAT, dest.get(ii));
-        }
-
-        final int expectedBlockSize = 1024;
-        final float [] expectations = new float[getSourceSize()];
-        // region arrayFill
-        Arrays.fill(expectations, NULL_FLOAT);
-        // endregion arrayFill
-        final float [] randomFloats = ArrayGenerator.randomFloats(random, expectations.length / 2);
-        for (int ii = 0; ii < expectations.length; ++ii) {
-            final int block = ii / expectedBlockSize;
-            if (block % 2 == 0) {
-                final float randomFloat = randomFloats[(block / 2 * expectedBlockSize) + (ii % expectedBlockSize)];
-                expectations[ii] = randomFloat;
-                source.set(ii, randomFloat);
+            source.fillChunk(fillContext, dest, RowSetFactory.fromRange(0, 1023));
+            for (int ii = 0; ii < 1024; ++ii) {
+                checkFromSource("null check: " + ii, NULL_FLOAT, dest.get(ii));
             }
-        }
 
-        // before we have the previous tracking enabled, prev should just fall through to get
-        for (boolean usePrev : new boolean[]{false, true}) {
-            // lets make a few random indices
-            for (int seed = 0; seed < 100; ++seed) {
-                int count = random.nextInt(chunkSize);
-                try (final WritableLongChunk<RowKeys> rowKeys = generateRandomKeys(random, count, expectations.length)) {
-                    checkRandomFillUnordered(source, fillContext, dest, expectations, rowKeys, usePrev);
+            final int expectedBlockSize = 1024;
+            final float[] expectations = new float[getSourceSize()];
+            // region arrayFill
+            Arrays.fill(expectations, NULL_FLOAT);
+            // endregion arrayFill
+            final float[] randomFloats = ArrayGenerator.randomFloats(random, expectations.length / 2);
+            for (int ii = 0; ii < expectations.length; ++ii) {
+                final int block = ii / expectedBlockSize;
+                if (block % 2 == 0) {
+                    final float randomFloat = randomFloats[(block / 2 * expectedBlockSize) + (ii % expectedBlockSize)];
+                    expectations[ii] = randomFloat;
+                    source.set(ii, randomFloat);
+                }
+            }
+
+            // before we have the previous tracking enabled, prev should just fall through to get
+            for (boolean usePrev : new boolean[] {false, true}) {
+                // lets make a few random indices
+                for (int seed = 0; seed < 100; ++seed) {
+                    int count = random.nextInt(chunkSize);
+                    try (final WritableLongChunk<RowKeys> rowKeys =
+                            generateRandomKeys(random, count, expectations.length)) {
+                        checkRandomFillUnordered(source, fillContext, dest, expectations, rowKeys, usePrev);
+                    }
                 }
             }
         }
-
-        fillContext.close();
     }
 }

@@ -1,73 +1,89 @@
-/*
- * Copyright (c) 2016-2018 Deephaven and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.configuration;
 
-import io.deephaven.io.logger.Logger;
+import io.deephaven.internal.log.Bootstrap;
 import io.deephaven.internal.log.LoggerFactory;
+import io.deephaven.io.logger.Logger;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
-import java.io.*;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.time.ZoneId;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 
 /**
  * Utility class to provide an enhanced view and common access point for java properties files, as well as common
- * configuration pieces such as log directories and workspace-related properties.
+ * configuration pieces.
  */
 @SuppressWarnings({"WeakerAccess", "unused"})
-public class Configuration extends PropertyFile {
-
-    /** Property that specifies the workspace. */
-    @SuppressWarnings("WeakerAccess")
-    public static final String WORKSPACE_PROPERTY = "workspace";
-
-    /** Property that specifies the software installation root directory. */
-    @SuppressWarnings("WeakerAccess")
-    public static final String DEVROOT_PROPERTY = "devroot";
-
-    /** Property that specifies the directory for process logs. */
-    @SuppressWarnings("WeakerAccess")
-    public static final String LOGDIR_PROPERTY = "logDir"; // Defaults to getProperty(WORKSPACE_PROPERTY)/../logs
-
-    /** Property that specifies the default process log directory. */
-    private static final String LOGDIR_DEFAULT_PROPERTY = "defaultLogDir";
-
-    /** Property that specifies a base directory for logging. */
-    private static final String LOGDIR_ROOT_PROPERTY = "logroot";
-
-    /** Token used for log root directory substitution */
-    private static final String LOGROOT_TOKEN = "<logroot>";
-
-    /** Token used for process name substitution */
-    private static final String PROCESS_NAME_TOKEN = "<processname>";
-
-    /** Token used for devroot substitution */
-    private static final String DEVROOT_TOKEN = "<devroot>";
-
-    /** Token used for workspace substitution */
-    private static final String WORKSPACE_TOKEN = "<workspace>";
-
-    /** Ordered list of properties that can specify the configuration root file */
-    @SuppressWarnings("WeakerAccess")
-    static final String[] FILE_NAME_PROPERTIES = {"Configuration.rootFile"};
+public abstract class Configuration extends PropertyFile {
     public static final String QUIET_PROPERTY = "configuration.quiet";
-    private static final String PROCESS_NAME_PROPERTY = "process.name";
-
-    private static NullableConfiguration INSTANCE = null;
 
     private static final Logger log = LoggerFactory.getLogger(Configuration.class);
 
-    private final String confFileName;
-    private final String confFileProperty;
-    private final String workspace;
-    private final String devroot;
+    private static Configuration DEFAULT;
+    private static final Map<String, Configuration> NAMED_CONFIGURATIONS = new ConcurrentHashMap<>();
+    private final Supplier<ConfigurationContext> contextSupplier;
 
     // This should never be null to meet the contract for getContextKeyValues()
     private Collection<String> contextKeys = Collections.emptySet();
+
+    /**
+     * The default Configuration implementation, which loads properties from the default property file in addition to
+     * System properties.
+     */
+    private static class Default extends Configuration {
+        Default(@NotNull final Supplier<ConfigurationContext> contextSupplier) {
+            super(contextSupplier);
+            init();
+        }
+
+        @Override
+        protected String determinePropertyFile() {
+            return ConfigDir.configurationFile();
+        }
+
+        @SuppressWarnings("unused")
+        public String getPropertyNullable(String propertyName) {
+            return properties.getProperty(propertyName);
+        }
+    }
+
+    /**
+     * A Named configuration that loads values from the file defined by the property `Configuration.name.rootFile`.
+     */
+    private static class Named extends Configuration {
+        private final String name;
+
+        Named(@NotNull final String name, @NotNull final Supplier<ConfigurationContext> contextSupplier) {
+            super(contextSupplier);
+            this.name = name;
+            init();
+        }
+
+        @Override
+        protected String determinePropertyFile() {
+            String propFile = System.getProperty("Configuration." + name + ".rootFile");
+            if (propFile != null) {
+                return propFile;
+            }
+
+            // If Configuration.name.rootFile doesn't exist allow a fallback onto `name.rootFile`
+            propFile = System.getProperty(name + ".rootFile");
+            if (propFile != null) {
+                return propFile;
+            }
+
+            throw new ConfigurationException("No property file defined for named configuration " + name +
+                    ": Make sure the property `Configuration." + name + ".rootFile` or `" + name + ".rootFile` is set");
+        }
+    }
 
     /**
      * Get the default Configuration instance.
@@ -75,293 +91,113 @@ public class Configuration extends PropertyFile {
      * @return the single instance of Configuration allowed in an application
      */
     public static Configuration getInstance() {
-        if (INSTANCE == null) {
-            INSTANCE = new NullableConfiguration();
+        if (DEFAULT == null) {
+            DEFAULT = new Default(DefaultConfigurationContext::new);
         }
-        return INSTANCE;
+        return DEFAULT;
     }
 
     /**
-     * Get the process name based on the standard process name property {@link #PROCESS_NAME_PROPERTY}. Throw an
-     * exception if the property name does not exist.
+     * Get the {@link Configuration} for the specified name.
      *
-     * @return the process name
+     * @param name the name of the configuration to load
+     * @return the named configuration.
+     * @throws ConfigurationException if the named configuration could not be loaded.
      */
-    public String getProcessName() {
-        return getProcessName(true);
-    }
-
-    /**
-     * Get the process name based on the standard process name property {@link #PROCESS_NAME_PROPERTY}. If the property
-     * does not exist and requireProcessName is true, throw an exception. If the property does not exist and
-     * requireProcessName is false, return null.
-     *
-     * @param requireProcessName if true, throw an exception if the process name can't be found or is empty
-     * @return the process name, or null if the process name can't be determined and requireProcessName is false
-     */
-    @SuppressWarnings("WeakerAccess")
-    public @Nullable String getProcessName(final boolean requireProcessName) {
-        final String processName = getStringWithDefault(PROCESS_NAME_PROPERTY, null);
-        if (requireProcessName && (processName == null || processName.isEmpty())) {
-            throw new ConfigurationException("Property " + PROCESS_NAME_PROPERTY + " must be defined and non-empty");
-        }
-        return processName;
-    }
-
-    /**
-     * Determine the directory where process logs should be written. This is based off a series of cascading properties.
-     * <ul>
-     * <li>If the system property {@link #LOGDIR_PROPERTY} is set, the assumption is that a JVM parameter has been
-     * defined and it takes precedence</li>
-     * <li>Otherwise, if the process name is defined, the properties {@link #LOGDIR_PROPERTY}.processName is used</li>
-     * <li>If no value has been determined, the default log directory property {@link #LOGDIR_DEFAULT_PROPERTY} is
-     * used</li>
-     * <li>If no value has been determined, "{@link #WORKSPACE_PROPERTY}/../logs" is used</li>
-     * </ul>
-     * In all cases except the first (where {@link #LOGDIR_PROPERTY} is defined with the system property), the directory
-     * is normalized with {@link #normalizeLogDirectoryPath(String)}. If validateOrCreateDirectory is true, then if the
-     * filesystem contains the determined directory, it is validated to be a directory, or if it does not exit it is
-     * created.
-     *
-     * @param validateOrCreateDirectory if true, then if the directory exists validate that it is a directory, and
-     *        create it if it doesn't exist
-     * @return the directory where process logs should be written
-     */
-    public String getLogDir(final boolean validateOrCreateDirectory) {
-        final String logDirJvmProp = getStringWithDefault(LOGDIR_PROPERTY, null);
-        if (logDirJvmProp != null) {
-            return logDirJvmProp;
-        }
-
-        // Otherwise use the full property lookup logic
-        String processName = getInstance().getProcessName(false);
-        String logDir;
-        if (processName != null && !processName.isEmpty()) {
-            logDir = getPossibleStringWithDefault(null,
-                    LOGDIR_PROPERTY + "." + processName,
-                    LOGDIR_DEFAULT_PROPERTY);
-        } else {
-            logDir = getStringWithDefault(LOGDIR_DEFAULT_PROPERTY, null);
-        }
-
-        if (logDir == null || logDir.isEmpty()) {
-            logDir = lookupPath(WORKSPACE_PROPERTY) + "../logs";
-        }
-
-        final String normalizedDirectory = normalizeLogDirectoryPath(logDir);
-        if (!validateOrCreateDirectory) {
-            return normalizedDirectory;
-        }
-
-        try {
-            checkDirectory(normalizedDirectory, true, "Process log directory");
-        } catch (IOException e) {
-            throw new UncheckedIOException("Error validating directory " + normalizedDirectory, e);
-        }
-        return normalizedDirectory;
-    }
-
-    /**
-     * Determine the directory where process logs should be written using {@link #getLogDir(boolean)}, validating that
-     * the directory exists or creating the directory if it doesn't exist.
-     *
-     * @return the directory where process logs should be written
-     */
-    public String getLogDir() {
-        return getLogDir(true);
-    }
-
-    /**
-     * Normalize a directory path. This performs the following substitutions and manipulations.
-     * <ul>
-     * <li>{@code <workspace>} - replaced with the process workspace</li>
-     * <li>{@code <devroot>} - replaced with the installation root directory</li>
-     * <li>{@code <processname>} - replaced with the process name</li>
-     * <li>{@code <logroot>} - replaced with the value found by the property {@link #LOGDIR_ROOT_PROPERTY}</li>
-     * <li>After all substitutions, {@link #expandLinuxPath(String)} is called</li>
-     * <li>Finally, {@link Path#normalize()} is called</li>
-     * </ul>
-     *
-     * @param directoryName the directory name to be normalized
-     * @return the normalized directory path after the substitutions have been performed
-     */
-    public String normalizeLogDirectoryPath(@NotNull final String directoryName) {
-        String substitutedPath;
-        // First see if there's a root to use as a prefix
-        if (directoryName.contains(LOGROOT_TOKEN)) {
-            final String logDirRoot = getStringWithDefault(LOGDIR_ROOT_PROPERTY, null);
-            if (logDirRoot == null) {
-                throw new IllegalArgumentException("Directory " + directoryName + " contains " + LOGROOT_TOKEN + " but "
-                        + LOGDIR_ROOT_PROPERTY + " property is not defined");
-            }
-            substitutedPath = directoryName.replace("<logroot>", logDirRoot);
-        } else {
-            substitutedPath = directoryName;
-        }
-
-        if (substitutedPath.contains(PROCESS_NAME_TOKEN)) {
-            final String processName = getStringWithDefault(PROCESS_NAME_PROPERTY, null);
-            if (processName == null) {
-                throw new IllegalArgumentException(
-                        "Directory " + substitutedPath + " (original path " + directoryName + ") contains "
-                                + PROCESS_NAME_TOKEN + " but " + PROCESS_NAME_PROPERTY + " property is not defined");
-            } else {
-                substitutedPath = substitutedPath.replace(PROCESS_NAME_TOKEN, processName);
-            }
-        }
-
-        if (substitutedPath.contains(WORKSPACE_TOKEN)) {
-            if (workspace == null) {
-                throw new IllegalArgumentException("Directory " + substitutedPath + " (original path " + directoryName
-                        + ") contains " + WORKSPACE_TOKEN + " but " + WORKSPACE_PROPERTY + " property is not defined");
-            } else {
-                substitutedPath = substitutedPath.replace(WORKSPACE_TOKEN, workspace);
-            }
-        }
-
-        if (substitutedPath.contains(DEVROOT_TOKEN)) {
-            if (devroot == null) {
-                throw new IllegalArgumentException("Directory " + substitutedPath + " (original path " + directoryName
-                        + ") contains " + DEVROOT_TOKEN + " but " + DEVROOT_PROPERTY + " property is not defined");
-            } else {
-                substitutedPath = substitutedPath.replace(DEVROOT_TOKEN, devroot);
-            }
-        }
-
-        // Now perform the expansion of any linux-like (i.e. ~) path pieces
-        final String expandedPath = expandLinuxPath(substitutedPath);
-
-        final Path path = Paths.get(expandedPath);
-        return path.normalize().toString();
-    }
-
-    public void checkDirectory(final String dir, final boolean createDirectory, final String message)
-            throws IOException {
-        final File logDirFile = new File(dir);
-        if (!logDirFile.exists()) {
-            if (!createDirectory) {
-                throw new IOException(message + " " + dir + " does not exist and createDirectory=false");
-            }
-
-            final boolean dirCreated;
+    public static Configuration getNamed(@NotNull final String name) throws ConfigurationException {
+        validateConfigName(name);
+        return NAMED_CONFIGURATIONS.computeIfAbsent(name, (k) -> {
             try {
-                dirCreated = logDirFile.mkdirs();
-            } catch (SecurityException e) {
-                throw new IOException(message + " " + dir + " could not be created: ", e);
+                return new Named(name, DefaultConfigurationContext::new);
+            } catch (ConfigurationException ex) {
+                throw new ConfigurationException("Unable to load named configuration " + name, ex);
             }
-            if (!dirCreated) {
-                throw new IOException(message + " " + dir + " could not be created");
-            }
-        } else if (!logDirFile.isDirectory()) {
-            throw new IllegalArgumentException(message + " " + dir + " exists but is not a directory");
-        }
+        });
     }
 
     /**
-     * Compute the log dir and filename for the provided log file name.
-     *
-     * @param filename the name of the log file
-     * @return the full path and filename for the given filename
-     */
-    public String getLogPath(String filename) {
-        return getLogDir() + File.separator + filename;
-    }
-
-
-    /**
-     * Clear the current instance, so the next call to getInstance() gives us a new one
+     * Clear all currently loaded Configurations so that they may be loaded anew.
      */
     public static void reset() {
-        INSTANCE = null;
+        DEFAULT = null;
+        NAMED_CONFIGURATIONS.clear();
     }
 
+    /**
+     * Clear the specified named Configuration so it may be loaded anew.
+     *
+     * @param name the Configuration to clear.
+     */
+    public static void reset(@NotNull final String name) {
+        NAMED_CONFIGURATIONS.remove(name);
+    }
+
+    /**
+     * Create a new, non-cached, default Configuration instance.
+     *
+     * @return a new Configuration instance, guaranteed to not be cached.
+     */
+    public static Configuration newStandaloneConfiguration() {
+        return newStandaloneConfiguration(DefaultConfigurationContext::new);
+    }
+
+    /**
+     * Create a new, non-cached, default Configuration instance.
+     *
+     * @param contextSupplier the supplier for {@link ConfigurationContext}
+     * @return a new Configuration instance, guaranteed to not be cached.
+     */
+    public static Configuration newStandaloneConfiguration(
+            @NotNull final Supplier<ConfigurationContext> contextSupplier) {
+        return new Default(contextSupplier);
+    }
+
+    /**
+     * Create a new, non-cached, named Configuration instance.
+     *
+     * @param name the configuration name
+     * @return a new Configuration instance, guaranteed to not be cached.
+     */
+    public static Configuration newStandaloneConfiguration(@NotNull final String name) {
+        validateConfigName(name);
+        return newStandaloneConfiguration(name, DefaultConfigurationContext::new);
+    }
+
+    /**
+     * Create a new, non-cached, named Configuration instance.
+     *
+     * @param name the configuration name
+     * @param contextSupplier the supplier for {@link ConfigurationContext}
+     * @return a new Configuration instance, guaranteed to not be cached.
+     */
     @SuppressWarnings("UnusedReturnValue")
-    public static Configuration TEST_NEW_Configuration() {
-        return new Configuration();
+    public static Configuration newStandaloneConfiguration(
+            @NotNull final String name,
+            @NotNull final Supplier<ConfigurationContext> contextSupplier) {
+        return new Named(name, contextSupplier);
+    }
+
+    protected Configuration(@NotNull final Supplier<ConfigurationContext> contextSupplier) {
+        this.contextSupplier = contextSupplier;
     }
 
     /**
-     * Find the name of the property specifying the root configuration file. The first property set in the ordered list
-     * of candidates is returned, or null if none is set.
-     * 
-     * @see #FILE_NAME_PROPERTIES
-     *
-     * @return the name of the property specifying a configuration file, or NULL if none is set
+     * Initialize the configuration. This will be sensitive to any system properties that configure the property file
+     * path.
      */
-    @SuppressWarnings("WeakerAccess")
-    public static String determineConfFileProperty() {
-        for (final String propertyName : FILE_NAME_PROPERTIES) {
-            final String fileName = System.getProperty(propertyName);
-            if (fileName != null) {
-                return propertyName;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * If one of the valid configuration file properties is set, return the value, else return NULL
-     * 
-     * @see #FILE_NAME_PROPERTIES
-     *
-     * @return the configuration file value, or NULL if no valid property is set.
-     */
-    public static String getConfFileNameFromProperties() {
-        final String property = determineConfFileProperty();
-        return property == null ? null : System.getProperty(property);
-    }
-
-    protected Configuration() {
-        confFileProperty = determineConfFileProperty();
-        if (confFileProperty == null) {
-            log.error("property " + FILE_NAME_PROPERTIES[0] + " must be specified");
-            System.exit(-1);
-        }
-        confFileName = System.getProperty(confFileProperty);
-
+    protected void init() {
+        final String configurationFile;
         try {
-            reloadProperties();
+            configurationFile = reloadProperties();
         } catch (IOException x) {
-            throw new ConfigurationException(
-                    "Could not process configuration from file " + confFileName + " in CLASSPATH.", x);
+            throw new ConfigurationException("Could not process configuration from file", x);
         }
-
-        String workspacePropValue;
-        try {
-            workspacePropValue = lookupPath(WORKSPACE_PROPERTY);
-        } catch (ConfigurationException e) {
-            workspacePropValue = null;
-        }
-        workspace = workspacePropValue;
-
-        String devrootPropValue;
-        try {
-            devrootPropValue = lookupPath(DEVROOT_PROPERTY);
-        } catch (ConfigurationException e) {
-            devrootPropValue = null;
-        }
-        devroot = devrootPropValue;
 
         // The quiet property is available because things like shell scripts may be parsing our System.out and they
-        // don't
-        // want to have to deal with these log messages
-        if (System.getProperty(QUIET_PROPERTY) == null) {
-            if (workspace != null) {
-                log.info("Configuration: " + WORKSPACE_PROPERTY + " is " + workspace);
-            } else {
-                log.warn("Configuration: " + WORKSPACE_PROPERTY + " is undefined");
-            }
-            if (devroot != null) {
-                log.info("Configuration: " + DEVROOT_PROPERTY + " is " + devroot);
-            } else {
-                log.warn("Configuration: " + DEVROOT_PROPERTY + " is undefined");
-            }
-            log.info("Configuration: " + confFileProperty + " is " + confFileName);
+        // don't want to have to deal with these log messages
+        if (!isQuiet()) {
+            log.info().append("Configuration: configuration file is ").append(configurationFile).endl();
         }
-    }
-
-    String getConfFileProperty() {
-        return confFileProperty;
     }
 
     /**
@@ -373,7 +209,7 @@ public class Configuration extends PropertyFile {
      * @throws ConfigurationException if the property stream cannot be opened
      */
     private void load(String fileName, boolean ignoreScope) throws IOException, ConfigurationException {
-        final ParsedProperties temp = new ParsedProperties(ignoreScope);
+        final ParsedProperties temp = new ParsedProperties(ignoreScope, contextSupplier.get());
         // we explicitly want to set 'properties' here so that if we get an error while loading, anything before that
         // error shows up.
         // That is very helpful in debugging.
@@ -462,69 +298,25 @@ public class Configuration extends PropertyFile {
         return dir.getAbsolutePath();
     }
 
-    @SuppressWarnings("NeverUsed")
-    public String getConfFileName() {
-        return confFileName;
-    }
-
-    private void checkWorkspaceDefined() {
-        if (workspace == null) {
-            throw new ConfigurationException(WORKSPACE_PROPERTY + " property is not defined");
-        }
-    }
-
-    public String getWorkspacePath(String propertyName) {
-        checkWorkspaceDefined();
-        return workspace + getProperty(propertyName);
-    }
-
-    public String getWorkspacePath() {
-        checkWorkspaceDefined();
-        return workspace;
-    }
-
-    @SuppressWarnings("unused")
-    public String getTempPath(String componentName) {
-        File f = new File(getWorkspacePath() + "/temp/" + componentName);
-        if (!f.exists()) {
-            // noinspection ResultOfMethodCallIgnored
-            f.mkdirs();
-        }
-        return f.getAbsolutePath();
-    }
-
-    private void checkDevRootDefined() {
-        if (devroot == null) {
-            throw new ConfigurationException(DEVROOT_PROPERTY + " property is not defined");
-        }
-    }
-
-    public String getDevRootPath(String propertyName) {
-        checkDevRootDefined();
-        return devroot + File.separator + getProperty(propertyName);
-    }
-
-    public String getDevRootPath() {
-        checkDevRootDefined();
-        return devroot;
-    }
-
     /**
      * @return the TimeZone the server is running in
      */
     public TimeZone getServerTimezone() {
-        return TimeZone.getTimeZone(getProperty("server.timezone"));
+        return TimeZone.getTimeZone(ZoneId.systemDefault());
     }
 
     /**
      * Reload properties, then update with all system properties (properties set in System take precedence).
      *
+     * @return the property file used
      * @throws IOException if the property stream cannot be processed
      * @throws ConfigurationException if the property stream cannot be opened
      */
-    public void reloadProperties() throws IOException, ConfigurationException {
-        reloadProperties(false);
+    public String reloadProperties() throws IOException, ConfigurationException {
+        return reloadProperties(false);
     }
+
+    protected abstract String determinePropertyFile();
 
     /**
      * Reload properties, optionally ignoring scope sections - used for testing
@@ -534,29 +326,13 @@ public class Configuration extends PropertyFile {
      * @throws IOException if the property stream cannot be processed
      * @throws ConfigurationException if the property stream cannot be opened
      */
-    void reloadProperties(boolean ignoreScope) throws IOException, ConfigurationException {
-        load(System.getProperty(confFileProperty), ignoreScope);
+    String reloadProperties(boolean ignoreScope) throws IOException, ConfigurationException {
+        final String propertyFile = determinePropertyFile();
+        load(propertyFile, ignoreScope);
         // If any system properties exist with the same name as a property that's been declared final, that will
-        // generate
-        // an exception the same way it would inside the properties file.
+        // generate an exception the same way it would inside the properties file.
         properties.putAll(System.getProperties());
-    }
-
-    /**
-     * ONLY the service factory is allowed to get null properties and ONLY for the purposes of using default profiles
-     * when one doesn't exist. This has been relocated here after many people are using defaults/nulls in the code when
-     * it's not allowed.
-     */
-    @SuppressWarnings("WeakerAccess")
-    public static class NullableConfiguration extends Configuration {
-        NullableConfiguration() {
-            super();
-        }
-
-        @SuppressWarnings("unused")
-        public String getPropertyNullable(String propertyName) {
-            return properties.getProperty(propertyName);
-        }
+        return propertyFile;
     }
 
     // only used by main() method below, normally configs are loaded from the classpath
@@ -565,7 +341,6 @@ public class Configuration extends PropertyFile {
         temp.load(new FileInputStream(path + "/" + propFileName));
         return temp;
     }
-
 
     /**
      * The following main method compares two directories of prop files and outputs a CSV report of the differences.
@@ -607,7 +382,7 @@ public class Configuration extends PropertyFile {
     private static String propFileDiffReport(Set<String> includedProperties, String dir1, String file1, String dir2,
             String file2, String dir3, String file3, boolean useDiffKeys) throws IOException {
         StringBuilder out = new StringBuilder();
-        Configuration configuration = new Configuration();
+        Configuration configuration = new Default(DefaultConfigurationContext::new);
         Properties leftProperties = configuration.load(dir1, file1);
         Properties rightProperties = configuration.load(dir2, file2);
         Properties right2Properties;
@@ -662,5 +437,24 @@ public class Configuration extends PropertyFile {
             String sRightValue2) {
         out.append(sKey).append(", \"").append(sLeftValue).append("\", \"").append(sRightValue).append("\", \"")
                 .append(sRightValue2).append("\"\n");
+    }
+
+    static boolean isQuiet() {
+        return Bootstrap.isQuiet() || System.getProperty(QUIET_PROPERTY) != null;
+    }
+
+    /**
+     * Check that the passed in config name is not null and is allowed.
+     *
+     * @param name the Configuration name.
+     */
+    static void validateConfigName(final String name) {
+        if (name == null) {
+            throw new ConfigurationException("Configuration name must not be null");
+        }
+
+        if ("Configuration".equals(name)) {
+            throw new ConfigurationException("The name `Configuration` may not be used as a Configuration name");
+        }
     }
 }

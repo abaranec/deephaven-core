@@ -1,16 +1,19 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl;
 
 import io.deephaven.engine.rowset.*;
 import io.deephaven.engine.rowset.RowSetFactory;
 import io.deephaven.engine.table.ModifiedColumnSet;
 import io.deephaven.engine.table.TableUpdate;
-import io.deephaven.engine.updategraph.UpdateGraphProcessor;
 import io.deephaven.engine.table.ColumnSource;
 import gnu.trove.impl.Constants;
 import gnu.trove.set.TLongSet;
 import gnu.trove.set.hash.TLongHashSet;
 import org.jetbrains.annotations.NotNull;
 
+import javax.annotation.OverridingMethodsMustInvokeSuper;
 import java.util.Map;
 import java.util.function.Consumer;
 
@@ -105,7 +108,7 @@ public class UpdatableTable extends QueryTable implements Runnable {
         }
     }
 
-    private static RowSet setToIndex(@NotNull final TLongSet set) {
+    private static RowSet setToRowSet(@NotNull final TLongSet set) {
         final RowSetBuilderRandom builder = RowSetFactory.builderRandom();
         set.forEach(key -> {
             builder.addKey(key);
@@ -119,9 +122,9 @@ public class UpdatableTable extends QueryTable implements Runnable {
     public void run() {
         updater.accept(rowSetChangeRecorder);
 
-        final RowSet added = setToIndex(addedSet);
-        final RowSet removed = setToIndex(removedSet);
-        final RowSet modified = setToIndex(modifiedSet);
+        final RowSet added = setToRowSet(addedSet);
+        final RowSet removed = setToRowSet(removedSet);
+        final RowSet modified = setToRowSet(modifiedSet);
         getRowSet().writableCast().update(added, removed);
         if (added.isNonempty() || removed.isNonempty() || modified.isNonempty()) {
             final TableUpdateImpl update = new TableUpdateImpl();
@@ -142,9 +145,10 @@ public class UpdatableTable extends QueryTable implements Runnable {
         notifyListeners(update);
     }
 
+    @OverridingMethodsMustInvokeSuper
     @Override
     public void destroy() {
         super.destroy();
-        UpdateGraphProcessor.DEFAULT.removeSource(this);
+        updateGraph.removeSource(this);
     }
 }

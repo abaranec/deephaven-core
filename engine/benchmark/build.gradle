@@ -1,5 +1,6 @@
 plugins {
     id 'java-library'
+    id 'io.deephaven.project.register'
 }
 
 description 'Engine Benchmark: Benchmarks for Engine modules'
@@ -19,27 +20,11 @@ dependencies {
             TestTools.projectDependency(project, 'engine-rowset'),
             TestTools.projectDependency(project, 'engine-table')
 
-    testAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.21'
+    testAnnotationProcessor libs.jmh.generator.annprocess
+    testCompileOnly libs.jmh.generator.annprocess
 
-    testRuntime project(path: ':configs'),
-            project(path: ':test-configs'),
-            'org.openjdk.jmh:jmh-generator-annprocess:1.21'
-}
-
-spotless {
-    java {
-        targetExclude(
-                '**/Boolean*Benchmark.java',
-                '**/Byte*Benchmark.java',
-                '**/Char*Benchmark.java',
-                '**/Short*Benchmark.java',
-                '**/Int*Benchmark.java',
-                '**/Long*Benchmark.java',
-                '**/Float*Benchmark.java',
-                '**/Double*Benchmark.java',
-                '**/Object*Benchmark.java',
-        )
-    }
+    testRuntimeOnly project(path: ':configs')
+    testRuntimeOnly project(path: ':test-configs')
 }
 
 task jmhRun(type: JavaExec)  {
@@ -49,16 +34,14 @@ task jmhRun(type: JavaExec)  {
 
     classpath = sourceSets.test.runtimeClasspath
 
-    main = 'io.deephaven.benchmarking.runner.BenchmarkRunner'
+    mainClass.set 'io.deephaven.benchmarking.runner.BenchmarkRunner'
 
     // arguments to pass to the application
     jvmArgs '-DConfiguration.rootFile=dh-tests.prop',
-            "-Ddevroot=$rootDir",
             "-Dworkspace=$rootDir/tmp/workspace",
             '-Dconfiguration.quiet=true',
             '-Djava.awt.headless=true',
             '-DQueryTable.memoizeResults=false',
-            '-DUpdateGraphProcessor.checkTableOperations=false',
             '-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=9500'
 }
 
@@ -69,16 +52,14 @@ def createJmhTask = {
 
         task.workingDir "$rootDir/tmp/workspace"
         task.classpath = sourceSets.test.runtimeClasspath
-        task.main = 'io.deephaven.benchmarking.runner.BenchmarkRunner'
+        task.mainClass.set 'io.deephaven.benchmarking.runner.BenchmarkRunner'
 
         // arguments to pass to the application
         def jvmArgs = [ '-DConfiguration.rootFile=dh-tests.prop',
-                "-Ddevroot=$rootDir",
                 "-Dworkspace=$rootDir/tmp/workspace",
                 '-Dconfiguration.quiet=true',
                 '-Djava.awt.headless=true',
                 '-DQueryTable.memoizeResults=false',
-                '-DUpdateGraphProcessor.checkTableOperations=false',
                 "-Xmx$heapSize"
                 //'-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=9501'
         ]
@@ -97,6 +78,11 @@ createJmhTask('jmhRunNaturalJoin', 'NaturalJoinBenchmark')
 createJmhTask('jmhRunSparseSelect', 'SparseSelectBenchmark')
 createJmhTask('jmhRunRCS', 'RegionedColumnSourceBenchmark')
 createJmhTask('jmhRunBy', 'ByBenchmark')
+createJmhTask('jmhRunUnion', 'UnionBenchmark', [], '12g')
+createJmhTask('jmhRunBuilder', 'RowSetBuilderBenchmark')
+createJmhTask('jmhRunMatchHistorical',
+        ['MatchFilterHistoricalBenchmark',
+         '-prof=io.deephaven.benchmark.db.ResultSizeProfiler'])
 createJmhTask('jmhRunRowSetGetFind', 'RowSetGetFindBench', ['-DMetricsManager.enabled=true'])
 
 def createDeephavenTestExecTask = {
@@ -106,10 +92,9 @@ def createDeephavenTestExecTask = {
 
         task.workingDir "$rootDir"
         task.classpath = sourceSets.test.runtimeClasspath
-        task.main = mainClass
+        task.mainClass.set mainClass
 
         task.jvmArgs '-DConfiguration.rootFile=dh-tests.prop',
-                "-Ddevroot=$rootDir",
                 "-Dworkspace=$rootDir/tmp/workspace",
                 "-Dtest.output.dir=$rootDir/tmp/logs",
                 '-Dconfiguration.quiet=true',

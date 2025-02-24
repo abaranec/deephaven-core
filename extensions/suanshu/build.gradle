@@ -1,18 +1,20 @@
 plugins {
     id 'java-library'
-}
-
-configurations {
-    testCompile.extendsFrom fishBaseTest
+    id 'io.deephaven.project.register'
 }
 
 dependencies {
     compileOnly project(':Base')
     compileOnly project(':engine-table')
 
-    compileOnly 'javax.inject:javax.inject:1'
+    compileOnly libs.javax.inject
 
-    api 'io.deephaven:SuanShu:0.1.0'
+    api libs.deephaven.suan.shu
+
+    compileOnly libs.autoservice
+    annotationProcessor libs.autoservice.compiler
 
     testImplementation project(':engine-table')
+    testImplementation project(':base-test-utils')
+    testImplementation project(path: ':Base', configuration: 'tests')
 }

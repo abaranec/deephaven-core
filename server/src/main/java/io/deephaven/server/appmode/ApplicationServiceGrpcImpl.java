@@ -1,41 +1,39 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.server.appmode;
 
 import com.google.rpc.Code;
 import io.deephaven.appmode.ApplicationState;
-import io.deephaven.appmode.CustomField;
 import io.deephaven.appmode.Field;
-import io.deephaven.time.DateTimeUtils;
-import io.deephaven.plot.FigureWidget;
-import io.deephaven.engine.table.Table;
 import io.deephaven.engine.util.ScriptSession;
-import io.deephaven.engine.liveness.LivenessArtifact;
-import io.deephaven.engine.liveness.LivenessReferent;
-import io.deephaven.engine.updategraph.DynamicNode;
-import io.deephaven.extensions.barrage.util.BarrageUtil;
 import io.deephaven.extensions.barrage.util.GrpcUtil;
-import io.deephaven.server.session.SessionService;
-import io.deephaven.server.session.SessionState;
-import io.deephaven.server.util.Scheduler;
 import io.deephaven.internal.log.LoggerFactory;
 import io.deephaven.io.logger.Logger;
 import io.deephaven.proto.backplane.grpc.ApplicationServiceGrpc;
-import io.deephaven.proto.backplane.grpc.CustomInfo;
 import io.deephaven.proto.backplane.grpc.FieldInfo;
 import io.deephaven.proto.backplane.grpc.FieldsChangeUpdate;
-import io.deephaven.proto.backplane.grpc.FigureInfo;
 import io.deephaven.proto.backplane.grpc.ListFieldsRequest;
-import io.deephaven.proto.backplane.grpc.TableInfo;
+import io.deephaven.proto.backplane.grpc.TypedTicket;
+import io.deephaven.server.console.ConsoleServiceGrpcImpl;
+import io.deephaven.server.object.TypeLookup;
+import io.deephaven.server.session.SessionService;
+import io.deephaven.server.session.SessionState;
+import io.deephaven.server.util.Scheduler;
 import io.grpc.stub.ServerCallStreamObserver;
 import io.grpc.stub.StreamObserver;
+import org.jetbrains.annotations.NotNull;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import java.io.Closeable;
-import java.util.HashMap;
-import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.Set;
 
 @Singleton
@@ -43,10 +41,11 @@ public class ApplicationServiceGrpcImpl extends ApplicationServiceGrpc.Applicati
         implements ScriptSession.Listener, ApplicationState.Listener {
     private static final Logger log = LoggerFactory.getLogger(ApplicationServiceGrpcImpl.class);
 
-    private final AppMode mode;
+    private static final String QUERY_SCOPE_DESCRIPTION = "query scope variable";
+
     private final Scheduler scheduler;
     private final SessionService sessionService;
-    private final LivenessTracker tracker = new LivenessTracker();
+    private final TypeLookup typeLookup;
 
     /** The list of Field listeners */
     private final Set<Subscription> subscriptions = new LinkedHashSet<>();
@@ -54,120 +53,50 @@ public class ApplicationServiceGrpcImpl extends ApplicationServiceGrpc.Applicati
     /** A schedulable job that flushes pending field changes to all listeners. */
     private final FieldUpdatePropagationJob propagationJob = new FieldUpdatePropagationJob();
 
-    /** Which fields have been updated since we last propagated? */
-    private final Map<AppFieldId, Field<?>> addedFields = new HashMap<>();
-    /** Which fields have been removed since we last propagated? */
-    private final Set<AppFieldId> removedFields = new HashSet<>();
-    /** Which fields have been updated since we last propagated? */
-    private final Set<AppFieldId> updatedFields = new HashSet<>();
-    /** Which [remaining] fields have we seen? */
-    private final Map<AppFieldId, Field<?>> knownFieldMap = new HashMap<>();
+    /** The state, as known by subscriptions */
+    private final Map<AppFieldId, FieldInfo> known = new LinkedHashMap<>();
+
+    /** The accumulated state changes, as known by us and not yet sent to subscriptions */
+    private final Map<AppFieldId, State> accumulated = new LinkedHashMap<>();
 
     @Inject
-    public ApplicationServiceGrpcImpl(final AppMode mode,
+    public ApplicationServiceGrpcImpl(
             final Scheduler scheduler,
-            final SessionService sessionService) {
-        this.mode = mode;
+            final SessionService sessionService,
+            final TypeLookup typeLookup) {
         this.scheduler = scheduler;
         this.sessionService = sessionService;
+        this.typeLookup = typeLookup;
     }
 
     @Override
     public synchronized void onScopeChanges(final ScriptSession scriptSession, final ScriptSession.Changes changes) {
-        if (!mode.hasVisibilityToConsoleExports() || changes.isEmpty()) {
+        if (ConsoleServiceGrpcImpl.REMOTE_CONSOLE_DISABLED || changes.isEmpty()) {
             return;
         }
-
-        changes.removed.keySet().stream().map(AppFieldId::fromScopeName).forEach(id -> {
-            updatedFields.remove(id);
-            Field<?> oldField = addedFields.remove(id);
-            if (oldField == null) {
-                removedFields.add(id);
-            }
-        });
-
-        for (final String name : changes.updated.keySet()) {
-            final AppFieldId id = AppFieldId.fromScopeName(name);
-
-            boolean recentField = false;
-            ScopeField field = (ScopeField) addedFields.get(id);
-            if (field == null) {
-                field = (ScopeField) knownFieldMap.get(id);
-            } else {
-                recentField = true;
-            }
-
-            field.value = scriptSession.unwrapObject(scriptSession.getVariable(name));
-            if (!recentField) {
-                updatedFields.add(id);
-            }
+        for (Entry<String, String> e : changes.removed.entrySet()) {
+            remove(AppFieldId.fromScopeName(e.getKey()));
         }
-
-        for (final String name : changes.created.keySet()) {
-            final AppFieldId id = AppFieldId.fromScopeName(name);
-            final Object value = scriptSession.unwrapObject(scriptSession.getVariable(name));
-            final ScopeField field = new ScopeField(name, value);
-            final FieldInfo fieldInfo = getFieldInfo(id, field);
-            if (fieldInfo == null) {
-                // The script session should not have told us about this variable...
-                throw new IllegalStateException(
-                        String.format("Field information could not be generated for scope variable '%s'", name));
-            }
-            final Field<?> oldField = addedFields.put(id, field);
-            if (oldField != null) {
-                throw new IllegalStateException(
-                        String.format("Script session notified of new field but was already existing '%s'", name));
-            }
+        for (Entry<String, String> e : changes.updated.entrySet()) {
+            update(AppFieldId.fromScopeName(e.getKey()), QUERY_SCOPE_DESCRIPTION, e.getValue());
         }
-
+        for (Entry<String, String> e : changes.created.entrySet()) {
+            create(AppFieldId.fromScopeName(e.getKey()), QUERY_SCOPE_DESCRIPTION, e.getValue());
+        }
         schedulePropagationOrClearIncrementalState();
     }
 
     @Override
     public synchronized void onRemoveField(ApplicationState app, Field<?> oldField) {
-        if (!mode.hasVisibilityToAppExports()) {
-            return;
-        }
-
-        final AppFieldId id = AppFieldId.from(app, oldField.name());
-        Field<?> recentlyAdded = addedFields.remove(id);
-        if (recentlyAdded != null) {
-            tracker.maybeUnmanage(recentlyAdded.value());
-            return;
-        }
-        updatedFields.remove(id);
-        removedFields.add(id);
-
+        remove(AppFieldId.from(app, oldField.name()));
         schedulePropagationOrClearIncrementalState();
     }
 
     @Override
     public synchronized void onNewField(final ApplicationState app, final Field<?> field) {
-        if (!mode.hasVisibilityToAppExports()) {
-            return;
-        }
-
         final AppFieldId id = AppFieldId.from(app, field.name());
-        final FieldInfo fieldInfo = getFieldInfo(id, field);
-        if (fieldInfo == null) {
-            throw new IllegalStateException(String.format("Field information could not be generated for field '%s/%s'",
-                    app.id(), field.name()));
-        }
-
-        tracker.maybeManage(field.value());
-
-        final Field<?> knownField = knownFieldMap.get(id);
-        if (knownField != null && !removedFields.contains(id)) {
-            updatedFields.add(id);
-            tracker.maybeUnmanage(knownField.value());
-            knownFieldMap.put(id, field);
-        } else {
-            final Field<?> recentlyAdded = addedFields.put(id, field);
-            if (recentlyAdded != null) {
-                tracker.maybeUnmanage(recentlyAdded.value());
-            }
-        }
-
+        final String type = typeLookup.type(field.value()).orElse(null);
+        create(id, field.description().orElse(null), type);
         schedulePropagationOrClearIncrementalState();
     }
 
@@ -175,158 +104,57 @@ public class ApplicationServiceGrpcImpl extends ApplicationServiceGrpc.Applicati
         if (!subscriptions.isEmpty()) {
             propagationJob.markUpdates();
         } else {
-            // don't have to wait for the propagation job to accept these fields into the known field map
-            knownFieldMap.keySet().removeAll(removedFields);
-            knownFieldMap.putAll(addedFields);
-
-            // let's not duplicate information when a client does actually join
-            addedFields.clear();
-            removedFields.clear();
-            updatedFields.clear();
+            // Run on current thread instead of scheduler
+            propagateUpdates();
         }
     }
 
     private synchronized void propagateUpdates() {
         propagationJob.markRunning();
-        final FieldsChangeUpdate.Builder builder = FieldsChangeUpdate.newBuilder();
-
-        // We only unmanage when we can no longer send it to a new observer.
-        removedFields.forEach(id -> {
-            final Field<?> oldField = knownFieldMap.get(id);
-            if (oldField == null) {
-                log.error().append("Removing old field but field not known; fieldId = ").append(id.toString()).endl();
-            } else {
-                tracker.maybeUnmanage(oldField.value());
-                builder.addRemoved(getRemovedFieldInfo(id));
-            }
-        });
-        removedFields.clear();
-
-        // We manage all referents when they are added.
-        addedFields.forEach((id, field) -> {
-            knownFieldMap.put(id, field);
-            builder.addCreated(getFieldInfo(id, field));
-        });
-        addedFields.clear();
-
-        // Updated fields are managed/unmanaged during notification of update.
-        updatedFields.forEach(id -> builder.addUpdated(getFieldInfo(id, knownFieldMap.get(id))));
-        updatedFields.clear();
-        final FieldsChangeUpdate update = builder.build();
-
-        subscriptions.forEach(sub -> sub.send(update));
+        final Updater updater = new Updater();
+        for (State state : accumulated.values()) {
+            state.append(updater);
+        }
+        accumulated.clear();
+        if (!updater.isEmpty() && !subscriptions.isEmpty()) {
+            final FieldsChangeUpdate update = updater.build();
+            // Send updates to all subscriptions, if they fail to handle the update, cancel the subscription
+            List<Subscription> toCancel = new ArrayList<>(subscriptions);
+            toCancel.removeIf(s -> s.send(update));
+            toCancel.forEach(Subscription::onCancel);
+        }
     }
 
     @Override
-    public synchronized void listFields(ListFieldsRequest request,
-            StreamObserver<FieldsChangeUpdate> responseObserver) {
-        GrpcUtil.rpcWrapper(log, responseObserver, () -> {
-            final SessionState session = sessionService.getCurrentSession();
-            final Subscription subscription = new Subscription(session, responseObserver);
+    public synchronized void listFields(
+            @NotNull final ListFieldsRequest request,
+            @NotNull final StreamObserver<FieldsChangeUpdate> responseObserver) {
+        final SessionState session = sessionService.getCurrentSession();
+        final Subscription subscription = new Subscription(session, responseObserver);
 
-            final FieldsChangeUpdate.Builder responseBuilder = FieldsChangeUpdate.newBuilder();
-            knownFieldMap.forEach((appFieldId, field) -> responseBuilder.addCreated(getFieldInfo(appFieldId, field)));
-
-            if (subscription.send(responseBuilder.build())) {
-                subscriptions.add(subscription);
-            }
-        });
+        final FieldsChangeUpdate.Builder responseBuilder = FieldsChangeUpdate.newBuilder();
+        for (FieldInfo fieldInfo : known.values()) {
+            responseBuilder.addCreated(fieldInfo);
+        }
+        if (subscription.send(responseBuilder.build())) {
+            subscriptions.add(subscription);
+        } else {
+            subscription.onCancel();
+        }
     }
 
     synchronized void remove(Subscription sub) {
         if (subscriptions.remove(sub)) {
-            sub.notifyObserverAborted();
+            sub.notifyObserverCancelled();
         }
     }
 
-    private static FieldInfo getRemovedFieldInfo(final AppFieldId id) {
-        return FieldInfo.newBuilder()
-                .setTicket(id.getTicket())
-                .setFieldName(id.fieldName)
-                .setApplicationId(id.applicationId())
-                .setApplicationName(id.applicationName())
-                .build();
-    }
-
-    private static FieldInfo getFieldInfo(final AppFieldId id, final Field<?> field) {
-        if (field instanceof CustomField) {
-            return getCustomFieldInfo(id, (CustomField<?>) field);
+    private static TypedTicket typedTicket(AppFieldId id, String type) {
+        final TypedTicket.Builder ticket = TypedTicket.newBuilder().setTicket(id.getTicket());
+        if (type != null) {
+            ticket.setType(type);
         }
-        return getStandardFieldInfo(id, field);
-    }
-
-    private static FieldInfo getCustomFieldInfo(final AppFieldId id, final CustomField<?> field) {
-        return FieldInfo.newBuilder()
-                .setTicket(id.getTicket())
-                .setFieldName(id.fieldName)
-                .setFieldType(FieldInfo.FieldType.newBuilder()
-                        .setCustom(CustomInfo.newBuilder()
-                                .setType(field.type())
-                                .build())
-                        .build())
-                .setFieldDescription(field.description().orElse(""))
-                .setApplicationId(id.applicationId())
-                .setApplicationName(id.applicationName())
-                .build();
-    }
-
-    private static FieldInfo getStandardFieldInfo(final AppFieldId id, final Field<?> field) {
-        // Note that this method accepts any Field and not just StandardField
-        final FieldInfo.FieldType fieldType = fetchFieldType(field.value());
-
-        if (fieldType == null) {
-            throw new IllegalArgumentException("Application Field is not of standard type; use CustomField instead");
-        }
-
-        return FieldInfo.newBuilder()
-                .setTicket(id.getTicket())
-                .setFieldName(id.fieldName)
-                .setFieldType(fieldType)
-                .setFieldDescription(field.description().orElse(""))
-                .setApplicationId(id.applicationId())
-                .setApplicationName(id.applicationName())
-                .build();
-    }
-
-    private static FieldInfo.FieldType fetchFieldType(final Object obj) {
-        if (obj instanceof Table) {
-            final Table table = (Table) obj;
-            return FieldInfo.FieldType.newBuilder().setTable(TableInfo.newBuilder()
-                    .setSchemaHeader(BarrageUtil.schemaBytesFromTable(table))
-                    .setIsStatic(!table.isRefreshing())
-                    .setSize(table.size())
-                    .build()).build();
-        }
-        if (obj instanceof FigureWidget) {
-            return FieldInfo.FieldType.newBuilder().setFigure(FigureInfo.getDefaultInstance()).build();
-        }
-
-        return null;
-    }
-
-    private static class ScopeField implements Field<Object> {
-        final String name;
-        Object value;
-
-        ScopeField(String name, Object value) {
-            this.name = name;
-            this.value = value;
-        }
-
-        @Override
-        public String name() {
-            return name;
-        }
-
-        @Override
-        public Object value() {
-            return value;
-        }
-
-        @Override
-        public Optional<String> description() {
-            return Optional.of("query scope variable");
-        }
+        return ticket.build();
     }
 
     private class FieldUpdatePropagationJob implements Runnable {
@@ -348,9 +176,6 @@ public class ApplicationServiceGrpcImpl extends ApplicationServiceGrpc.Applicati
 
         // must be sync wrt parent
         private void markRunning() {
-            if (!isScheduled) {
-                throw new IllegalStateException("Job is running without being scheduled");
-            }
             isScheduled = false;
         }
 
@@ -362,14 +187,14 @@ public class ApplicationServiceGrpcImpl extends ApplicationServiceGrpc.Applicati
                 return false;
             }
             isScheduled = true;
-            final long now = scheduler.currentTime().getMillis();
+            final long now = scheduler.currentTimeMillis();
             final long nextMin = lastScheduledMillis + UPDATE_INTERVAL_MS;
             if (lastScheduledMillis > 0 && now >= nextMin) {
                 lastScheduledMillis = now;
                 scheduler.runImmediately(this);
             } else {
                 lastScheduledMillis = nextMin;
-                scheduler.runAtTime(DateTimeUtils.millisToTime(nextMin), this);
+                scheduler.runAfterDelay(nextMin - now, this);
             }
             return true;
         }
@@ -408,36 +233,183 @@ public class ApplicationServiceGrpcImpl extends ApplicationServiceGrpc.Applicati
             remove(this);
         }
 
-        // must be sync wrt parent
+        /**
+         * Sends an update to the subscribed client. Returns true if successful - if false, the client is no longer
+         * listening and this subscription should be canceled after iteration.
+         *
+         * @param changes the updates to inform the client of
+         * @return true if the message was sent, false if an error occurred and the subscription should be canceled
+         */
         private boolean send(FieldsChangeUpdate changes) {
             try {
                 observer.onNext(changes);
             } catch (RuntimeException ignored) {
-                onCancel();
                 return false;
             }
             return true;
         }
 
         // must be sync wrt parent
-        private void notifyObserverAborted() {
-            GrpcUtil.safelyExecute(
-                    () -> observer.onError(GrpcUtil.statusRuntimeException(Code.ABORTED, "subscription cancelled")));
+        private void notifyObserverCancelled() {
+            GrpcUtil.safelyError(observer, Code.CANCELLED, "subscription cancelled");
         }
     }
 
+    private void create(AppFieldId id, String description, String type) {
+        accumulated(id).create(description, type);
+    }
 
-    private static class LivenessTracker extends LivenessArtifact {
-        private <T> void maybeManage(T object) {
-            if (object instanceof LivenessReferent && DynamicNode.notDynamicOrIsRefreshing(object)) {
-                manage((LivenessReferent) object);
+    private void update(AppFieldId id, String description, String type) {
+        accumulated(id).update(description, type);
+    }
+
+    private void remove(AppFieldId id) {
+        accumulated(id).remove();
+    }
+
+    private State accumulated(AppFieldId id) {
+        return accumulated.computeIfAbsent(id, this::newState);
+    }
+
+    private State newState(AppFieldId id) {
+        final FieldInfo existingInfo = known.get(id);
+        return existingInfo == null ? State.emptyState(id) : State.existingState(id, existingInfo);
+    }
+
+    private enum CUR {
+        NOOP, CREATED, UPDATED, REMOVED
+    }
+
+    private static class State {
+
+        public static State emptyState(AppFieldId id) {
+            return new State(id, null);
+        }
+
+        public static State existingState(AppFieldId id, FieldInfo existing) {
+            return new State(id, Objects.requireNonNull(existing));
+        }
+
+        private final AppFieldId id;
+        private final FieldInfo existing;
+        private String description;
+        private String type;
+
+        // If existing == null, may only be CREATED or NOOP.
+        // If existing != null, may only be REMOVED or UPDATED.
+        private CUR out;
+
+        private State(AppFieldId id, FieldInfo existing) {
+            this.id = Objects.requireNonNull(id);
+            this.existing = existing;
+            this.out = existing == null ? CUR.NOOP : CUR.UPDATED;
+        }
+
+        public void create(String description, String type) {
+            if (existing == null) {
+                transition(CUR.NOOP, CUR.CREATED);
+            } else {
+                transition(CUR.REMOVED, CUR.UPDATED);
+            }
+            this.description = description;
+            this.type = type;
+        }
+
+        public void update(String description, String type) {
+            if (existing == null) {
+                check(CUR.CREATED);
+            } else {
+                check(CUR.UPDATED);
+            }
+            this.description = description;
+            this.type = type;
+        }
+
+        public void remove() {
+            if (existing == null) {
+                transition(CUR.CREATED, CUR.NOOP);
+            } else {
+                transition(CUR.UPDATED, CUR.REMOVED);
+            }
+            // If we send a remove, we'll be basing it off of our existing info
+            this.description = null;
+            this.type = null;
+        }
+
+        public void append(Updater updater) {
+            switch (out) {
+                case NOOP:
+                    break;
+                case CREATED:
+                    updater.onCreated(id, fieldInfo());
+                    break;
+                case UPDATED:
+                    updater.onUpdated(id, fieldInfo());
+                    break;
+                case REMOVED:
+                    updater.onRemoved(id, Objects.requireNonNull(existing));
+                    break;
+                default:
+                    throw new IllegalStateException("Unexpected state " + out);
             }
         }
 
-        private <T> void maybeUnmanage(T object) {
-            if (object instanceof LivenessReferent && DynamicNode.notDynamicOrIsRefreshing(object)) {
-                unmanage((LivenessReferent) object);
+        private void transition(CUR from, CUR to) {
+            if (out != from) {
+                throw new IllegalStateException(
+                        String.format("Expected transition from=%s to=%s, actual=%s", from, to, out));
             }
+            out = to;
+        }
+
+        private void check(CUR expected) {
+            if (out != expected) {
+                throw new IllegalStateException(String.format("Expected state=%s, actual=%s", expected, out));
+            }
+        }
+
+        private FieldInfo fieldInfo() {
+            return FieldInfo.newBuilder()
+                    .setTypedTicket(typedTicket(id, type))
+                    .setFieldName(id.fieldName)
+                    .setFieldDescription(description == null ? "" : description)
+                    .setApplicationId(id.applicationId())
+                    .setApplicationName(id.applicationName())
+                    .build();
+        }
+    }
+
+    /**
+     * Modifies {@code known} state while also building {@link FieldsChangeUpdate}.
+     */
+    private class Updater {
+        private final FieldsChangeUpdate.Builder builder = FieldsChangeUpdate.newBuilder();
+        private boolean isEmpty = true;
+
+        boolean isEmpty() {
+            return isEmpty;
+        }
+
+        void onCreated(AppFieldId id, FieldInfo info) {
+            builder.addCreated(info);
+            known.put(id, info);
+            isEmpty = false;
+        }
+
+        void onUpdated(AppFieldId id, FieldInfo info) {
+            builder.addUpdated(info);
+            known.put(id, info);
+            isEmpty = false;
+        }
+
+        void onRemoved(AppFieldId id, FieldInfo info) {
+            builder.addRemoved(info);
+            known.remove(id);
+            isEmpty = false;
+        }
+
+        FieldsChangeUpdate build() {
+            return builder.build();
         }
     }
 }

@@ -1,8 +1,13 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.benchmark.engine;
 
+import io.deephaven.engine.context.ExecutionContext;
+import io.deephaven.engine.context.TestExecutionContext;
 import io.deephaven.engine.table.Table;
-import io.deephaven.engine.updategraph.UpdateGraphProcessor;
-import io.deephaven.time.DateTime;
+import io.deephaven.engine.table.impl.select.MatchFilter.MatchType;
+import io.deephaven.engine.testutil.ControlledUpdateGraph;
 import io.deephaven.time.DateTimeUtils;
 import io.deephaven.engine.table.impl.select.*;
 import io.deephaven.benchmarking.*;
@@ -12,6 +17,7 @@ import org.openjdk.jmh.infra.BenchmarkParams;
 import org.openjdk.jmh.runner.RunnerException;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -51,7 +57,8 @@ public class MatchFilterBenchmark {
 
     @Setup(Level.Trial)
     public void setupEnv(BenchmarkParams params) {
-        UpdateGraphProcessor.DEFAULT.enableUnitTestMode();
+        TestExecutionContext.createForUnitTests().open();
+        ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().enableUnitTestMode();
 
         final BenchmarkTableBuilder builder;
         final int actualSize = BenchmarkTools.sizeWithSparsity(tableSize, sparsity);
@@ -73,8 +80,8 @@ public class MatchFilterBenchmark {
         builder.setSeed(0xDEADBEEF)
                 .addColumn(BenchmarkTools.stringCol("PartCol", 4, 5, 7, 0xFEEDBEEF));
 
-        final DateTime startTime = DateTimeUtils.convertDateTime("2019-01-01T12:00:00 NY");
-        final DateTime endTime = DateTimeUtils.convertDateTime("2019-01-01T12:00:00.000001 NY");
+        final Instant startTime = DateTimeUtils.parseInstant("2019-01-01T12:00:00 NY");
+        final Instant endTime = DateTimeUtils.parseInstant("2019-01-01T12:00:00.000001 NY");
 
         switch (filterCol) {
             case "L1":
@@ -87,7 +94,7 @@ public class MatchFilterBenchmark {
                 builder.addColumn(BenchmarkTools.stringCol("Symbol", 1000, 1, 10, 0));
                 break;
             case "Timestamp":
-                builder.addColumn(BenchmarkTools.dateCol("Timestamp", startTime, endTime));
+                builder.addColumn(BenchmarkTools.instantCol("Timestamp", startTime, endTime));
                 break;
         }
 
@@ -109,7 +116,7 @@ public class MatchFilterBenchmark {
                 values.add(ii);
             }
         }
-        matchFilter = new MatchFilter(filterCol, values.toArray());
+        matchFilter = new MatchFilter(MatchType.Regular, filterCol, values.toArray());
     }
 
     @TearDown(Level.Trial)
@@ -140,10 +147,11 @@ public class MatchFilterBenchmark {
 
         final R result = function.apply(filtered);
 
-        UpdateGraphProcessor.DEFAULT.enableUnitTestMode();
 
+        final ControlledUpdateGraph updateGraph = ExecutionContext.getContext().getUpdateGraph().cast();
+        updateGraph.enableUnitTestMode();
         while (filtered.size() < inputTable.size()) {
-            UpdateGraphProcessor.DEFAULT.runWithinUnitTestCycle(incrementalReleaseFilter::run);
+            updateGraph.runWithinUnitTestCycle(incrementalReleaseFilter::run);
         }
 
         return result;

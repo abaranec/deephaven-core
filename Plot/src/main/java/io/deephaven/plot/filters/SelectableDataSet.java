@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.plot.filters;
 
 import io.deephaven.plot.ChartImpl;
@@ -10,7 +9,6 @@ import io.deephaven.engine.table.Table;
 import io.deephaven.engine.table.TableDefinition;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.Collection;
 import java.util.function.Function;
 
 /**
@@ -27,8 +25,8 @@ public interface SelectableDataSet<KEY_TYPE, VALUE_TYPE> {
      * Gets the view of the {@link Table} with the selected subset.
      *
      * @param chart chart
-     * @param tableTransform tableTransform applied to the tables in tableMaps. The purpose of this transform is to
-     *        track the table definitions for tables inside tableMap
+     * @param tableTransform tableTransform applied to the tables in partitionedTables. The purpose of this transform is
+     *        to track the table definitions for tables inside partitionedTable
      * @param cols selected columns
      * @return table view on selected subset
      */
@@ -44,19 +42,6 @@ public interface SelectableDataSet<KEY_TYPE, VALUE_TYPE> {
      */
     default SwappableTable getSwappableTable(final Comparable seriesName, final ChartImpl chart, final String... cols) {
         return getSwappableTable(seriesName, chart, null, cols);
-    }
-
-    /**
-     * Gets a version of the SelectableDataSet with a lastBy applied to the tables.
-     *
-     * @param groupByColumns The grouping columns for the lastBy
-     * @return a new SelectableDataSet with lastBy applied
-     *
-     * @deprecated This method will be removed in a future release, use {@link #transform(Object, Function)} instead.
-     */
-    @Deprecated()
-    default SelectableDataSet<KEY_TYPE, VALUE_TYPE> getLastBy(final Collection<String> groupByColumns) {
-        return transform(groupByColumns, t -> t.lastBy(groupByColumns));
     }
 
     /**

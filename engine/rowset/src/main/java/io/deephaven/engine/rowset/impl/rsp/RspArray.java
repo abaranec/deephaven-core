@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.rowset.impl.rsp;
 
 import io.deephaven.base.verify.Assert;
@@ -14,7 +17,7 @@ import io.deephaven.engine.rowset.impl.sortedranges.SortedRangesInt;
 import io.deephaven.util.annotations.VisibleForTesting;
 import io.deephaven.util.datastructures.LongAbortableConsumer;
 import io.deephaven.util.datastructures.LongRangeAbortableConsumer;
-import org.apache.commons.lang3.mutable.MutableLong;
+import io.deephaven.util.mutable.MutableLong;
 import org.apache.commons.lang3.mutable.MutableObject;
 
 import java.util.PrimitiveIterator;
@@ -51,8 +54,8 @@ import static io.deephaven.engine.rowset.impl.RowSetUtils.Comparator;
  *
  * <ul>
  * <li>A "block" is a particular interval [n*2^16, (n+1)*2^16 - 1] of the long domain.</li>
- * <li>A "span" is a partition of the domain consisting of one or more consecutive blocks;</li> a span is a subset of
- * the domain represented by an interval [n*2^16, (n+m)*2^16 - 1], m >= 1.
+ * <li>A "span" is a partition of the domain consisting of one or more consecutive blocks; a span is a subset of the
+ * domain represented by an interval [n*2^16, (n+m)*2^16 - 1], m &gt;= 1.
  * <li>Full blocks are blocks whose domain are fully contained in the set, ie, the set contains every possible value in
  * the block's interval (as a bitmap, it would be "all ones").</li>
  * <li>Spans of full blocks are represented by a single "full blocks span" object (just a Long) which knows how many
@@ -86,8 +89,8 @@ import static io.deephaven.engine.rowset.impl.RowSetUtils.Comparator;
  * </p>
  *
  * <p>
- * There are two basic cases for a span: it is either a full blocks span, containing a >=1 number of full blocks, or it
- * is a container, containing individual values in the particular 2^16 block corresponding to the span's key.
+ * There are two basic cases for a span: it is either a full blocks span, containing a &gt;=1 number of full blocks, or
+ * it is a container, containing individual values in the particular 2^16 block corresponding to the span's key.
  * </p>
  *
  * <p>
@@ -713,6 +716,52 @@ public abstract class RspArray<T extends RspArray> extends RefCountedCow<T> {
 
     public RspArray(
             final RspArray src,
+            final int startIdx,
+            final int endIdx) {
+        size = endIdx - startIdx + 1;
+        spanInfos = new long[size];
+        spans = new Object[size];
+        long srcAccBeforeStart = -1;
+        if (size > accNullThreshold) {
+            acc = new long[size];
+            if (src.acc == null) {
+                cardData = -1;
+            } else {
+                srcAccBeforeStart = (startIdx == 0) ? 0 : src.acc[startIdx - 1];
+                cardData = size - 1;
+            }
+        } else {
+            acc = null;
+        }
+
+        for (int i = 0; i < size; ++i) {
+            final int isrc = startIdx + i;
+            if (srcAccBeforeStart != -1) {
+                acc[i] = src.acc[isrc] - srcAccBeforeStart;
+            }
+            spanInfos[i] = src.spanInfos[isrc];
+            final Object span = src.spans[isrc];
+            spans[i] = span;
+            if (span == null || span == FULL_BLOCK_SPAN_MARKER) {
+                continue;
+            }
+            if (span instanceof short[]) {
+                spanInfos[i] |= SPANINFO_ARRAYCONTAINER_SHARED_BITMASK;
+                continue;
+            }
+            // span instanceof Container
+            ((Container) span).setCopyOnWrite();
+        }
+        if (acc == null) {
+            ensureCardData(false);
+        } else if (src.acc == null) {
+            ensureCardinalityCache(false);
+        }
+        ifDebugValidate();
+    }
+
+    public RspArray(
+            final RspArray src,
             final int startIdx, final long startOffset,
             final int endIdx, final long endOffset) {
         // an initial full block span that needs to be split may result in a sequence of spans as follows,
@@ -1114,7 +1163,7 @@ public abstract class RspArray<T extends RspArray> extends RefCountedCow<T> {
 
         /**
          * Advances the pointer forward to the last span in the sequence whose interval range has a value v such that
-         * comp.directionToTargetFrom(v) >= 0.
+         * comp.directionToTargetFrom(v) &gt;= 0.
          *
          * This operation is O(log(cardinality)).
          *
@@ -1524,6 +1573,19 @@ public abstract class RspArray<T extends RspArray> extends RefCountedCow<T> {
         return ref;
     }
 
+    void ensureCardData(final boolean optimizeContainers) {
+        acc = null;
+        long c = 0;
+        for (int i = 0; i < size; ++i) {
+            c += getSpanCardinalityAtIndex(i, optimizeContainers);
+            if (c > Integer.MAX_VALUE) {
+                cardData = -1;
+                return;
+            }
+        }
+        cardData = (int) c;
+    }
+
     void ensureCardinalityCache(final boolean optimizeContainers) {
         if (size == 0) {
             acc = null;
@@ -1532,16 +1594,7 @@ public abstract class RspArray<T extends RspArray> extends RefCountedCow<T> {
             return;
         }
         if (size <= accNullThreshold) {
-            acc = null;
-            long c = 0;
-            for (int i = 0; i < size; ++i) {
-                c += getSpanCardinalityAtIndex(i, optimizeContainers);
-                if (c > Integer.MAX_VALUE) {
-                    cardData = -1;
-                    return;
-                }
-            }
-            cardData = (int) c;
+            ensureCardData(optimizeContainers);
             return;
         }
         if (acc == null) {
@@ -2082,7 +2135,7 @@ public abstract class RspArray<T extends RspArray> extends RefCountedCow<T> {
     private int getIndexForRankNoAcc(final int fromIndex, final long pos, final MutableLong prevCardMu) {
         int i = fromIndex;
         final long posp1 = pos + 1;
-        long card = (prevCardMu == null) ? 0 : prevCardMu.longValue();
+        long card = (prevCardMu == null) ? 0 : prevCardMu.get();
         long prevCard;
         while (true) {
             prevCard = card;
@@ -2093,13 +2146,13 @@ public abstract class RspArray<T extends RspArray> extends RefCountedCow<T> {
             ++i;
             if (i == size) {
                 if (prevCardMu != null) {
-                    prevCardMu.setValue(prevCard);
+                    prevCardMu.set(prevCard);
                 }
                 return size;
             }
         }
         if (prevCardMu != null) {
-            prevCardMu.setValue(prevCard);
+            prevCardMu.set(prevCard);
         }
         return i;
     }
@@ -2130,7 +2183,7 @@ public abstract class RspArray<T extends RspArray> extends RefCountedCow<T> {
             if (rankIndex == size) {
                 return -1;
             }
-            prevCard = prevCardMu.longValue();
+            prevCard = prevCardMu.get();
         }
         return get(rankIndex, pos - prevCard);
     }
@@ -2163,7 +2216,7 @@ public abstract class RspArray<T extends RspArray> extends RefCountedCow<T> {
                     }
                     return;
                 }
-                prevCardinality = prevCardMu.longValue();
+                prevCardinality = prevCardMu.get();
             }
             final long key = get(fromIndex, pos - prevCardinality);
             outputKeys.accept(key);
@@ -3005,7 +3058,7 @@ public abstract class RspArray<T extends RspArray> extends RefCountedCow<T> {
             long[] newAcc = acc;
             final int deltaSpans = idxPairsCount / 2;
             final int newSize = size + deltaSpans;
-            boolean accWasNull = acc == null;
+            final boolean accWasNull = acc == null;
             if (newSize > spanInfos.length) {
                 inPlace = false;
                 newSpans = new Object[newSize];
@@ -3780,9 +3833,9 @@ public abstract class RspArray<T extends RspArray> extends RefCountedCow<T> {
                 return false;
             }
             n.increment();
-            return n.longValue() < maxCount;
+            return n.get() < maxCount;
         });
-        return n.longValue() >= maxCount; // The only way we get to maxCount is if lc never returns false above.
+        return n.get() >= maxCount; // The only way we get to maxCount is if lc never returns false above.
     }
 
     boolean forEachLongInSpanWithOffset(final int i, final long offset, LongAbortableConsumer lc) {
@@ -3817,9 +3870,9 @@ public abstract class RspArray<T extends RspArray> extends RefCountedCow<T> {
                 return false;
             }
             n.increment();
-            return n.longValue() < maxCount;
+            return n.get() < maxCount;
         });
-        return n.longValue() >= maxCount; // The only way we get to maxCount is if lc never returns false above.
+        return n.get() >= maxCount; // The only way we get to maxCount is if lc never returns false above.
     }
 
     boolean forEachLongInSpan(final int i, LongAbortableConsumer lc) {
@@ -4044,7 +4097,7 @@ public abstract class RspArray<T extends RspArray> extends RefCountedCow<T> {
             if (startIdx == size) {
                 return null;
             }
-            cardBeforeStart = prevCardMu.longValue();
+            cardBeforeStart = prevCardMu.get();
         }
         final int endIdx;
         final long endOffset;
@@ -4059,7 +4112,7 @@ public abstract class RspArray<T extends RspArray> extends RefCountedCow<T> {
                 endOffset = getSpanCardinalityAtIndex(endIdx) - 1;
             } else {
                 endIdx = ansIdx;
-                final long cardBeforeEnd = prevCardMu.longValue();
+                final long cardBeforeEnd = prevCardMu.get();
                 endOffset = effectiveLastPos - cardBeforeEnd;
             }
         }
@@ -4520,7 +4573,7 @@ public abstract class RspArray<T extends RspArray> extends RefCountedCow<T> {
             if (startIdx == size) {
                 return RowSequenceFactory.EMPTY;
             }
-            cardBeforeStart = prevCardMu.longValue();
+            cardBeforeStart = prevCardMu.get();
         }
         final int endIdx;
         final long endOffset;
@@ -4531,7 +4584,7 @@ public abstract class RspArray<T extends RspArray> extends RefCountedCow<T> {
             endOffset = endPositionInclusive - cardBeforeEnd;
         } else {
             final int ansIdx = getIndexForRankNoAcc(startIdx, endPositionInclusive, prevCardMu);
-            cardBeforeEnd = prevCardMu.longValue();
+            cardBeforeEnd = prevCardMu.get();
             if (ansIdx == size) {
                 endIdx = size - 1;
                 endOffset = getSpanCardinalityAtIndex(endIdx) - 1;

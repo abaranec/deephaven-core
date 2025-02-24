@@ -1,31 +1,25 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.replay;
 
 import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.engine.rowset.RowSetBuilderRandom;
 import io.deephaven.engine.rowset.RowSetFactory;
-import io.deephaven.engine.rowset.TrackingRowSet;
-import io.deephaven.engine.table.ColumnSource;
-import io.deephaven.engine.table.impl.util.*;
-
-import java.util.Map;
+import io.deephaven.engine.table.Table;
+import io.deephaven.engine.table.impl.util.WritableRowRedirection;
+import io.deephaven.time.DateTimeUtils;
 
 public class ReplayGroupedFullTable extends QueryReplayGroupedTable {
+
     private int redirIndexSize;
 
-    public ReplayGroupedFullTable(TrackingRowSet rowSet, Map<String, ? extends ColumnSource<?>> input,
-            String timeColumn,
-            Replayer replayer, String groupingColumn) {
-        super(rowSet, input, timeColumn, replayer,
-                WritableRowRedirection.FACTORY.createRowRedirection((int) rowSet.size()),
-                new String[] {groupingColumn});
+    public ReplayGroupedFullTable(Table source, String timeColumn, Replayer replayer, String groupingColumn) {
+        super("ReplayGroupedFullTable", source, timeColumn, replayer,
+                WritableRowRedirection.FACTORY.createRowRedirection(source.intSize()), new String[] {groupingColumn});
         redirIndexSize = 0;
         // We do not modify existing entries in the WritableRowRedirection (we only add at the end), so there's no need
-        // to
-        // ask the WritableRowRedirection to track previous values.
+        // to ask the WritableRowRedirection to track previous values.
     }
 
     @Override
@@ -34,7 +28,8 @@ public class ReplayGroupedFullTable extends QueryReplayGroupedTable {
             return;
         }
         RowSetBuilderRandom rowSetBuilder = RowSetFactory.builderRandom();
-        while (!allIterators.isEmpty() && allIterators.peek().lastTime.getNanos() < replayer.currentTimeNanos()) {
+        while (!allIterators.isEmpty()
+                && DateTimeUtils.epochNanos(allIterators.peek().lastTime) < replayer.clock().currentTimeNanos()) {
             IteratorsAndNextTime currentIt = allIterators.poll();
             final long key = redirIndexSize++;
             rowRedirection.put(key, currentIt.lastIndex);
@@ -45,7 +40,7 @@ public class ReplayGroupedFullTable extends QueryReplayGroupedTable {
             }
         }
         final RowSet added = rowSetBuilder.build();
-        if (added.size() > 0) {
+        if (!added.isEmpty()) {
             getRowSet().writableCast().insert(added);
             notifyListeners(added, RowSetFactory.empty(), RowSetFactory.empty());
         }

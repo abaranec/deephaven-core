@@ -1,9 +1,13 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit RegionedColumnSourceChar and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit RegionedColumnSourceChar and run "./gradlew replicateRegionsAndRegionedSources" to regenerate
+//
+// @formatter:off
 package io.deephaven.engine.table.impl.sources.regioned;
+
+import io.deephaven.engine.table.ColumnSource;
 
 import io.deephaven.engine.rowset.RowSequence;
 import io.deephaven.engine.table.ColumnDefinition;
@@ -21,23 +25,23 @@ import static io.deephaven.util.type.TypeUtils.unbox;
  */
 abstract class RegionedColumnSourceByte<ATTR extends Values>
         extends RegionedColumnSourceArray<Byte, ATTR, ColumnRegionByte<ATTR>>
-        implements ColumnSourceGetDefaults.ForByte {
+        implements ColumnSourceGetDefaults.ForByte /* MIXIN_INTERFACES */ {
 
     RegionedColumnSourceByte(@NotNull final ColumnRegionByte<ATTR> nullRegion,
-                             @NotNull final MakeDeferred<ATTR, ColumnRegionByte<ATTR>> makeDeferred) {
+            @NotNull final MakeDeferred<ATTR, ColumnRegionByte<ATTR>> makeDeferred) {
         super(nullRegion, byte.class, makeDeferred);
     }
 
     @Override
-    public byte getByte(final long elementIndex) {
-        return (elementIndex == RowSequence.NULL_ROW_KEY ? getNullRegion() : lookupRegion(elementIndex)).getByte(elementIndex);
+    public byte getByte(final long rowKey) {
+        return (rowKey == RowSequence.NULL_ROW_KEY ? getNullRegion() : lookupRegion(rowKey)).getByte(rowKey);
     }
 
     interface MakeRegionDefault extends MakeRegion<Values, ColumnRegionByte<Values>> {
         @Override
         default ColumnRegionByte<Values> makeRegion(@NotNull final ColumnDefinition<?> columnDefinition,
-                                                    @NotNull final ColumnLocation columnLocation,
-                                                    final int regionIndex) {
+                @NotNull final ColumnLocation columnLocation,
+                final int regionIndex) {
             if (columnLocation.exists()) {
                 return columnLocation.makeColumnRegionByte(columnDefinition);
             }
@@ -45,35 +49,22 @@ abstract class RegionedColumnSourceByte<ATTR extends Values>
         }
     }
 
+    // region reinterpretation
+    @Override
+    public <ALTERNATE_DATA_TYPE> boolean allowsReinterpret(@NotNull Class<ALTERNATE_DATA_TYPE> alternateDataType) {
+        return alternateDataType == boolean.class || alternateDataType == Boolean.class || super.allowsReinterpret(alternateDataType);
+    }
+
+    @Override
+    protected <ALTERNATE_DATA_TYPE> ColumnSource<ALTERNATE_DATA_TYPE> doReinterpret(@NotNull Class<ALTERNATE_DATA_TYPE> alternateDataType) {
+        //noinspection unchecked
+        return (ColumnSource<ALTERNATE_DATA_TYPE>) new RegionedColumnSourceBoolean((RegionedColumnSourceByte<Values>)this);
+    }
+    // endregion reinterpretation
+
     static final class AsValues extends RegionedColumnSourceByte<Values> implements MakeRegionDefault {
         AsValues() {
             super(ColumnRegionByte.createNull(PARAMETERS.regionMask), DeferredColumnRegionByte::new);
-        }
-    }
-
-    /**
-     * These are used by {@link RegionedColumnSourceReferencing} subclass who want a native byte type.  This class does
-     * <em>not</em> hold an array of regions, but rather derives from {@link RegionedColumnSourceBase}, accessing its
-     * regions by looking into the delegate instance's region array.
-     */
-    @SuppressWarnings("unused")
-    static abstract class NativeType<DATA_TYPE, ATTR extends Values>
-            extends RegionedColumnSourceReferencing.NativeColumnSource<DATA_TYPE, ATTR, Byte, ColumnRegionByte<ATTR>>
-            implements ColumnSourceGetDefaults.ForByte {
-
-        NativeType(@NotNull final RegionedColumnSourceBase<DATA_TYPE, ATTR, ColumnRegionReferencing<ATTR, ColumnRegionByte<ATTR>>> outerColumnSource) {
-            super(Byte.class, outerColumnSource);
-        }
-
-        @Override
-        public byte getByte(final long elementIndex) {
-            return (elementIndex == RowSequence.NULL_ROW_KEY ? getNullRegion() : lookupRegion(elementIndex)).getByte(elementIndex);
-        }
-
-        static final class AsValues<DATA_TYPE> extends NativeType<DATA_TYPE, Values> implements MakeRegionDefault {
-            AsValues(@NotNull final RegionedColumnSourceBase<DATA_TYPE, Values, ColumnRegionReferencing<Values, ColumnRegionByte<Values>>> outerColumnSource) {
-                super(outerColumnSource);
-            }
         }
     }
 
@@ -87,13 +78,15 @@ abstract class RegionedColumnSourceByte<ATTR extends Values>
 
         @Override
         public ColumnRegionByte<Values> makeRegion(@NotNull final ColumnDefinition<?> columnDefinition,
-                                                   @NotNull final ColumnLocation columnLocation,
-                                                   final int regionIndex) {
+                @NotNull final ColumnLocation columnLocation,
+                final int regionIndex) {
             final TableLocationKey locationKey = columnLocation.getTableLocation().getKey();
             final Object partitioningColumnValue = locationKey.getPartitionValue(columnDefinition.getName());
-            if (partitioningColumnValue != null && !Byte.class.isAssignableFrom(partitioningColumnValue.getClass())) {
-                throw new TableDataException("Unexpected partitioning column value type for " + columnDefinition.getName()
-                        + ": " + partitioningColumnValue + " is not a Byte at location " + locationKey);
+            if (partitioningColumnValue != null
+                    && !Byte.class.isAssignableFrom(partitioningColumnValue.getClass())) {
+                throw new TableDataException(
+                        "Unexpected partitioning column value type for " + columnDefinition.getName()
+                                + ": " + partitioningColumnValue + " is not a Byte at location " + locationKey);
             }
             return new ColumnRegionByte.Constant<>(regionMask(), unbox((Byte) partitioningColumnValue));
         }

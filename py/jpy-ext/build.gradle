@@ -10,11 +10,12 @@
  * area as minimal as possible.
  */
 
-configurations {
-  compile.extendsFrom fishBase
+plugins {
+  id 'io.deephaven.project.register'
+  id 'java-library'
 }
 
 dependencies {
-  compile project(':deephaven-jpy')
-  compile project(':deephaven-jpy-config')
+  api libs.jpy
+  api project(':deephaven-jpy-config')
 }

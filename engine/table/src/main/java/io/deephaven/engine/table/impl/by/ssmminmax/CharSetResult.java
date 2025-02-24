@@ -1,6 +1,9 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.by.ssmminmax;
 
-import io.deephaven.engine.table.impl.sources.ArrayBackedColumnSource;
+import io.deephaven.engine.table.WritableColumnSource;
 import io.deephaven.engine.table.impl.sources.CharacterArraySource;
 import io.deephaven.engine.table.impl.ssms.CharSegmentedSortedMultiset;
 import io.deephaven.engine.table.impl.ssms.SegmentedSortedMultiSet;
@@ -11,7 +14,7 @@ public class CharSetResult implements SsmChunkedMinMaxOperator.SetResult {
     private final boolean minimum;
     private final CharacterArraySource resultColumn;
 
-    public CharSetResult(boolean minimum, ArrayBackedColumnSource resultColumn) {
+    public CharSetResult(boolean minimum, WritableColumnSource resultColumn) {
         this.minimum = minimum;
         this.resultColumn = (CharacterArraySource) resultColumn;
     }

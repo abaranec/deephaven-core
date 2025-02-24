@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.jpy;
 
 import io.deephaven.jpy.integration.ReferenceCounting;
@@ -13,7 +16,7 @@ public class DictTest extends PythonTest {
     @Before
     public void setUp() {
         builtins = BuiltinsModule.create();
-        ref = ReferenceCounting.create();
+        ref = ReferenceCounting.create(getCreateModule());
     }
 
     @After

@@ -1,20 +1,28 @@
 plugins {
     id 'java-library'
+    id 'io.deephaven.project.register'
 }
 
 description 'Engine Update Graph: Core utilities for maintaining a DAG for update processing'
 
 dependencies {
-    api project(':qst')
-
     implementation project(':engine-chunk')
+    implementation project(':hotspot')
+    implementation project(':log-factory')
+    implementation project(':Configuration')
+    implementation project(':util-processenvironment')
+    implementation libs.commons.lang3
 
-    compileOnly 'com.google.code.findbugs:jsr305:3.0.2'
+    compileOnly libs.google.findbugs.jsr305
+    compileOnly libs.jetbrains.annotations
 
-    testImplementation 'junit:junit:4.13.2'
+    testImplementation project(':engine-context')
+
+    testImplementation libs.junit4
+    testImplementation project(':engine-test-utils')
 
     testRuntimeOnly project(':log-to-slf4j'),
             project(path: ':configs'),
             project(path: ':test-configs')
-    Classpaths.inheritSlf4j(project, 'slf4j-simple', 'testRuntimeOnly')
+    testRuntimeOnly libs.slf4j.simple
 }

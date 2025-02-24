@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources;
 
 import io.deephaven.engine.table.impl.AbstractColumnSource;
@@ -13,43 +12,24 @@ import io.deephaven.chunk.WritableChunk;
 import io.deephaven.engine.rowset.RowSequence;
 import org.jetbrains.annotations.NotNull;
 
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.security.*;
-
 import static io.deephaven.util.QueryConstants.*;
 
 public class ViewColumnSource<T> extends AbstractColumnSource<T> {
     private final Formula formula;
-    // We explicitly want all Groovy commands to run under the 'file:/groovy/shell' source, so explicitly create that.
-    private static URL groovyShellUrl;
-    static {
-        try {
-            groovyShellUrl = new URL("file:/groovy/shell");
-        } catch (MalformedURLException ignored) {
-            groovyShellUrl = null;
-            // It should not be possible for this to get malformed.
-        }
-    }
 
-    private static final CodeSource codeSource =
-            new CodeSource(groovyShellUrl, (java.security.cert.Certificate[]) null);
-    // The permission collection should not be static, because the class loader might take place before the
-    // custom policy object is assigned.
-    private final PermissionCollection perms = Policy.getPolicy().getPermissions(codeSource);
-    private final AccessControlContext context =
-            AccessController.doPrivileged((PrivilegedAction<AccessControlContext>) () -> new AccessControlContext(
-                    new ProtectionDomain[] {new ProtectionDomain(
-                            new CodeSource(groovyShellUrl, (java.security.cert.Certificate[]) null), perms)}));
+    private final boolean isStateless;
 
-    public ViewColumnSource(Class<T> type, Formula formula) {
+    public ViewColumnSource(Class<T> type, Formula formula, boolean isStateless) {
         super(type);
         this.formula = formula;
+        this.isStateless = isStateless;
     }
 
-    public ViewColumnSource(Class<T> type, Class elementType, Formula formula) {
+    public ViewColumnSource(Class<T> type, Class elementType, Formula formula,
+            boolean isStateless) {
         super(type, elementType);
         this.formula = formula;
+        this.isStateless = isStateless;
     }
 
     @Override
@@ -58,157 +38,149 @@ public class ViewColumnSource<T> extends AbstractColumnSource<T> {
     }
 
     @Override
-    public T get(long index) {
-        if (index < 0) {
-            return null;
-        }
-        final SecurityManager sm = System.getSecurityManager();
-        if (sm != null) {
-            return AccessController.doPrivileged((PrivilegedAction<T>) () -> {
-                // noinspection unchecked
-                return (T) formula.get(index);
-            }, context);
-        } else {
-            // noinspection unchecked
-            return (T) formula.get(index);
-        }
-    }
-
-    @Override
-    public Boolean getBoolean(long index) {
-        if (index < 0) {
-            return null;
-        }
-        return formula.getBoolean(index);
-    }
-
-    @Override
-    public byte getByte(long index) {
-        if (index < 0) {
-            return NULL_BYTE;
-        }
-        return formula.getByte(index);
-    }
-
-    @Override
-    public char getChar(long index) {
-        if (index < 0) {
-            return NULL_CHAR;
-        }
-        return formula.getChar(index);
-    }
-
-    @Override
-    public double getDouble(long index) {
-        if (index < 0) {
-            return NULL_DOUBLE;
-        }
-        return formula.getDouble(index);
-    }
-
-    @Override
-    public float getFloat(long index) {
-        if (index < 0) {
-            return NULL_FLOAT;
-        }
-        return formula.getFloat(index);
-    }
-
-    @Override
-    public int getInt(long index) {
-        if (index < 0) {
-            return NULL_INT;
-        }
-        return formula.getInt(index);
-    }
-
-    @Override
-    public long getLong(long index) {
-        if (index < 0) {
-            return NULL_LONG;
-        }
-        return formula.getLong(index);
-    }
-
-    @Override
-    public short getShort(long index) {
-        if (index < 0) {
-            return NULL_SHORT;
-        }
-        return formula.getShort(index);
-    }
-
-    @Override
-    public T getPrev(long index) {
-        if (index < 0) {
+    public T get(long rowKey) {
+        if (rowKey < 0) {
             return null;
         }
         // noinspection unchecked
-        return (T) formula.getPrev(index);
+        return (T) formula.get(rowKey);
     }
 
     @Override
-    public Boolean getPrevBoolean(long index) {
-        if (index < 0) {
+    public Boolean getBoolean(long rowKey) {
+        if (rowKey < 0) {
             return null;
         }
-        return formula.getPrevBoolean(index);
+        return formula.getBoolean(rowKey);
     }
 
     @Override
-    public byte getPrevByte(long index) {
-        if (index < 0) {
+    public byte getByte(long rowKey) {
+        if (rowKey < 0) {
             return NULL_BYTE;
         }
-        return formula.getPrevByte(index);
+        return formula.getByte(rowKey);
     }
 
     @Override
-    public char getPrevChar(long index) {
-        if (index < 0) {
+    public char getChar(long rowKey) {
+        if (rowKey < 0) {
             return NULL_CHAR;
         }
-        return formula.getPrevChar(index);
+        return formula.getChar(rowKey);
     }
 
     @Override
-    public double getPrevDouble(long index) {
-        if (index < 0) {
+    public double getDouble(long rowKey) {
+        if (rowKey < 0) {
             return NULL_DOUBLE;
         }
-        return formula.getPrevDouble(index);
+        return formula.getDouble(rowKey);
     }
 
     @Override
-    public float getPrevFloat(long index) {
-        if (index < 0) {
+    public float getFloat(long rowKey) {
+        if (rowKey < 0) {
             return NULL_FLOAT;
         }
-        return formula.getPrevFloat(index);
+        return formula.getFloat(rowKey);
     }
 
     @Override
-    public int getPrevInt(long index) {
-        if (index < 0) {
+    public int getInt(long rowKey) {
+        if (rowKey < 0) {
             return NULL_INT;
         }
-        return formula.getPrevInt(index);
+        return formula.getInt(rowKey);
     }
 
     @Override
-    public long getPrevLong(long index) {
-        if (index < 0) {
+    public long getLong(long rowKey) {
+        if (rowKey < 0) {
             return NULL_LONG;
         }
-        return formula.getPrevLong(index);
+        return formula.getLong(rowKey);
     }
 
     @Override
-    public short getPrevShort(long index) {
-        if (index < 0) {
+    public short getShort(long rowKey) {
+        if (rowKey < 0) {
             return NULL_SHORT;
         }
-        return formula.getPrevShort(index);
+        return formula.getShort(rowKey);
+    }
+
+    @Override
+    public T getPrev(long rowKey) {
+        if (rowKey < 0) {
+            return null;
+        }
+        // noinspection unchecked
+        return (T) formula.getPrev(rowKey);
+    }
+
+    @Override
+    public Boolean getPrevBoolean(long rowKey) {
+        if (rowKey < 0) {
+            return null;
+        }
+        return formula.getPrevBoolean(rowKey);
+    }
+
+    @Override
+    public byte getPrevByte(long rowKey) {
+        if (rowKey < 0) {
+            return NULL_BYTE;
+        }
+        return formula.getPrevByte(rowKey);
+    }
+
+    @Override
+    public char getPrevChar(long rowKey) {
+        if (rowKey < 0) {
+            return NULL_CHAR;
+        }
+        return formula.getPrevChar(rowKey);
+    }
+
+    @Override
+    public double getPrevDouble(long rowKey) {
+        if (rowKey < 0) {
+            return NULL_DOUBLE;
+        }
+        return formula.getPrevDouble(rowKey);
+    }
+
+    @Override
+    public float getPrevFloat(long rowKey) {
+        if (rowKey < 0) {
+            return NULL_FLOAT;
+        }
+        return formula.getPrevFloat(rowKey);
+    }
+
+    @Override
+    public int getPrevInt(long rowKey) {
+        if (rowKey < 0) {
+            return NULL_INT;
+        }
+        return formula.getPrevInt(rowKey);
+    }
+
+    @Override
+    public long getPrevLong(long rowKey) {
+        if (rowKey < 0) {
+            return NULL_LONG;
+        }
+        return formula.getPrevLong(rowKey);
+    }
+
+    @Override
+    public short getPrevShort(long rowKey) {
+        if (rowKey < 0) {
+            return NULL_SHORT;
+        }
+        return formula.getPrevShort(rowKey);
     }
 
     @Override
@@ -279,5 +251,10 @@ public class ViewColumnSource<T> extends AbstractColumnSource<T> {
         public void close() {
             underlyingFillContext.close();
         }
+    }
+
+    @Override
+    public boolean isStateless() {
+        return isStateless;
     }
 }

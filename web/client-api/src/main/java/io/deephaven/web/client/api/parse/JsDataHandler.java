@@ -1,5 +1,10 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.web.client.api.parse;
 
+import com.google.flatbuffers.FlatBufferBuilder;
+import com.google.gwt.i18n.client.TimeZone;
 import elemental2.core.ArrayBuffer;
 import elemental2.core.Float32Array;
 import elemental2.core.Float64Array;
@@ -10,14 +15,7 @@ import elemental2.core.JsDate;
 import elemental2.core.TypedArray;
 import elemental2.core.Uint16Array;
 import elemental2.core.Uint8Array;
-import io.deephaven.javascript.proto.dhinternal.arrow.flight.flatbuf.schema_generated.org.apache.arrow.flatbuf.Binary;
-import io.deephaven.javascript.proto.dhinternal.arrow.flight.flatbuf.schema_generated.org.apache.arrow.flatbuf.FixedSizeBinary;
-import io.deephaven.javascript.proto.dhinternal.arrow.flight.flatbuf.schema_generated.org.apache.arrow.flatbuf.FloatingPoint;
-import io.deephaven.javascript.proto.dhinternal.arrow.flight.flatbuf.schema_generated.org.apache.arrow.flatbuf.Int;
-import io.deephaven.javascript.proto.dhinternal.arrow.flight.flatbuf.schema_generated.org.apache.arrow.flatbuf.Precision;
-import io.deephaven.javascript.proto.dhinternal.arrow.flight.flatbuf.schema_generated.org.apache.arrow.flatbuf.Type;
-import io.deephaven.javascript.proto.dhinternal.arrow.flight.flatbuf.schema_generated.org.apache.arrow.flatbuf.Utf8;
-import io.deephaven.javascript.proto.dhinternal.flatbuffers.Builder;
+import io.deephaven.util.BooleanUtils;
 import io.deephaven.web.client.api.LongWrapper;
 import io.deephaven.web.client.api.i18n.JsDateTimeFormat;
 import io.deephaven.web.client.api.i18n.JsTimeZone;
@@ -25,33 +23,88 @@ import io.deephaven.web.shared.fu.JsConsumer;
 import io.deephaven.web.shared.fu.JsFunction;
 import jsinterop.base.Js;
 import jsinterop.base.JsArrayLike;
+import org.apache.arrow.flatbuf.Binary;
+import org.apache.arrow.flatbuf.FixedSizeBinary;
+import org.apache.arrow.flatbuf.FloatingPoint;
+import org.apache.arrow.flatbuf.Int;
+import org.apache.arrow.flatbuf.Precision;
+import org.apache.arrow.flatbuf.Type;
+import org.apache.arrow.flatbuf.Utf8;
+import org.gwtproject.nio.TypedArrayHelper;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
-import static io.deephaven.web.client.api.subscription.QueryConstants.FALSE_BOOLEAN_AS_BYTE;
-import static io.deephaven.web.client.api.subscription.QueryConstants.NULL_BOOLEAN_AS_BYTE;
-import static io.deephaven.web.client.api.subscription.QueryConstants.NULL_BYTE;
-import static io.deephaven.web.client.api.subscription.QueryConstants.NULL_CHAR;
-import static io.deephaven.web.client.api.subscription.QueryConstants.NULL_DOUBLE;
-import static io.deephaven.web.client.api.subscription.QueryConstants.NULL_FLOAT;
-import static io.deephaven.web.client.api.subscription.QueryConstants.NULL_INT;
-import static io.deephaven.web.client.api.subscription.QueryConstants.NULL_LONG;
-import static io.deephaven.web.client.api.subscription.QueryConstants.NULL_SHORT;
-import static io.deephaven.web.client.api.subscription.QueryConstants.TRUE_BOOLEAN_AS_BYTE;
+import static io.deephaven.util.BooleanUtils.FALSE_BOOLEAN_AS_BYTE;
+import static io.deephaven.util.BooleanUtils.NULL_BOOLEAN_AS_BYTE;
+import static io.deephaven.util.BooleanUtils.TRUE_BOOLEAN_AS_BYTE;
+import static io.deephaven.util.QueryConstants.NULL_BYTE;
+import static io.deephaven.util.QueryConstants.NULL_CHAR;
+import static io.deephaven.util.QueryConstants.NULL_DOUBLE;
+import static io.deephaven.util.QueryConstants.NULL_FLOAT;
+import static io.deephaven.util.QueryConstants.NULL_INT;
+import static io.deephaven.util.QueryConstants.NULL_LONG;
+import static io.deephaven.util.QueryConstants.NULL_SHORT;
 
 /**
  * Given the expected type of a column, pick one of the enum entries and use that to read the data into arrow buffers.
  */
 public enum JsDataHandler {
     STRING(Type.Utf8, "java.lang.String", "string") {
+        class AppendableBuffer {
+            private final List<ByteBuffer> buffers = new ArrayList<>();
+
+            public AppendableBuffer() {
+                buffers.add(ByteBuffer.allocate(1 << 16));
+            }
+
+            public void append(byte[] bytes) {
+                int bytesWritten = 0;
+                int remaining = bytes.length;
+                while (remaining > 0) {
+                    ByteBuffer current = buffers.get(buffers.size() - 1);
+                    int toWrite = Math.min(remaining, current.remaining());
+                    current.put(bytes, bytesWritten, toWrite);
+
+                    if (current.remaining() == 0) {
+                        buffers.add(ByteBuffer.allocate(1 << 16));
+                    }
+
+                    bytesWritten += toWrite;
+                    remaining -= toWrite;
+                }
+                assert remaining == 0;
+            }
+
+            public Uint8Array build() {
+                // See how much has been written to each.
+                // We haven't flipped these, so "position" is the really the limit
+                int totalSize = buffers.stream().mapToInt(ByteBuffer::position).sum();
+                Uint8Array payload = makeBuffer(totalSize);
+
+                int position = 0;
+                for (int i = 0; i < buffers.size(); i++) {
+                    ByteBuffer bb = buffers.get(i);
+                    Uint8Array buffer = new Uint8Array(TypedArrayHelper.unwrap(bb).buffer, 0, bb.position());
+                    payload.set(buffer, position);
+                    position += buffer.length;
+                }
+
+                buffers.clear();
+                return payload;
+            }
+        }
+
         @Override
-        public double writeType(Builder builder) {
-            return Utf8.createUtf8(builder);
+        public int writeType(FlatBufferBuilder builder) {
+            Utf8.startUtf8(builder);
+            return Utf8.endUtf8(builder);
         }
 
         @Override
@@ -60,37 +113,97 @@ public enum JsDataHandler {
             int nullCount = 0;
             BitSet validity = new BitSet(data.length);
             Int32Array positions = makeBuffer(data.length + 1, 4, Int32Array::new);
-            // work out the total length we'll need for the payload, plus padding
-            int payloadLength =
-                    Arrays.stream(data).filter(Objects::nonNull).map(Object::toString).mapToInt(String::length).sum();
-            Uint8Array payload = makeBuffer(payloadLength);
+            AppendableBuffer payload = new AppendableBuffer();
 
             int lastOffset = 0;
             for (int i = 0; i < data.length; i++) {
                 if (data[i] == null) {
                     nullCount++;
+                    positions.setAt(i, (double) lastOffset);
                     continue;
                 }
                 validity.set(i);
                 String str = data[i].toString();
                 positions.setAt(i, (double) lastOffset);
                 byte[] bytes = str.getBytes(StandardCharsets.UTF_8);
-                payload.set(Js.<double[]>uncheckedCast(bytes), lastOffset);
+                payload.append(bytes);
                 lastOffset += bytes.length;
             }
             positions.setAt(data.length, (double) lastOffset);
 
             // validity, positions, payload
-            addBuffer.apply(makeValidityBuffer(nullCount, validity));
+            addBuffer.apply(makeValidityBuffer(nullCount, data.length, validity));
             addBuffer.apply(new Uint8Array(positions.buffer));
-            addBuffer.apply(payload);
+            addBuffer.apply(payload.build());
 
             addNode.apply(new Node(data.length, nullCount));
         }
     },
-    DATE_TIME(Type.Int, "io.deephaven.time.DateTime", "datetime") {
+    DATE_TIME(Type.Int, "java.time.Instant", "datetime", "java.time.ZonedDateTime") {
+        // Ensures that the 'T' separator character is in the date time
+        private String ensureSeparator(String s) {
+            if (s.charAt(SEPARATOR_INDEX) == ' ') {
+                StringBuilder stringBuilder = new StringBuilder(s);
+                stringBuilder.setCharAt(SEPARATOR_INDEX, 'T');
+                return stringBuilder.toString();
+            }
+            return s;
+        }
+
+        // Guess the pattern for the correct number of subsecond digits 'S'
+        private String getSubsecondPattern(String s) {
+            final int decimalIndex = s.indexOf('.');
+            if (decimalIndex == -1) {
+                // No subsecond digits
+                return DEFAULT_DATE_TIME_PATTERN;
+            }
+            final int numDigits = s.length() - decimalIndex - 1;
+            final StringBuilder stringBuilder = new StringBuilder(numDigits);
+            for (int i = 0; i < numDigits; i++) {
+                stringBuilder.append('S');
+            }
+            return DEFAULT_DATE_TIME_PATTERN + "." + stringBuilder;
+        }
+
+        private long parseDateString(String str, ParseContext context) {
+            final String s = ensureSeparator(str);
+            final int spaceIndex = s.indexOf(' ');
+            final String dateTimeString;
+            final String timeZoneString;
+            if (spaceIndex == -1) {
+                // Zulu is an exception to the space rule
+                if (s.endsWith("Z")) {
+                    dateTimeString = s.substring(0, s.length() - 1);
+                    timeZoneString = "Z";
+                } else {
+                    dateTimeString = s;
+                    timeZoneString = null;
+                }
+            } else {
+                dateTimeString = s.substring(0, spaceIndex);
+                timeZoneString = s.substring(spaceIndex + 1);
+            }
+
+            final TimeZone timeZone = timeZoneString == null
+                    ? context.timeZone.unwrap()
+                    : JsTimeZone.getTimeZone(timeZoneString).unwrap();
+            boolean needsAdjustment = JsTimeZone.needsDstAdjustment(timeZoneString);
+
+            try {
+                // First try with the pattern we already have
+                return JsDateTimeFormat.getFormat(context.dateTimePattern).parseWithTimezoneAsLong(dateTimeString,
+                        timeZone, needsAdjustment);
+            } catch (IllegalArgumentException e) {
+                // We failed to parse with the existing context pattern, try and update the pattern from the string of
+                // text and do it again
+                context.dateTimePattern = getSubsecondPattern(dateTimeString);
+                return JsDateTimeFormat.getFormat(context.dateTimePattern).parseWithTimezoneAsLong(dateTimeString,
+                        timeZone, needsAdjustment);
+            }
+        }
+
         @Override
-        public double writeType(Builder builder) {
+        public int writeType(FlatBufferBuilder builder) {
             return Int.createInt(builder, 64, true);
         }
 
@@ -99,9 +212,8 @@ public enum JsDataHandler {
                 JsConsumer<Uint8Array> addBuffer) {
             int nullCount = 0;
             BitSet validity = new BitSet(data.length);
-            // using float because we can convert longs to
-            // doubles, though not cheaply
-            Float64Array payload = new Float64Array(data.length);
+            ByteBuffer payload = ByteBuffer.allocate(Long.BYTES * data.length);
+            payload.order(ByteOrder.LITTLE_ENDIAN);
             for (int i = 0; i < data.length; i++) {
 
                 final long dateValue;
@@ -118,7 +230,7 @@ public enum JsDataHandler {
                         dateValue = NULL_LONG;
                     } else {
                         // take the format string and the timezone, and solve for a date
-                        dateValue = JsDateTimeFormat.parse(context.dateTimePattern, str, context.timeZone).getWrapped();
+                        dateValue = parseDateString(str, context);
                     }
                 }
 
@@ -127,19 +239,19 @@ public enum JsDataHandler {
                 } else {
                     validity.set(i);
                 }
-                payload.setAt(i, Double.longBitsToDouble(dateValue));
+                payload.putLong(i * Long.BYTES, dateValue);
             }
 
             // validity, then payload
-            addBuffer.apply(makeValidityBuffer(nullCount, validity));
-            addBuffer.apply(new Uint8Array(payload.buffer));
+            addBuffer.apply(makeValidityBuffer(nullCount, data.length, validity));
+            addBuffer.apply(new Uint8Array(TypedArrayHelper.unwrap(payload).buffer));
 
             addNode.apply(new Node(data.length, nullCount));
         }
     },
     INTEGER(Type.Int, "int") {
         @Override
-        public double writeType(Builder builder) {
+        public int writeType(FlatBufferBuilder builder) {
             return Int.createInt(builder, 32, true);
         }
 
@@ -151,7 +263,7 @@ public enum JsDataHandler {
     },
     SHORT(Type.Int, "short") {
         @Override
-        public double writeType(Builder builder) {
+        public int writeType(FlatBufferBuilder builder) {
             return Int.createInt(builder, 16, true);
         }
 
@@ -163,7 +275,7 @@ public enum JsDataHandler {
     },
     LONG(Type.Int, "long") {
         @Override
-        public double writeType(Builder builder) {
+        public int writeType(FlatBufferBuilder builder) {
             return Int.createInt(builder, 64, true);
         }
 
@@ -172,9 +284,8 @@ public enum JsDataHandler {
                 JsConsumer<Uint8Array> addBuffer) {
             int nullCount = 0;
             BitSet validity = new BitSet(data.length);
-            // using float because we can convert longs to
-            // doubles, though not cheaply
-            Float64Array payload = new Float64Array(data.length);
+            ByteBuffer payload = ByteBuffer.allocate(Long.BYTES * data.length);
+            payload.order(ByteOrder.LITTLE_ENDIAN);
             for (int i = 0; i < data.length; i++) {
                 final long value;
                 if (data[i] == null) {
@@ -193,23 +304,24 @@ public enum JsDataHandler {
                     value = (long) (double) JsDataHandler.doubleFromData(data[i]);
                 }
                 if (value == NULL_LONG) {
+                    // count the null, and don't write anything
                     nullCount++;
-                } else {
-                    validity.set(i);
+                    continue;
                 }
-                payload.setAt(i, Double.longBitsToDouble(value));
+                validity.set(i);
+                payload.putLong(i * Long.BYTES, value);
             }
 
             // validity, then payload
-            addBuffer.apply(makeValidityBuffer(nullCount, validity));
-            addBuffer.apply(new Uint8Array(payload.buffer));
+            addBuffer.apply(makeValidityBuffer(nullCount, data.length, validity));
+            addBuffer.apply(new Uint8Array(TypedArrayHelper.unwrap(payload).buffer));
 
             addNode.apply(new Node(data.length, nullCount));
         }
     },
     BYTE(Type.Int, "byte") {
         @Override
-        public double writeType(Builder builder) {
+        public int writeType(FlatBufferBuilder builder) {
             return Int.createInt(builder, 8, true);
         }
 
@@ -221,7 +333,7 @@ public enum JsDataHandler {
     },
     CHAR(Type.Int, "char") {
         @Override
-        public double writeType(Builder builder) {
+        public int writeType(FlatBufferBuilder builder) {
             return Int.createInt(builder, 16, false);
         }
 
@@ -233,7 +345,7 @@ public enum JsDataHandler {
     },
     FLOAT(Type.FloatingPoint, "float") {
         @Override
-        public double writeType(Builder builder) {
+        public int writeType(FlatBufferBuilder builder) {
             return FloatingPoint.createFloatingPoint(builder, Precision.SINGLE);
         }
 
@@ -245,7 +357,7 @@ public enum JsDataHandler {
     },
     DOUBLE(Type.FloatingPoint, "double") {
         @Override
-        public double writeType(Builder builder) {
+        public int writeType(FlatBufferBuilder builder) {
             return FloatingPoint.createFloatingPoint(builder, Precision.DOUBLE);
         }
 
@@ -256,9 +368,9 @@ public enum JsDataHandler {
                     Float64Array::new);
         }
     },
-    BOOLEAN(Type.Int, "boolean", "bool") {
+    BOOLEAN(Type.Bool, "boolean", "bool", "java.lang.Boolean") {
         @Override
-        public double writeType(Builder builder) {
+        public int writeType(FlatBufferBuilder builder) {
             return Int.createInt(builder, 8, true);
         }
 
@@ -267,15 +379,15 @@ public enum JsDataHandler {
                 JsConsumer<Uint8Array> addBuffer) {
             int nullCount = 0;
             BitSet validity = new BitSet(data.length);
-            Int8Array payload = makeBuffer(data.length, Int8Array.BYTES_PER_ELEMENT, Int8Array::new);
+            BitSet payload = new BitSet(data.length);
             for (int i = 0; i < data.length; i++) {
                 Object val = data[i];
                 byte boolValue;
                 if (val == null) {
                     boolValue = NULL_BOOLEAN_AS_BYTE;
                 } else {
-                    String typeof = Js.typeof(val);
-                    switch (typeof) {
+                    String t = Js.typeof(val);
+                    switch (t) {
                         case "boolean":
                             boolValue = Js.isTruthy(val) ? TRUE_BOOLEAN_AS_BYTE : FALSE_BOOLEAN_AS_BYTE;
                             break;
@@ -301,52 +413,52 @@ public enum JsDataHandler {
                             break;
                         default:
                             throw new IllegalArgumentException(
-                                    "Unsupported type to handle as a boolean value " + typeof);
+                                    "Unsupported type to handle as a boolean value " + t);
                     }
                 }
 
-                if (boolValue != FALSE_BOOLEAN_AS_BYTE && boolValue != TRUE_BOOLEAN_AS_BYTE
-                        && boolValue != NULL_BOOLEAN_AS_BYTE) {
-                    throw new IllegalArgumentException("Can't handle " + val + " as a boolean value");
-                }
-
                 // write the value, and mark non-null if necessary
-                if (boolValue != NULL_BOOLEAN_AS_BYTE) {
+                Boolean b = BooleanUtils.byteAsBoolean(boolValue);
+                if (b != null) {
                     validity.set(i);
+                    if (b) {
+                        payload.set(i);
+                    }
                 } else {
                     nullCount++;
                 }
-                payload.setAt(i, (double) boolValue);
             }
 
             // validity, then payload
-            addBuffer.apply(makeValidityBuffer(nullCount, validity));
-            addBuffer.apply(new Uint8Array(Js.<TypedArray>uncheckedCast(payload).buffer));
+            addBuffer.apply(makeValidityBuffer(nullCount, data.length, validity));
+            addBuffer.apply(bufferFromBitset(data.length, payload));
 
             addNode.apply(new Node(data.length, nullCount));
         }
     },
     BIG_DECIMAL(Type.Binary, "java.util.BigDecimal") {
         @Override
-        public double writeType(Builder builder) {
-            return Binary.createBinary(builder);
+        public int writeType(FlatBufferBuilder builder) {
+            Binary.startBinary(builder);
+            return Binary.endBinary(builder);
         }
     },
     BIG_INTEGER(Type.Binary, "java.util.BigInteger") {
         @Override
-        public double writeType(Builder builder) {
-            return Binary.createBinary(builder);
+        public int writeType(FlatBufferBuilder builder) {
+            Binary.startBinary(builder);
+            return Binary.endBinary(builder);
         }
     },
     LOCAL_DATE(Type.FixedSizeBinary, "java.time.LocalDate", "localdate") {
         @Override
-        public double writeType(Builder builder) {
+        public int writeType(FlatBufferBuilder builder) {
             return FixedSizeBinary.createFixedSizeBinary(builder, 6);
         }
     },
     LOCAL_TIME(Type.FixedSizeBinary, "java.time.LocalTime", "localtime") {
         @Override
-        public double writeType(Builder builder) {
+        public int writeType(FlatBufferBuilder builder) {
             return FixedSizeBinary.createFixedSizeBinary(builder, 7);
         }
     },
@@ -386,7 +498,7 @@ public enum JsDataHandler {
         }
 
         // validity, then payload
-        addBuffer.apply(makeValidityBuffer(nullCount, validity));
+        addBuffer.apply(makeValidityBuffer(nullCount, data.length, validity));
         addBuffer.apply(new Uint8Array(Js.<TypedArray>uncheckedCast(payload).buffer));
 
         addNode.apply(new Node(data.length, nullCount));
@@ -395,7 +507,7 @@ public enum JsDataHandler {
     /**
      * Helper to read some js value as a double, so it can be handled as some type narrower than a js number. Do not use
      * this to handle wider types, check each possible type and fallback to this.
-     * 
+     *
      * @param data the data to turn into a js number
      * @return null or a java double
      */
@@ -424,10 +536,14 @@ public enum JsDataHandler {
 
     private static final Uint8Array EMPTY = new Uint8Array(0);
 
-    private final int arrowTypeType;
+    private static final String DEFAULT_DATE_TIME_PATTERN = "yyyy-MM-dd'T'HH:mm:ss";
+
+    private static final int SEPARATOR_INDEX = DEFAULT_DATE_TIME_PATTERN.indexOf('T');
+
+    private final byte arrowTypeType;
     private final String deephavenType;
 
-    JsDataHandler(int arrowTypeType, String... typeNames) {
+    JsDataHandler(byte arrowTypeType, String... typeNames) {
         this.arrowTypeType = arrowTypeType;
         assert typeNames.length > 0 : "Must have at least one name";
         this.deephavenType = typeNames[0];
@@ -437,7 +553,7 @@ public enum JsDataHandler {
         }
     }
 
-    public int typeType() {
+    public byte typeType() {
         return arrowTypeType;
     }
 
@@ -445,7 +561,7 @@ public enum JsDataHandler {
         return deephavenType;
     }
 
-    public abstract double writeType(Builder builder);
+    public abstract int writeType(FlatBufferBuilder builder);
 
     public void write(Object[] data, ParseContext context, JsConsumer<Node> addNode, JsConsumer<Uint8Array> addBuffer) {
         throw new UnsupportedOperationException("Can't parse " + name());
@@ -453,7 +569,7 @@ public enum JsDataHandler {
 
     public static class ParseContext {
         public JsTimeZone timeZone;
-        public String dateTimePattern = "yyyy-MM-dd'T'HH:mm:ss";
+        public String dateTimePattern = DEFAULT_DATE_TIME_PATTERN;
     }
 
     public static class Node {
@@ -474,15 +590,20 @@ public enum JsDataHandler {
         }
     }
 
-    private static Uint8Array makeValidityBuffer(int nullCount, BitSet nulls) {
+    private static Uint8Array makeValidityBuffer(int nullCount, int elementCount, BitSet nulls) {
         if (nullCount != 0) {
-            byte[] nullsAsByteArray = nulls.toByteArray();
-            Uint8Array nullsAsTypedArray = makeBuffer(nullsAsByteArray.length);
-            nullsAsTypedArray.set(Js.<double[]>uncheckedCast(nullsAsByteArray));
-            return nullsAsTypedArray;
+            return bufferFromBitset(elementCount, nulls);
         } else {
             return EMPTY;
         }
+    }
+
+    private static Uint8Array bufferFromBitset(int elementCount, BitSet bitset) {
+        byte[] nullsAsByteArray = bitset.toByteArray();
+        int expectedByteLength = (elementCount + 7) / 8;
+        Uint8Array nullsAsTypedArray = makeBuffer(expectedByteLength);
+        nullsAsTypedArray.set(Js.<double[]>uncheckedCast(nullsAsByteArray));
+        return nullsAsTypedArray;
     }
 
     private static <T> T makeBuffer(int elementCount, double bytesPerElement,

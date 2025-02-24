@@ -1,10 +1,10 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.util;
 
 import io.deephaven.chunk.Chunk;
+import io.deephaven.chunk.ChunkType;
 import io.deephaven.chunk.attributes.Values;
 import io.deephaven.chunk.util.pools.PoolableChunk;
 import io.deephaven.engine.rowset.RowSet;
@@ -12,12 +12,16 @@ import io.deephaven.engine.rowset.RowSetShiftData;
 import io.deephaven.util.SafeCloseable;
 
 import java.util.BitSet;
+import java.util.Collection;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 
 /**
  * This is a structured object that represents the barrage update record batch.
  */
 public class BarrageMessage implements SafeCloseable {
+    public static final ModColumnData[] ZERO_MOD_COLUMNS = new ModColumnData[0];
+
     public interface Listener {
         void handleBarrageMessage(BarrageMessage message);
 
@@ -28,23 +32,30 @@ public class BarrageMessage implements SafeCloseable {
         public RowSet rowsModified;
         public Class<?> type;
         public Class<?> componentType;
-        public Chunk<Values> data;
+        public List<Chunk<Values>> data;
+        public ChunkType chunkType;
     }
 
     public static class AddColumnData {
         public Class<?> type;
         public Class<?> componentType;
-        public Chunk<Values> data;
+        public List<Chunk<Values>> data;
+        public ChunkType chunkType;
     }
 
     public long firstSeq = -1;
     public long lastSeq = -1;
-    public long step = -1;
+    /** The size of the table after this update. -1 if unknown. */
+    public long tableSize = -1;
 
-    public boolean isSnapshot;
+    /** The RowSet the server is now respecting for this client; only set when parsing on the client. */
     public RowSet snapshotRowSet;
+    /** Whether the server-respecting viewport is a tail; only set when parsing on the client. */
+    public boolean snapshotRowSetIsReversed;
+    /** The BitSet of columns the server is now respecting for this client; only set when parsing on the client. */
     public BitSet snapshotColumns;
 
+    public boolean isSnapshot;
     public RowSet rowsAdded;
     public RowSet rowsIncluded;
     public RowSet rowsRemoved;
@@ -55,6 +66,9 @@ public class BarrageMessage implements SafeCloseable {
 
     // Ensure that we clean up only after all copies of the update are released.
     private volatile int refCount = 1;
+
+    // Underlying RecordBatch.length, visible for reading snapshots
+    public long length;
 
     // Field updater for refCount, so we can avoid creating an {@link java.util.concurrent.atomic.AtomicInteger} for
     // each instance.
@@ -85,29 +99,30 @@ public class BarrageMessage implements SafeCloseable {
             rowsRemoved.close();
         }
         if (addColumnData != null) {
-            for (final BarrageMessage.AddColumnData acd : addColumnData) {
-                if (acd == null) {
-                    continue;
-                }
-
-                if (acd.data instanceof PoolableChunk) {
-                    ((PoolableChunk) acd.data).close();
+            for (final AddColumnData acd : addColumnData) {
+                if (acd != null) {
+                    closeChunkData(acd.data);
                 }
             }
         }
         if (modColumnData != null) {
             for (final ModColumnData mcd : modColumnData) {
-                if (mcd == null) {
-                    continue;
-                }
-
-                if (mcd.rowsModified != null) {
-                    mcd.rowsModified.close();
-                }
-                if (mcd.data instanceof PoolableChunk) {
-                    ((PoolableChunk) mcd.data).close();
+                if (mcd != null) {
+                    closeChunkData(mcd.data);
                 }
             }
         }
+    }
+
+    private static void closeChunkData(final Collection<Chunk<Values>> data) {
+        if (data.isEmpty()) {
+            return;
+        }
+        for (final Chunk<Values> chunk : data) {
+            if (chunk instanceof PoolableChunk) {
+                ((PoolableChunk) chunk).close();
+            }
+        }
+        data.clear();
     }
 }

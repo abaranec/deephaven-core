@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.javascript.proto.dhinternal.grpcweb.transports.transport;
 
 import elemental2.core.JsError;
@@ -30,7 +33,7 @@ public interface TransportOptions {
 
     @JsFunction
     public interface OnHeadersFn {
-        void onInvoke(BrowserHeaders p0, double p1);
+        void onInvoke(BrowserHeaders p0, int p1);
     }
 
     @JsOverlay

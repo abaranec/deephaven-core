@@ -1,34 +1,34 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl;
 
 import io.deephaven.engine.table.Table;
+import io.deephaven.engine.testutil.generator.DoubleGenerator;
+import io.deephaven.engine.testutil.junit4.EngineCleanup;
 import io.deephaven.time.DateTimeUtils;
 import io.deephaven.engine.util.TableTools;
 import io.deephaven.engine.table.impl.select.DownsampledWhereFilter;
-import junit.framework.TestCase;
+import org.junit.Rule;
+import io.deephaven.engine.testutil.generator.SortedInstantGenerator;
 import org.junit.Test;
 
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Random;
 
-import static io.deephaven.engine.table.impl.TstUtils.*;
+import static io.deephaven.engine.testutil.TstUtils.*;
 
 public class TestDownsampledWhereFilter {
-    @Test
-    public void testDownsampledWhere() throws IOException {
-        Random random = new Random(42);
-        List<Table> tables = new ArrayList<>();
+    @Rule
+    public final EngineCleanup framework = new EngineCleanup();
 
+    @Test
+    public void testDownsampledWhere() {
+        Random random = new Random(42);
         int size = 1000;
 
         final QueryTable table = getTable(false, size, random, initColumnInfos(new String[] {"Timestamp", "doubleCol"},
-                new SortedDateTimeGenerator(DateTimeUtils.convertDateTime("2015-09-11T09:30:00 NY"),
-                        DateTimeUtils.convertDateTime("2015-09-11T10:00:00 NY")),
+                new SortedInstantGenerator(DateTimeUtils.parseInstant("2015-09-11T09:30:00 NY"),
+                        DateTimeUtils.parseInstant("2015-09-11T10:00:00 NY")),
                 new DoubleGenerator(0, 100)));
 
         Table downsampled = table.where(new DownsampledWhereFilter("Timestamp", 60_000_000_000L));
@@ -38,20 +38,17 @@ public class TestDownsampledWhereFilter {
         TableTools.showWithRowSet(downsampled);
         TableTools.showWithRowSet(standardWay);
 
-        String diff = TableTools.diff(downsampled, standardWay, 10);
-        TestCase.assertEquals("", diff);
+        assertTableEquals(downsampled, standardWay);
     }
 
     @Test
-    public void testDownsampledWhereLowerFirst() throws IOException {
+    public void testDownsampledWhereLowerFirst() {
         Random random = new Random(42);
-        List<Table> tables = new ArrayList<>();
-
         int size = 1000;
 
         final QueryTable table = getTable(false, size, random, initColumnInfos(new String[] {"Timestamp", "doubleCol"},
-                new SortedDateTimeGenerator(DateTimeUtils.convertDateTime("2015-09-11T09:30:00 NY"),
-                        DateTimeUtils.convertDateTime("2015-09-11T10:00:00 NY")),
+                new SortedInstantGenerator(DateTimeUtils.parseInstant("2015-09-11T09:30:00 NY"),
+                        DateTimeUtils.parseInstant("2015-09-11T10:00:00 NY")),
                 new DoubleGenerator(0, 100)));
 
         Table downsampled = table.where(new DownsampledWhereFilter("Timestamp", 60_000_000_000L,
@@ -62,7 +59,6 @@ public class TestDownsampledWhereFilter {
         TableTools.showWithRowSet(downsampled);
         TableTools.showWithRowSet(standardWay);
 
-        String diff = TableTools.diff(downsampled, standardWay, 10);
-        TestCase.assertEquals("", diff);
+        assertTableEquals(downsampled, standardWay);
     }
 }

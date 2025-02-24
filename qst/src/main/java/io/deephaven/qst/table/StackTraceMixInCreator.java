@@ -1,13 +1,18 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.qst.table;
 
 import io.deephaven.api.TableOperations;
 import io.deephaven.qst.TableCreator;
 
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.stream.Stream;
+import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
 public final class StackTraceMixInCreator<TOPS extends TableOperations<TOPS, TABLE>, TABLE>
@@ -75,6 +80,22 @@ public final class StackTraceMixInCreator<TOPS extends TableOperations<TOPS, TAB
     }
 
     @Override
+    public synchronized StackTraceMixIn<TOPS, TABLE> multiJoin(
+            List<MultiJoinInput<StackTraceMixIn<TOPS, TABLE>>> multiJoinInputs) {
+        final TABLE table = creator.multiJoin(multiJoinInputs.stream().map(this::adapt).collect(Collectors.toList()));
+        final TOPS tops = toOps.of(table);
+        return map.computeIfAbsent(tops, this::mixin);
+    }
+
+    private MultiJoinInput<TABLE> adapt(MultiJoinInput<StackTraceMixIn<TOPS, TABLE>> input) {
+        return MultiJoinInput.<TABLE>builder()
+                .table(input.table().table())
+                .addAllMatches(input.matches())
+                .addAllAdditions(input.additions())
+                .build();
+    }
+
+    @Override
     public synchronized StackTraceMixIn<TOPS, TABLE> merge(
             Iterable<StackTraceMixIn<TOPS, TABLE>> stackTraceMixIns) {
         final Iterable<TABLE> tables = () -> StreamSupport
@@ -104,7 +125,7 @@ public final class StackTraceMixInCreator<TOPS extends TableOperations<TOPS, TAB
             // Note: depending on the exact call site, the first call into StackTraceMixIn or
             // StackTraceMixInCreator may provide useful context. We can try to be smarter about
             // this in the future.
-            return Stream.of(elements).skip(lastMixInIndex).toArray(StackTraceElement[]::new);
+            return Arrays.stream(elements).skip(lastMixInIndex).toArray(StackTraceElement[]::new);
         }
         return elements;
     }

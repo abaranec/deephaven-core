@@ -1,19 +1,23 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.benchmarking.runner;
 
 import io.deephaven.engine.table.ColumnDefinition;
 import io.deephaven.engine.table.Table;
 import io.deephaven.engine.table.TableDefinition;
+import io.deephaven.parquet.table.ParquetInstructions;
 import io.deephaven.parquet.table.ParquetTools;
 import io.deephaven.engine.util.TableTools;
-import io.deephaven.parquet.table.ParquetTableWriter;
 import io.deephaven.engine.table.impl.util.TableBuilder;
 import io.deephaven.benchmarking.BenchmarkTools;
 import org.openjdk.jmh.infra.BenchmarkParams;
 
+import static io.deephaven.parquet.base.ParquetUtils.PARQUET_FILE_EXTENSION;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Collections;
 
 public class TableBenchmarkState {
@@ -27,6 +31,7 @@ public class TableBenchmarkState {
     private Table resultTable;
     private int iteration = 0;
     private int warmups = 0;
+    private String base64ResultPrint = "";
 
 
     public TableBenchmarkState(String benchmarkName, int expectedWarmups) {
@@ -40,15 +45,17 @@ public class TableBenchmarkState {
     }
 
     public void logOutput() throws IOException {
-        final Path outputPath = Paths.get(BenchmarkTools.getLogPath())
-                .resolve(BenchmarkTools.getDetailOutputPath(benchmarkName) + ParquetTableWriter.PARQUET_FILE_EXTENSION);
+        final Path outputPath = BenchmarkTools.dataDir()
+                .resolve(BenchmarkTools.getDetailOutputPath(benchmarkName) + PARQUET_FILE_EXTENSION);
 
         final Table output = outputBuilder.build();
-        ParquetTools.writeTable(output, outputPath.toFile(), RESULT_DEF);
+        ParquetTools.writeTable(output, outputPath.toString(),
+                ParquetInstructions.EMPTY.withTableDefinition(RESULT_DEF));
     }
 
     public void reset() {
         resultTable = null;
+        base64ResultPrint = "";
     }
 
     public void processResult(BenchmarkParams params) throws IOException {
@@ -59,7 +66,7 @@ public class TableBenchmarkState {
 
         outputBuilder.addRow(benchmarkName, params.getMode().toString(), iteration++,
                 BenchmarkTools.buildParameterString(params),
-                TableTools.base64Fingerprint(resultTable));
+                base64ResultPrint = TableTools.base64Fingerprint(resultTable));
     }
 
     public Table setResult(Table result) {
@@ -70,7 +77,11 @@ public class TableBenchmarkState {
         return resultTable.size();
     }
 
-    static Table readBin(File location) {
-        return ParquetTools.readTable(location);
+    public static Table readBin(File location) {
+        return ParquetTools.readTable(location.getPath());
+    }
+
+    public String getResultHash() {
+        return base64ResultPrint;
     }
 }

@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table;
 
 import io.deephaven.chunk.*;
@@ -14,6 +17,13 @@ public interface ChunkSink<ATTR extends Any> extends ChunkSource<ATTR> {
     }
 
     /**
+     * Make a context suitable for the {@link ChunkSink#fillFromChunk} method.
+     */
+    default FillFromContext makeFillFromContext(int chunkCapacity) {
+        return DEFAULT_FILL_FROM_INSTANCE;
+    }
+
+    /**
      * Fills the ChunkSink with data from the source, with data corresponding to the keys from the given
      * {@link RowSequence}.
      * 
@@ -21,7 +31,9 @@ public interface ChunkSink<ATTR extends Any> extends ChunkSource<ATTR> {
      * @param src The source of the data {@code rowSequence}
      * @param rowSequence An {@link RowSequence} representing the keys to be written
      */
-    void fillFromChunk(@NotNull FillFromContext context, @NotNull Chunk<? extends ATTR> src,
+    void fillFromChunk(
+            @NotNull FillFromContext context,
+            @NotNull Chunk<? extends ATTR> src,
             @NotNull RowSequence rowSequence);
 
     /**
@@ -31,11 +43,8 @@ public interface ChunkSink<ATTR extends Any> extends ChunkSource<ATTR> {
      * @param src The source of the data {@code RowSequence}
      * @param keys A {@link LongChunk} representing the keys to be written
      */
-    void fillFromChunkUnordered(@NotNull FillFromContext context, @NotNull Chunk<? extends ATTR> src,
+    void fillFromChunkUnordered(
+            @NotNull FillFromContext context,
+            @NotNull Chunk<? extends ATTR> src,
             @NotNull LongChunk<RowKeys> keys);
-
-    /**
-     * Make a context suitable for the {@link ChunkSink#fillFromChunk} method.
-     */
-    FillFromContext makeFillFromContext(int chunkCapacity);
 }

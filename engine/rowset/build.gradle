@@ -1,24 +1,33 @@
 plugins {
     id 'java-library'
+    id 'io.deephaven.project.register'
 }
 
 description 'Engine RowSets: Data structures for working with row keys'
 
 dependencies {
     api project(':engine-chunk')
+    api project(':Base')
+    implementation libs.trove
 
-    implementation project(':Container'),
-            project(':engine-updategraph')
+    implementation project(':Container')
+    implementation project(':engine-context')
+    implementation project(':engine-updategraph')
+    implementation project(':Configuration')
+    implementation libs.commons.lang3
 
-    compileOnly 'com.google.code.findbugs:jsr305:3.0.2'
+    compileOnly libs.google.findbugs.jsr305
+    compileOnly libs.jetbrains.annotations
 
-    testImplementation 'junit:junit:4.13.2'
+    testImplementation libs.junit4
 
+    testImplementation project(':base-test-utils')
+    testImplementation project(':engine-test-utils')
+    testImplementation project(':engine-rowset-test-utils')
     testRuntimeOnly project(':log-to-slf4j'),
             project(path: ':configs'),
             project(path: ':test-configs')
-    Classpaths.inheritSlf4j(project, 'slf4j-simple', 'testRuntimeOnly')
+    testRuntimeOnly libs.slf4j.simple
 }
 
-// testOutOfBand: non-parallel, not a engine test, not isolated
-TestTools.addEngineTest(project, 'OutOfBand', false, false, false)
+TestTools.addEngineOutOfBandTest(project)

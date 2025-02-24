@@ -1,11 +1,11 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit WritableCharChunk and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
-package io.deephaven.chunk;
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit WritableCharChunk and run "./gradlew replicateSourcesAndChunks" to regenerate
+//
 // @formatter:off
+package io.deephaven.chunk;
 
 import io.deephaven.chunk.attributes.Any;
 import io.deephaven.chunk.util.pools.MultiChunkPool;
@@ -23,29 +23,33 @@ import java.nio.Buffer;
 import java.nio.LongBuffer;
 // endregion BufferImports
 
-// @formatter:on
+import static io.deephaven.chunk.util.pools.ChunkPoolConstants.POOL_WRITABLE_CHUNKS;
 
 /**
  * {@link WritableChunk} implementation for long data.
  */
 public class WritableLongChunk<ATTR extends Any> extends LongChunk<ATTR> implements WritableChunk<ATTR> {
 
+    @SuppressWarnings("rawtypes")
     private static final WritableLongChunk[] EMPTY_WRITABLE_LONG_CHUNK_ARRAY = new WritableLongChunk[0];
 
     static <ATTR extends Any> WritableLongChunk<ATTR>[] getEmptyChunkArray() {
-        //noinspection unchecked
+        // noinspection unchecked
         return EMPTY_WRITABLE_LONG_CHUNK_ARRAY;
     }
 
     public static <ATTR extends Any> WritableLongChunk<ATTR> makeWritableChunk(int size) {
-        return MultiChunkPool.forThisThread().getLongChunkPool().takeWritableLongChunk(size);
+        if (POOL_WRITABLE_CHUNKS) {
+            return MultiChunkPool.forThisThread().takeWritableLongChunk(size);
+        }
+        return new WritableLongChunk<>(makeArray(size), 0, size);
     }
 
-    public static WritableLongChunk makeWritableChunkForPool(int size) {
-        return new WritableLongChunk(makeArray(size), 0, size) {
+    public static <ATTR extends Any> WritableLongChunk<ATTR> makeWritableChunkForPool(int size) {
+        return new WritableLongChunk<>(makeArray(size), 0, size) {
             @Override
             public void close() {
-                MultiChunkPool.forThisThread().getLongChunkPool().giveWritableLongChunk(this);
+                MultiChunkPool.forThisThread().giveWritableLongChunk(this);
             }
         };
     }
@@ -58,7 +62,7 @@ public class WritableLongChunk<ATTR extends Any> extends LongChunk<ATTR> impleme
         return new WritableLongChunk<>(data, offset, size);
     }
 
-    WritableLongChunk(long[] data, int offset, int capacity) {
+    protected WritableLongChunk(long[] data, int offset, int capacity) {
         super(data, offset, capacity);
     }
 
@@ -66,13 +70,40 @@ public class WritableLongChunk<ATTR extends Any> extends LongChunk<ATTR> impleme
         data[offset + index] = value;
     }
 
-    public final void add(long value) { data[offset + size++] = value; }
+    public final void add(long value) {
+        data[offset + size++] = value;
+    }
 
     @Override
     public WritableLongChunk<ATTR> slice(int offset, int capacity) {
         ChunkHelpers.checkSliceArgs(size, offset, capacity);
         return new WritableLongChunk<>(data, this.offset + offset, capacity);
     }
+
+    // region array
+    /**
+     * Get the data array backing this WritableLongChunk. The first element of this chunk corresponds to
+     * {@code array()[arrayOffset()]}.
+     * <p>
+     * This WritableLongChunk must never be {@link #close() closed} while the array <em>may</em> be in use externally,
+     * because it must not be returned to any pool for re-use until that re-use is guaranteed to be exclusive.
+     *
+     * @return The backing data array
+     */
+    public final long[] array() {
+        return data;
+    }
+
+    /**
+     * Get this WritableLongChunk's offset into the backing data array. The first element of this chunk corresponds to
+     * {@code array()[arrayOffset()]}.
+     *
+     * @return The offset into the backing data array
+     */
+    public final int arrayOffset() {
+        return offset;
+    }
+    // endregion array
 
     // region FillWithNullValueImpl
     @Override
@@ -84,7 +115,7 @@ public class WritableLongChunk<ATTR extends Any> extends LongChunk<ATTR> impleme
     // region fillWithBoxedValue
     @Override
     public final void fillWithBoxedValue(int offset, int size, Object value) {
-        fillWithValue(offset,size, TypeUtils.unbox((Long) value));
+        fillWithValue(offset, size, TypeUtils.unbox((Long) value));
     }
     // endregion fillWithBoxedValue
 
@@ -116,7 +147,7 @@ public class WritableLongChunk<ATTR extends Any> extends LongChunk<ATTR> impleme
 
     @Override
     public final void copyFromArray(Object srcArray, int srcOffset, int destOffset, int length) {
-        final long[] typedArray = (long[])srcArray;
+        final long[] typedArray = (long[]) srcArray;
         copyFromTypedArray(typedArray, srcOffset, destOffset, length);
     }
 
@@ -128,13 +159,13 @@ public class WritableLongChunk<ATTR extends Any> extends LongChunk<ATTR> impleme
             return;
         }
         if (ChunkHelpers.canCopyForward(src, srcOffset, data, destOffset, length)) {
-            //noinspection ManualArrayCopy
+            // noinspection ManualArrayCopy
             for (int ii = 0; ii < length; ++ii) {
                 data[netDestOffset + ii] = src[srcOffset + ii];
             }
             return;
         }
-        //noinspection ManualArrayCopy
+        // noinspection ManualArrayCopy
         for (int ii = length - 1; ii >= 0; --ii) {
             data[netDestOffset + ii] = src[srcOffset + ii];
         }
@@ -142,22 +173,26 @@ public class WritableLongChunk<ATTR extends Any> extends LongChunk<ATTR> impleme
 
     // region CopyFromBuffer
     @Override
-    public final void copyFromBuffer(@NotNull final Buffer srcBuffer, final int srcOffset, final int destOffset, final int length) {
+    public final void copyFromBuffer(@NotNull final Buffer srcBuffer, final int srcOffset, final int destOffset,
+            final int length) {
         final LongBuffer longSrcBuffer = (LongBuffer) srcBuffer;
         copyFromTypedBuffer(longSrcBuffer, srcOffset, destOffset, length);
     }
 
     /**
-     * <p>Fill a sub-range of this WritableLongChunk with values from a {@link LongBuffer}.
+     * <p>
+     * Fill a sub-range of this WritableLongChunk with values from a {@link LongBuffer}.
      *
-     * <p>See {@link #copyFromBuffer(Buffer, int, int, int)} for general documentation.
+     * <p>
+     * See {@link #copyFromBuffer(Buffer, int, int, int)} for general documentation.
      *
-     * @param srcBuffer  The source {@link LongBuffer}
-     * @param srcOffset  The absolute offset into {@code srcBuffer} to start copying from
+     * @param srcBuffer The source {@link LongBuffer}
+     * @param srcOffset The absolute offset into {@code srcBuffer} to start copying from
      * @param destOffset The offset into this chunk to start copying to
-     * @param length     The number of elements to copy
+     * @param length The number of elements to copy
      */
-    public final void copyFromTypedBuffer(@NotNull final LongBuffer srcBuffer, final int srcOffset, final int destOffset, final int length) {
+    public final void copyFromTypedBuffer(@NotNull final LongBuffer srcBuffer, final int srcOffset,
+            final int destOffset, final int length) {
         if (srcBuffer.hasArray()) {
             copyFromTypedArray(srcBuffer.array(), srcBuffer.arrayOffset() + srcOffset, destOffset, length);
         } else {
@@ -185,12 +220,12 @@ public class WritableLongChunk<ATTR extends Any> extends LongChunk<ATTR> impleme
     // endregion sort
 
     @Override
-    public void close() {
-    }
+    public void close() {}
 
     // region downcast
-    public static <ATTR extends Any, ATTR_DERIV extends ATTR> WritableLongChunk<ATTR> upcast(WritableLongChunk<ATTR_DERIV> self) {
-        //noinspection unchecked
+    public static <ATTR extends Any, ATTR_DERIV extends ATTR> WritableLongChunk<ATTR> upcast(
+            WritableLongChunk<ATTR_DERIV> self) {
+        // noinspection unchecked
         return (WritableLongChunk<ATTR>) self;
     }
     // endregion downcast

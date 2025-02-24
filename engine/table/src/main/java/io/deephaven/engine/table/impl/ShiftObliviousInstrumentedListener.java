@@ -1,14 +1,12 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl;
 
 import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.engine.rowset.RowSetShiftData;
 import io.deephaven.engine.table.ModifiedColumnSet;
 import io.deephaven.engine.table.ShiftObliviousListener;
-import io.deephaven.engine.table.impl.TableUpdateImpl;
 import org.jetbrains.annotations.Nullable;
 
 public abstract class ShiftObliviousInstrumentedListener extends InstrumentedTableListenerBase

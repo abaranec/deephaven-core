@@ -1,19 +1,11 @@
 plugins {
     id 'groovy'
-    id 'idea'
     id 'groovy-gradle-plugin'
 }
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(8)
-    }
-}
-
-idea {
-    project {
-        jdkName = '1.8'
-        languageLevel = '1.8'
+        languageVersion = JavaLanguageVersion.of(11)
     }
 }
 
@@ -25,16 +17,22 @@ repositories {
 }
 
 dependencies {
-    compile('de.esoco.gwt:gwt-gradle-plugin:1.1.1') {
+    implementation('de.esoco.gwt:gwt-gradle-plugin:1.2.0') {
         exclude group: 'org.codehaus.groovy'
+        because('needed for GwtTools')
     }
 
-    compile 'com.bmuschko:gradle-docker-plugin:7.1.0'
+    implementation('com.bmuschko:gradle-docker-plugin:9.3.1') {
+        because('needed by plugin com.bmuschko.docker-remote-api')
+    }
 
-    compile ('com.avast.gradle:gradle-docker-compose-plugin:0.14.9')
+    implementation('com.avast.gradle:gradle-docker-compose-plugin:0.17.12') {
+        because('needed by plugin com.avast.gradle.docker-compose')
+    }
 
-    compile('com.netflix.nebula:gradle-ospackage-plugin:8.3.0')
+    implementation('com.diffplug.spotless:spotless-plugin-gradle:7.0.2') {
+        because('needed by plugin java-coding-conventions')
+    }
 
-    compile "gradle.plugin.com.jetbrains.python:gradle-python-envs:0.0.30"
+    implementation "com.github.johnrengelman:shadow:8.1.1"
 }
-

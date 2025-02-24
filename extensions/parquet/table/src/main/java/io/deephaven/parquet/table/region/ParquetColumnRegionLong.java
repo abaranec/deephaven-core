@@ -1,8 +1,10 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit ParquetColumnRegionChar and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit ParquetColumnRegionChar and run "./gradlew replicateRegionsAndRegionedSources" to regenerate
+//
+// @formatter:off
 package io.deephaven.parquet.table.region;
 
 import io.deephaven.engine.table.impl.locations.TableDataException;
@@ -23,14 +25,16 @@ public final class ParquetColumnRegionLong<ATTR extends Any> extends ParquetColu
         super(columnChunkPageStore.mask(), columnChunkPageStore);
     }
 
+    // region getBytes
+    // endregion getBytes
+
     @Override
-    public long getLong(final long elementIndex) {
-        final ChunkPage<ATTR> page = getChunkPageContaining(elementIndex);
+    public long getLong(final long rowKey) {
+        final ChunkPage<ATTR> page = getChunkPageContaining(rowKey);
         try {
-            return page.asLongChunk().get(page.getChunkOffset(elementIndex));
+            return page.asLongChunk().get(page.getChunkOffset(rowKey));
         } catch (Exception e) {
-            throw new TableDataException("Error retrieving long at table long rowSet " + elementIndex
-                    + ", from a parquet table", e);
+            throw new TableDataException("Error retrieving long at row key " + rowKey + " from a parquet table", e);
         }
     }
 }

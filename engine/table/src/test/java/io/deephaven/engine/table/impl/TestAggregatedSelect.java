@@ -1,19 +1,17 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl;
 
 import io.deephaven.base.FileUtils;
+import io.deephaven.engine.context.TestExecutionContext;
 import io.deephaven.engine.table.ColumnDefinition;
-import io.deephaven.engine.table.DataColumn;
 import io.deephaven.engine.table.Table;
 import io.deephaven.engine.table.TableDefinition;
-import io.deephaven.vector.DoubleVector;
-import io.deephaven.vector.ObjectVector;
+import io.deephaven.parquet.table.ParquetInstructions;
+import io.deephaven.util.SafeCloseable;
 import io.deephaven.vector.Vector;
 import io.deephaven.util.type.ArrayTypeUtils;
-import io.deephaven.function.DoubleNumericPrimitives;
 import io.deephaven.engine.util.TableTools;
 import io.deephaven.parquet.table.ParquetTools;
 import junit.framework.TestCase;
@@ -32,9 +30,11 @@ public class TestAggregatedSelect extends TestCase {
     }
 
     private static File tableDirectory;
+    private SafeCloseable executionContext;
 
     @Before
     public void setUp() {
+        executionContext = TestExecutionContext.createForUnitTests().open();
         try {
             tableDirectory = Files.createTempDirectory("TestAggregatedSelect").toFile();
         } catch (IOException e) {
@@ -44,6 +44,7 @@ public class TestAggregatedSelect extends TestCase {
 
     @After
     public void tearDown() {
+        executionContext.close();
         FileUtils.deleteRecursivelyOnNFS(tableDirectory);
     }
 
@@ -71,9 +72,9 @@ public class TestAggregatedSelect extends TestCase {
         final File dest = new File(tableDirectory, "Table.parquet");
         ParquetTools.writeTable(
                 newTable(stringCol("USym", symbol), doubleCol("Bid", bid), doubleCol("BidSize", bidSize)),
-                dest,
-                tableDefinition);
-        return ParquetTools.readTable(dest);
+                dest.getPath(),
+                ParquetInstructions.EMPTY.withTableDefinition(tableDefinition));
+        return ParquetTools.readTable(dest.getPath());
     }
 
     Table doAggregatedQuery() {
@@ -95,10 +96,10 @@ public class TestAggregatedSelect extends TestCase {
 
         String[] colNames = {"USym", "Bid", "BidSize"};
         for (String colName : colNames) {
-            DataColumn dcFresh = table.getColumn(colName);
-            DataColumn dcSelected = selectedTable.getColumn(colName);
-            TestCase.assertEquals(dcFresh.getType(), dcSelected.getType());
-            TestCase.assertEquals(dcFresh.getComponentType(), dcSelected.getComponentType());
+            ColumnDefinition<?> cdFresh = table.getDefinition().getColumn(colName);
+            ColumnDefinition<?> cdSelected = selectedTable.getDefinition().getColumn(colName);
+            TestCase.assertEquals(cdFresh.getDataType(), cdSelected.getDataType());
+            TestCase.assertEquals(cdFresh.getComponentType(), cdSelected.getComponentType());
         }
     }
 
@@ -121,10 +122,10 @@ public class TestAggregatedSelect extends TestCase {
 
         String[] colNames = {"Bid", "USym"};
         for (String colName : colNames) {
-            DataColumn dcFresh = t1.getColumn(colName);
-            DataColumn dcSelected = t2.getColumn(colName);
-            TestCase.assertEquals(dcFresh.getType(), dcSelected.getType());
-            TestCase.assertEquals(dcFresh.getComponentType(), dcSelected.getComponentType());
+            ColumnDefinition<?> cdFresh = t1.getDefinition().getColumn(colName);
+            ColumnDefinition<?> cdSelected = t2.getDefinition().getColumn(colName);
+            TestCase.assertEquals(cdFresh.getDataType(), cdSelected.getDataType());
+            TestCase.assertEquals(cdFresh.getComponentType(), cdSelected.getComponentType());
         }
 
         t2 = t2.ungroup();
@@ -136,10 +137,10 @@ public class TestAggregatedSelect extends TestCase {
         Table s1s = s1.select();
         colNames[0] = "BidSize";
         for (String colName : colNames) {
-            DataColumn dcFresh = s1.getColumn(colName);
-            DataColumn dcSelected = s1s.getColumn(colName);
-            TestCase.assertEquals(dcFresh.getType(), dcSelected.getType());
-            TestCase.assertEquals(dcFresh.getComponentType(), dcSelected.getComponentType());
+            ColumnDefinition<?> cdFresh = s1.getDefinition().getColumn(colName);
+            ColumnDefinition<?> cdSelected = s1s.getDefinition().getColumn(colName);
+            TestCase.assertEquals(cdFresh.getDataType(), cdSelected.getDataType());
+            TestCase.assertEquals(cdFresh.getComponentType(), cdSelected.getComponentType());
         }
 
         TableTools.show(s1);
@@ -155,30 +156,14 @@ public class TestAggregatedSelect extends TestCase {
         TableTools.show(s4);
     }
 
-    private void dumpColumn(DataColumn dc) {
-        boolean isArray = Vector.class.isAssignableFrom(dc.getType());
-        System.out.println("Column Type: " + dc.getType().toString() + (isArray ? " (Array)" : "") + ", ComponentType: "
-                + dc.getComponentType());
-
-        for (int ii = 0; ii < dc.size(); ++ii) {
-            String prefix = dc.getName() + "[" + ii + "]";
-            if (isArray) {
-                Vector vector = (Vector) dc.get(ii);
-                dumpArray(prefix, vector);
-            } else {
-                System.out.println(prefix + ":" + dc.get(ii).toString());
-            }
-        }
-    }
-
-    private void dumpArray(String prefix, Vector vector) {
+    private void dumpArray(String prefix, Vector<?> vector) {
         System.out.println(prefix + ": Array of " + vector.getComponentType().toString());
         String prefixsp = new String(new char[prefix.length()]).replace('\0', ' ');
         final boolean containsArrays = Vector.class.isAssignableFrom(vector.getComponentType());
         final ArrayTypeUtils.ArrayAccessor<?> arrayAccessor = ArrayTypeUtils.getArrayAccessor(vector.toArray());
         for (int jj = 0; jj < vector.size(); ++jj) {
             if (containsArrays) {
-                dumpArray(prefix + "[" + jj + "] ", (Vector) arrayAccessor.get(jj));
+                dumpArray(prefix + "[" + jj + "] ", (Vector<?>) arrayAccessor.get(jj));
             } else {
                 System.out.println(prefixsp + "[" + jj + "]: " + arrayAccessor.get(jj).toString());
             }

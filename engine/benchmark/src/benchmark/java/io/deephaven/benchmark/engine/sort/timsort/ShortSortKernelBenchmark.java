@@ -1,8 +1,10 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit CharSortKernelBenchmark and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit CharSortKernelBenchmark and run "./gradlew replicateSortKernelTests" to regenerate
+//
+// @formatter:off
 package io.deephaven.benchmark.engine.sort.timsort;
 
 import io.deephaven.engine.table.impl.sort.timsort.BaseTestShortTimSortKernel;
@@ -32,8 +34,7 @@ public class ShortSortKernelBenchmark {
     private Runnable doSort;
 
     @TearDown(Level.Trial)
-    public void finishTrial() {
-    }
+    public void finishTrial() {}
 
     @Setup(Level.Iteration)
     public void setupIteration() {
@@ -67,18 +68,20 @@ public class ShortSortKernelBenchmark {
                 doSort = () -> stuffToSort.sort(javaComparator);
                 break;
             case "javaarray":
-                final short [] javaArray = new short[stuffToSort.size()];
+                final short[] javaArray = new short[stuffToSort.size()];
                 for (int ii = 0; ii < javaArray.length; ++ii) {
                     javaArray[ii] = stuffToSort.get(ii).getFirstElement();
                 }
                 doSort = () -> Arrays.sort(javaArray);
                 break;
             case "timsort":
-                final BaseTestShortTimSortKernel.ShortSortKernelStuff sortStuff = new BaseTestShortTimSortKernel.ShortSortKernelStuff(stuffToSort);
+                final BaseTestShortTimSortKernel.ShortLongSortKernelStuff sortStuff =
+                        new BaseTestShortTimSortKernel.ShortLongSortKernelStuff(stuffToSort);
                 doSort = sortStuff::run;
                 break;
             case "mergesort":
-                final BaseTestShortTimSortKernel.ShortMergeStuff mergeStuff = new BaseTestShortTimSortKernel.ShortMergeStuff(stuffToSort);
+                final BaseTestShortTimSortKernel.ShortMergeStuff mergeStuff =
+                        new BaseTestShortTimSortKernel.ShortMergeStuff(stuffToSort);
                 doSort = mergeStuff::run;
                 break;
         }

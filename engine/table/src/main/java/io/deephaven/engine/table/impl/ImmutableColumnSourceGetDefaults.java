@@ -1,7 +1,11 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl;
 
 import io.deephaven.engine.table.ColumnSource;
-import io.deephaven.time.DateTime;
+
+import java.time.Instant;
 
 /**
  * Defaulted interfaces for various immutable {@link ColumnSource} types, in order to avoid having defaults at higher
@@ -66,10 +70,10 @@ public final class ImmutableColumnSourceGetDefaults {
     }
 
     /**
-     * Default interface for immutable {@link DateTime} {@link ColumnSource} implementations.
+     * Default interface for immutable {@link Instant} {@link ColumnSource} implementations.
      */
-    public interface ForLongAsDateTime
-            extends ColumnSourceGetDefaults.ForLongAsDateTime, ImmutableColumnSource<DateTime> {
+    public interface ForLongAsInstant
+            extends ColumnSourceGetDefaults.ForLongAsInstant, ImmutableColumnSource<Instant> {
     }
 
     /**

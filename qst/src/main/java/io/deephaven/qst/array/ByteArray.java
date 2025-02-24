@@ -1,6 +1,10 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.qst.array;
 
 import io.deephaven.qst.type.ByteType;
+import io.deephaven.util.QueryConstants;
 
 import java.util.Arrays;
 import java.util.Collection;
@@ -58,19 +62,29 @@ public final class ByteArray extends PrimitiveArrayBase<Byte> {
     }
 
     @Override
+    public Byte value(int index) {
+        byte value = values[index];
+        return value == QueryConstants.NULL_BYTE ? null : value;
+    }
+
+    @Override
+    public boolean isNull(int index) {
+        return values[index] == QueryConstants.NULL_BYTE;
+    }
+
+    @Override
     public final int size() {
         return values().length;
     }
 
     @Override
     public final ByteType componentType() {
-        return ByteType.instance();
+        return ByteType.of();
     }
 
     @Override
-    public final <V extends PrimitiveArray.Visitor> V walk(V visitor) {
-        visitor.visit(this);
-        return visitor;
+    public final <R> R walk(PrimitiveArray.Visitor<R> visitor) {
+        return visitor.visit(this);
     }
 
     @Override

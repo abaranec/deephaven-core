@@ -1,9 +1,10 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.kafka.ingest;
 
 import io.deephaven.chunk.attributes.Values;
-import io.deephaven.configuration.Configuration;
 import io.deephaven.engine.table.TableDefinition;
-import io.deephaven.time.DateTime;
 import io.deephaven.time.DateTimeUtils;
 import io.deephaven.chunk.*;
 import io.deephaven.util.BooleanUtils;
@@ -15,8 +16,10 @@ import org.apache.avro.generic.GenericData;
 import org.jetbrains.annotations.NotNull;
 import org.junit.Test;
 
-import java.io.File;
+import java.io.BufferedInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -24,20 +27,23 @@ import java.util.regex.Pattern;
 
 public class TestAvroAdapter {
     @NotNull
-    private File getSchemaFile(String name) {
-        final String avscPath =
-                Configuration.getInstance().getDevRootPath() + "/extensions/kafka/src/test/resources/avro-examples/";
-        return new File(avscPath + name);
+    private InputStream getSchemaFile(String name) {
+        return new BufferedInputStream(TestAvroAdapter.class.getResourceAsStream("/avro-examples/" + name));
+    }
+
+    private Schema getSchema(String name) throws IOException {
+        try (final InputStream in = getSchemaFile(name)) {
+            return new Schema.Parser().parse(in);
+        }
     }
 
     @Test
     public void testSimple() throws IOException {
-        final Schema avroSchema = new Schema.Parser().parse(getSchemaFile("pageviews.avc"));
+        final Schema avroSchema = getSchema("pageviews.avc");
 
         final String[] names = new String[] {"viewtime", "userid", "pageid"};
-        final Class[] types = new Class[] {long.class, String.class, String.class};
-
-        final TableDefinition definition = new TableDefinition(Arrays.asList(types), Arrays.asList(names));
+        final Class<?>[] types = new Class[] {long.class, String.class, String.class};
+        final TableDefinition definition = TableDefinition.from(Arrays.asList(names), Arrays.asList(types));
 
         final GenericData.Record genericRecord = new GenericData.Record(avroSchema);
         genericRecord.put("viewtime", 1234L);
@@ -82,24 +88,23 @@ public class TestAvroAdapter {
 
     @Test
     public void testTimestamp() throws IOException {
-        final Schema avroSchema = new Schema.Parser().parse(getSchemaFile("fieldtest.avsc"));
+        final Schema avroSchema = getSchema("fieldtest.avsc");
 
         final String[] names = new String[] {"last_name", "number", "truthiness", "timestamp", "timestampMicros",
                 "timeMillis", "timeMicros"};
-        final Class[] types = new Class[] {String.class, int.class, boolean.class, DateTime.class, DateTime.class,
+        final Class<?>[] types = new Class[] {String.class, int.class, boolean.class, Instant.class, Instant.class,
                 int.class, long.class};
+        final TableDefinition definition = TableDefinition.from(Arrays.asList(names), Arrays.asList(types));
 
-        final TableDefinition definition = new TableDefinition(Arrays.asList(types), Arrays.asList(names));
-
-        final DateTime dt1 = DateTimeUtils.convertDateTime("2021-08-23T12:00:00.123456789 NY");
-        final DateTime dt2 = DateTimeUtils.convertDateTime("2021-08-23T13:00:00.500600700 NY");
+        final Instant dt1 = DateTimeUtils.parseInstant("2021-08-23T12:00:00.123456789 NY");
+        final Instant dt2 = DateTimeUtils.parseInstant("2021-08-23T13:00:00.500600700 NY");
 
         final GenericData.Record genericRecord1 = new GenericData.Record(avroSchema);
         genericRecord1.put("last_name", "LN1");
         genericRecord1.put("number", 32);
         genericRecord1.put("truthiness", false);
-        genericRecord1.put("timestamp", dt1.getMillis());
-        genericRecord1.put("timestampMicros", dt1.getMicros());
+        genericRecord1.put("timestamp", dt1.toEpochMilli());
+        genericRecord1.put("timestampMicros", DateTimeUtils.epochMicros(dt1));
         genericRecord1.put("timeMillis", 10000);
         genericRecord1.put("timeMicros", 100000L);
 
@@ -107,8 +112,8 @@ public class TestAvroAdapter {
         genericRecord2.put("last_name", null);
         genericRecord2.put("number", 64);
         genericRecord2.put("truthiness", true);
-        genericRecord2.put("timestamp", dt2.getMillis());
-        genericRecord2.put("timestampMicros", dt2.getMicros());
+        genericRecord2.put("timestamp", dt2.toEpochMilli());
+        genericRecord2.put("timestampMicros", DateTimeUtils.epochMicros(dt2));
         genericRecord2.put("timeMillis", 20000);
         genericRecord2.put("timeMicros", 200000L);
 
@@ -160,16 +165,20 @@ public class TestAvroAdapter {
                 TestCase.assertEquals("LN1", output[0].asObjectChunk().get(0));
                 TestCase.assertEquals(32, output[1].asIntChunk().get(0));
                 TestCase.assertEquals(BooleanUtils.FALSE_BOOLEAN_AS_BYTE, output[2].asByteChunk().get(0));
-                TestCase.assertEquals(DateTimeUtils.millisToNanos(dt1.getMillis()), output[3].asLongChunk().get(0));
-                TestCase.assertEquals(DateTimeUtils.microsToNanos(dt1.getMicros()), output[4].asLongChunk().get(0));
+                TestCase.assertEquals(DateTimeUtils.millisToNanos(DateTimeUtils.epochMillis(dt1)),
+                        output[3].asLongChunk().get(0));
+                TestCase.assertEquals(DateTimeUtils.microsToNanos(DateTimeUtils.epochMicros(dt1)),
+                        output[4].asLongChunk().get(0));
                 TestCase.assertEquals(10000, output[5].asIntChunk().get(0));
                 TestCase.assertEquals(100000, output[6].asLongChunk().get(0));
 
                 TestCase.assertNull(output[0].asObjectChunk().get(1));
                 TestCase.assertEquals(64, output[1].asIntChunk().get(1));
                 TestCase.assertEquals(BooleanUtils.TRUE_BOOLEAN_AS_BYTE, output[2].asByteChunk().get(1));
-                TestCase.assertEquals(DateTimeUtils.millisToNanos(dt2.getMillis()), output[3].asLongChunk().get(1));
-                TestCase.assertEquals(DateTimeUtils.microsToNanos(dt2.getMicros()), output[4].asLongChunk().get(1));
+                TestCase.assertEquals(DateTimeUtils.millisToNanos(DateTimeUtils.epochMillis(dt2)),
+                        output[3].asLongChunk().get(1));
+                TestCase.assertEquals(DateTimeUtils.microsToNanos(DateTimeUtils.epochMicros(dt2)),
+                        output[4].asLongChunk().get(1));
                 TestCase.assertEquals(20000, output[5].asIntChunk().get(1));
                 TestCase.assertEquals(200000, output[6].asLongChunk().get(1));
 

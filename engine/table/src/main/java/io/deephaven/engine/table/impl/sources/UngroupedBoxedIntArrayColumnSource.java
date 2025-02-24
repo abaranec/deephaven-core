@@ -1,8 +1,10 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit UngroupedBoxedCharArrayColumnSource and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit UngroupedBoxedCharArrayColumnSource and run "./gradlew replicateSourcesAndChunks" to regenerate
+//
+// @formatter:off
 package io.deephaven.engine.table.impl.sources;
 
 import io.deephaven.engine.table.ColumnSource;
@@ -18,7 +20,8 @@ import static io.deephaven.util.QueryConstants.NULL_INT;
  *
  * (C-har is deliberately spelled that way in order to prevent Replicate from altering this very comment).
  */
-public class UngroupedBoxedIntArrayColumnSource extends UngroupedColumnSource<Integer> implements MutableColumnSourceGetDefaults.ForObject<Integer> {
+public class UngroupedBoxedIntArrayColumnSource extends UngroupedColumnSource<Integer>
+        implements MutableColumnSourceGetDefaults.ForObject<Integer> {
     private ColumnSource<Integer[]> innerSource;
 
     @Override
@@ -33,19 +36,19 @@ public class UngroupedBoxedIntArrayColumnSource extends UngroupedColumnSource<In
     }
 
     @Override
-    public Integer get(long index) {
-        final int result = getInt(index);
-        return (result == NULL_INT?null:result);
+    public Integer get(long rowKey) {
+        final int result = getInt(rowKey);
+        return (result == NULL_INT ? null : result);
     }
 
 
     @Override
-    public int getInt(long index) {
-        if (index < 0) {
+    public int getInt(long rowKey) {
+        if (rowKey < 0) {
             return NULL_INT;
         }
-        long segment = index>>base;
-        int offset = (int) (index & ((1<<base) - 1));
+        long segment = rowKey >> base;
+        int offset = (int) (rowKey & ((1 << base) - 1));
         Integer[] array = innerSource.get(segment);
         if (array == null || offset >= array.length || array[offset] == null) {
             return NULL_INT;
@@ -55,18 +58,18 @@ public class UngroupedBoxedIntArrayColumnSource extends UngroupedColumnSource<In
 
 
     @Override
-    public Integer getPrev(long index) {
-        final int result = getPrevInt(index);
-        return (result == NULL_INT?null:result);
+    public Integer getPrev(long rowKey) {
+        final int result = getPrevInt(rowKey);
+        return (result == NULL_INT ? null : result);
     }
 
     @Override
-    public int getPrevInt(long index) {
-        if (index < 0) {
+    public int getPrevInt(long rowKey) {
+        if (rowKey < 0) {
             return NULL_INT;
         }
-        long segment = index>> getPrevBase();
-        int offset = (int) (index & ((1<< getPrevBase()) - 1));
+        long segment = rowKey >> getPrevBase();
+        int offset = (int) (rowKey & ((1 << getPrevBase()) - 1));
         Integer[] array = innerSource.getPrev(segment);
         if (array == null || offset >= array.length || array[offset] == null) {
             return NULL_INT;

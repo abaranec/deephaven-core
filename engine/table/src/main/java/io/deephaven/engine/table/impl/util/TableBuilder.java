@@ -1,9 +1,13 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.util;
 
 import io.deephaven.engine.rowset.RowSetFactory;
 import io.deephaven.engine.table.ColumnDefinition;
 import io.deephaven.engine.table.Table;
 import io.deephaven.engine.table.TableDefinition;
+import io.deephaven.engine.table.WritableColumnSource;
 import io.deephaven.engine.table.impl.QueryTable;
 import io.deephaven.engine.table.impl.sources.ArrayBackedColumnSource;
 import io.deephaven.util.type.TypeUtils;
@@ -83,17 +87,17 @@ public class TableBuilder {
      * @return the table
      */
     public Table build() {
-        Map<String, ArrayBackedColumnSource<Object>> map = new LinkedHashMap<>();
+        Map<String, WritableColumnSource<Object>> map = new LinkedHashMap<>();
         for (ColumnDefinition<?> columnDefinition : def.getColumns()) {
-            ArrayBackedColumnSource<?> cs = ArrayBackedColumnSource.getMemoryColumnSource(
+            WritableColumnSource<?> cs = ArrayBackedColumnSource.getMemoryColumnSource(
                     rows.size(), columnDefinition.getDataType());
             // noinspection unchecked
-            map.put(columnDefinition.getName(), (ArrayBackedColumnSource<Object>) cs);
+            map.put(columnDefinition.getName(), (WritableColumnSource<Object>) cs);
         }
 
         // Re-write column oriented
         int col = 0;
-        for (ArrayBackedColumnSource<Object> source : map.values()) {
+        for (WritableColumnSource<Object> source : map.values()) {
             for (int row = 0; row < rowCount(); row++) {
                 source.set(row, rows.get(row)[col]);
             }

@@ -1,8 +1,10 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit CharChunk and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit CharChunk and run "./gradlew replicateSourcesAndChunks" to regenerate
+//
+// @formatter:off
 package io.deephaven.chunk;
 
 import io.deephaven.util.type.ArrayTypeUtils;
@@ -18,22 +20,28 @@ import java.nio.Buffer;
 import java.nio.FloatBuffer;
 // endregion BufferImports
 
+// region BinarySearchImports
+import java.util.Arrays;
+// endregion BinarySearchImports
+
 /**
  * {@link Chunk} implementation for float data.
  */
 public class FloatChunk<ATTR extends Any> extends ChunkBase<ATTR> {
 
+    @SuppressWarnings("rawtypes")
     private static final FloatChunk EMPTY = new FloatChunk<>(ArrayTypeUtils.EMPTY_FLOAT_ARRAY, 0, 0);
 
     public static <ATTR extends Any> FloatChunk<ATTR> getEmptyChunk() {
-        //noinspection unchecked
+        // noinspection unchecked
         return EMPTY;
     }
 
+    @SuppressWarnings("rawtypes")
     private static final FloatChunk[] EMPTY_FLOAT_CHUNK_ARRAY = new FloatChunk[0];
 
     static <ATTR extends Any> FloatChunk<ATTR>[] getEmptyChunkArray() {
-        //noinspection unchecked
+        // noinspection unchecked
         return EMPTY_FLOAT_CHUNK_ARRAY;
     }
 
@@ -83,7 +91,7 @@ public class FloatChunk<ATTR extends Any> extends ChunkBase<ATTR> {
 
     @Override
     public final void copyToArray(int srcOffset, Object dest, int destOffset, int length) {
-        final float[] realType = (float[])dest;
+        final float[] realType = (float[]) dest;
         copyToTypedArray(srcOffset, realType, destOffset, length);
     }
 
@@ -94,13 +102,13 @@ public class FloatChunk<ATTR extends Any> extends ChunkBase<ATTR> {
             return;
         }
         if (ChunkHelpers.canCopyForward(data, sStart, destData, destOffset, length)) {
-            //noinspection ManualArrayCopy
+            // noinspection ManualArrayCopy
             for (int ii = 0; ii < length; ++ii) {
                 destData[destOffset + ii] = data[sStart + ii];
             }
             return;
         }
-        //noinspection ManualArrayCopy
+        // noinspection ManualArrayCopy
         for (int ii = length - 1; ii >= 0; --ii) {
             destData[destOffset + ii] = data[sStart + ii];
         }
@@ -112,7 +120,7 @@ public class FloatChunk<ATTR extends Any> extends ChunkBase<ATTR> {
     }
 
     @Override
-    public final boolean isAlias(Chunk chunk) {
+    public final boolean isAlias(Chunk<?> chunk) {
         return chunk.isAlias(data);
     }
 
@@ -127,22 +135,26 @@ public class FloatChunk<ATTR extends Any> extends ChunkBase<ATTR> {
 
     // region CopyToBuffer
     @Override
-    public final void copyToBuffer(final int srcOffset, @NotNull final Buffer destBuffer, final int destOffset, final int length) {
+    public final void copyToBuffer(final int srcOffset, @NotNull final Buffer destBuffer, final int destOffset,
+            final int length) {
         final FloatBuffer floatDestBuffer = (FloatBuffer) destBuffer;
         copyToTypedBuffer(srcOffset, floatDestBuffer, destOffset, length);
     }
 
     /**
-     * <p>Copy a sub-range of this FloatChunk to a {@link FloatBuffer}.
+     * <p>
+     * Copy a sub-range of this FloatChunk to a {@link FloatBuffer}.
      *
-     * <p>See {@link #copyToBuffer(int, Buffer, int, int)} for general documentation.
+     * <p>
+     * See {@link #copyToBuffer(int, Buffer, int, int)} for general documentation.
      *
-     * @param srcOffset  The offset into this chunk to start copying from
+     * @param srcOffset The offset into this chunk to start copying from
      * @param destBuffer The destination {@link FloatBuffer}
      * @param destOffset The absolute offset into {@code destBuffer} to start copying to
-     * @param length     The number of elements to copy
+     * @param length The number of elements to copy
      */
-    public final void copyToTypedBuffer(final int srcOffset, @NotNull final FloatBuffer destBuffer, final int destOffset, final int length) {
+    public final void copyToTypedBuffer(final int srcOffset, @NotNull final FloatBuffer destBuffer, final int destOffset,
+            final int length) {
         if (destBuffer.hasArray()) {
             copyToTypedArray(srcOffset, destBuffer.array(), destBuffer.arrayOffset() + destOffset, length);
             return;
@@ -155,9 +167,42 @@ public class FloatChunk<ATTR extends Any> extends ChunkBase<ATTR> {
     // endregion CopyToBuffer
 
     // region downcast
-    public static <ATTR extends Any, ATTR_DERIV extends ATTR> WritableFloatChunk<ATTR_DERIV> downcast(WritableFloatChunk<ATTR> self) {
-        //noinspection unchecked
-        return (WritableFloatChunk<ATTR_DERIV>) self;
+    public static <ATTR extends Any, ATTR_DERIV extends ATTR> FloatChunk<ATTR_DERIV> downcast(FloatChunk<ATTR> self) {
+        // noinspection unchecked
+        return (FloatChunk<ATTR_DERIV>) self;
     }
     // endregion downcast
+
+    // region BinarySearch
+    /**
+     * Search for {@code key} in this chunk in the index range [0, {@link #size() size}) using Java's primitive
+     * ordering. This chunk must be sorted as by {@link WritableFloatChunk#sort()} prior to this call.
+     * <p>
+     * This method does <em>not</em> compare {@code null} or {@code NaN} values according to Deephaven ordering rules.
+     *
+     * @param key The key to search for
+     * @return The index of the key in this chunk, or else {@code (-(insertion point) - 1)} as defined by
+     *         {@link Arrays#binarySearch}
+     */
+    public final int binarySearch(final float key) {
+        return Arrays.binarySearch(data, offset, offset + size, key);
+    }
+
+    /**
+     * Search for {@code key} in this chunk in the index range {@code [fromIndexInclusive, toIndexExclusive)} using
+     * Java's primitive ordering. This chunk must be sorted over the search index range as by
+     * {@link WritableFloatChunk#sort(int, int)} prior to this call.
+     * <p>
+     * This method does <em>not</em> compare {@code null} or {@code NaN} values according to Deephaven ordering rules.
+     *
+     * @param fromIndexInclusive The first index to be searched
+     * @param toIndexExclusive The index after the last index to be searched
+     * @param key The key to search for
+     * @return The index of the key in this chunk, or else {@code (-(insertion point) - 1)} as defined by
+     *         {@link Arrays#binarySearch(float[], int, int, float)}
+     */
+    public final int binarySearch(final int fromIndexInclusive, final int toIndexExclusive, final float key) {
+        return Arrays.binarySearch(data, offset + fromIndexInclusive, offset + toIndexExclusive, key);
+    }
+    // endregion BinarySearch
 }

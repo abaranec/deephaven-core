@@ -1,0 +1,13 @@
+plugins {
+    id 'io.deephaven.project.register'
+    id 'java-library'
+}
+
+dependencies {
+    implementation project(':DHProcess')
+    implementation project(':engine-table')
+    implementation project(':Plot')
+    compileOnly libs.autoservice
+    annotationProcessor libs.autoservice.compiler
+    implementation libs.groovy
+}

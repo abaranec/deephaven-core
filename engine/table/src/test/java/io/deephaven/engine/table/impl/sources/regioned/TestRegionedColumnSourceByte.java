@@ -1,12 +1,10 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit TestRegionedColumnSourceChar and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit TestRegionedColumnSourceChar and run "./gradlew replicateRegionAndRegionedSourceTests" to regenerate
+//
+// @formatter:off
 package io.deephaven.engine.table.impl.sources.regioned;
 
 import io.deephaven.chunk.attributes.Values;
@@ -17,7 +15,8 @@ import static io.deephaven.util.QueryConstants.NULL_BYTE;
  * Test class for {@link RegionedColumnSourceByte}.
  */
 @SuppressWarnings("JUnit4AnnotatedMethodInJUnit3TestCase")
-public class TestRegionedColumnSourceByte extends TstRegionedColumnSourcePrimitive<Byte, Values, ColumnRegionByte<Values>> {
+public class TestRegionedColumnSourceByte extends
+        TstRegionedColumnSourcePrimitive<Byte, Values, ColumnRegionByte<Values>, ColumnRegionByte<Values>> {
 
     public TestRegionedColumnSourceByte() {
         super(ColumnRegionByte.class);
@@ -25,14 +24,16 @@ public class TestRegionedColumnSourceByte extends TstRegionedColumnSourcePrimiti
 
     @SuppressWarnings("AutoBoxing")
     private void assertLookup(final long elementIndex,
-                              final int expectedRegionIndex,
-                              final byte output,
-                              final boolean prev,
-                              final boolean boxed) {
-        checking(new Expectations() {{
-            oneOf(cr[expectedRegionIndex]).getByte(elementIndex);
-            will(returnValue(output));
-        }});
+            final int expectedRegionIndex,
+            final byte output,
+            final boolean prev,
+            final boolean boxed) {
+        checking(new Expectations() {
+            {
+                oneOf(cr[expectedRegionIndex]).getByte(elementIndex);
+                will(returnValue(output));
+            }
+        });
         if (boxed) {
             assertEquals(output == NULL_BYTE ? null : output, prev ? SUT.getPrev(elementIndex) : SUT.get(elementIndex));
         } else {

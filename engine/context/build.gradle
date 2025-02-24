@@ -1,0 +1,31 @@
+plugins {
+    id 'java-library'
+    id 'io.deephaven.project.register'
+}
+
+description 'Engine Context: QueryScope, QueryLibrary and QueryCompiler via ExecutionContext'
+
+dependencies {
+    api project(':authentication')
+    api project(':Util')
+
+    implementation project(':Configuration')
+    implementation project(':DataStructures')
+    implementation project(':log-factory')
+    implementation project(':engine-time')
+    implementation project(':engine-updategraph')
+    implementation project(':table-api')
+    implementation project(':IO')
+
+    implementation libs.f4b6a3.uuid.creator
+
+    compileOnly project(':util-immutables')
+    annotationProcessor libs.immutables.value
+
+    testImplementation project(':engine-test-utils')
+
+    testRuntimeOnly project(':log-to-slf4j'),
+            project(path: ':configs'),
+            project(path: ':test-configs')
+    testRuntimeOnly libs.slf4j.simple
+}

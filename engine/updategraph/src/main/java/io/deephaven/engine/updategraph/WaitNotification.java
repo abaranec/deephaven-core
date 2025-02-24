@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.updategraph;
 
 import io.deephaven.UncheckedDeephavenException;
@@ -74,7 +77,8 @@ public final class WaitNotification extends AbstractNotification {
     public static boolean waitForSatisfaction(final long step,
             @NotNull final NotificationQueue.Dependency... dependencies) {
         final WaitNotification waitNotification = new WaitNotification(dependencies);
-        if (UpdateGraphProcessor.DEFAULT.maybeAddNotification(waitNotification, step)) {
+        if (NotificationQueue.Dependency.getUpdateGraph(null, dependencies).maybeAddNotification(waitNotification,
+                step)) {
             try {
                 waitNotification.await();
             } catch (InterruptedException e) {

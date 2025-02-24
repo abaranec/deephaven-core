@@ -1,13 +1,13 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl;
 
 import io.deephaven.engine.rowset.TrackingWritableRowSet;
 import io.deephaven.engine.rowset.WritableRowSet;
 import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.engine.rowset.TrackingRowSet;
+import io.deephaven.engine.table.Table;
 import io.deephaven.engine.table.TableUpdate;
 import io.deephaven.engine.table.TableUpdateListener;
 
@@ -16,10 +16,6 @@ public class SliceLikeOperation implements QueryTable.Operation<QueryTable> {
     public static SliceLikeOperation slice(final QueryTable parent, final long firstPositionInclusive,
             final long lastPositionExclusive, final String op) {
 
-        if (firstPositionInclusive < 0 && lastPositionExclusive > 0) {
-            throw new IllegalArgumentException("Can not slice with a negative first position (" + firstPositionInclusive
-                    + ") and positive last position (" + lastPositionExclusive + ")");
-        }
         // note: first >= 0 && last < 0 is allowed, otherwise first must be less than last
         if ((firstPositionInclusive < 0 || lastPositionExclusive >= 0)
                 && lastPositionExclusive < firstPositionInclusive) {
@@ -31,11 +27,36 @@ public class SliceLikeOperation implements QueryTable.Operation<QueryTable> {
                 parent, firstPositionInclusive, lastPositionExclusive, firstPositionInclusive == 0);
     }
 
+    public static SliceLikeOperation slicePct(final QueryTable parent, final double startPercentInclusive,
+            final double endPercentExclusive) {
+
+        if (startPercentInclusive < 0 || startPercentInclusive > 1
+                || endPercentExclusive < 0 || endPercentExclusive > 1) {
+            throw new IllegalArgumentException(
+                    "Cannot slice with start percentage (" + startPercentInclusive + ") and end percentage ("
+                            + endPercentExclusive + "), percentages must be between [0, 1]");
+        }
+        return new SliceLikeOperation("slicePct",
+                "slicePct(" + startPercentInclusive + ", " + endPercentExclusive + ")",
+                parent, 0, 0, startPercentInclusive == 0) {
+            @Override
+            protected long getFirstPositionInclusive() {
+                return (long) Math.floor(startPercentInclusive * parent.size());
+            }
+
+            @Override
+            protected long getLastPositionExclusive() {
+                return (long) Math.floor(endPercentExclusive * parent.size());
+            }
+        };
+    }
+
     public static SliceLikeOperation headPct(final QueryTable parent, final double percent) {
         return new SliceLikeOperation("headPct", "headPct(" + percent + ")", parent,
                 0, 0, true) {
             @Override
             protected long getLastPositionExclusive() {
+                // Already verified percent is between [0,1] here
                 return (long) Math.ceil(percent * parent.size());
             }
         };
@@ -46,6 +67,7 @@ public class SliceLikeOperation implements QueryTable.Operation<QueryTable> {
                 0, 0, false) {
             @Override
             protected long getFirstPositionInclusive() {
+                // Already verified percent is between [0,1] here
                 return -(long) Math.ceil(percent * parent.size());
             }
         };
@@ -89,16 +111,35 @@ public class SliceLikeOperation implements QueryTable.Operation<QueryTable> {
     }
 
     @Override
-    public Result initialize(boolean usePrev, long beforeClock) {
-        final TrackingRowSet resultRowSet;
+    public Result<QueryTable> initialize(boolean usePrev, long beforeClock) {
         final TrackingRowSet parentRowSet = parent.getRowSet();
-        try (final WritableRowSet parentPrev = usePrev ? parentRowSet.copyPrev() : null) {
-            resultRowSet = computeSliceIndex(usePrev ? parentPrev : parentRowSet).toTracking();
-        }
+        final TrackingRowSet resultRowSet =
+                computeSliceRowSet(usePrev ? parentRowSet.prev() : parentRowSet).toTracking();
         // result table must be a sub-table so we can pass ModifiedColumnSet to listeners when possible
         resultTable = parent.getSubTable(resultRowSet);
         if (isFlat) {
             resultTable.setFlat();
+        }
+
+        if (operation.equals("headPct")) {
+            // With headPct, resultTable has a floating tail. So if parent is ADD_ONLY, new rows might be added and old
+            // rows removed from resultTable as the parent grows. But if parent is APPEND_ONLY, new rows can only be
+            // appended to resultTable
+            if (parent.isAppendOnly()) {
+                resultTable.setAttribute(Table.ADD_ONLY_TABLE_ATTRIBUTE, true);
+                resultTable.setAttribute(Table.APPEND_ONLY_TABLE_ATTRIBUTE, true);
+            }
+        } else if (!operation.equals("tailPct") && getFirstPositionInclusive() >= 0) {
+            // With tailPct or when first position is negative, even if the parent is APPEND_ONLY, new rows can be added
+            // and old rows removed from resultTable as the parent grows. Therefore, we cannot propagate the property.
+            // Otherwise, we can propagate APPEND_ONLY and conditionally propagate ADD_ONLY.
+            if (parent.isAddOnly() && getLastPositionExclusive() <= 0) {
+                // The tail cannot be fixed, else we might need to remove rows
+                resultTable.setAttribute(Table.ADD_ONLY_TABLE_ATTRIBUTE, true);
+            }
+            if (parent.isAppendOnly()) {
+                resultTable.setAttribute(Table.APPEND_ONLY_TABLE_ATTRIBUTE, true);
+            }
         }
 
         TableUpdateListener resultListener = null;
@@ -111,12 +152,12 @@ public class SliceLikeOperation implements QueryTable.Operation<QueryTable> {
             };
         }
 
-        return new Result(resultTable, resultListener);
+        return new Result<>(resultTable, resultListener);
     }
 
     private void onUpdate(final TableUpdate upstream) {
         final TrackingWritableRowSet rowSet = resultTable.getRowSet().writableCast();
-        final RowSet sliceRowSet = computeSliceIndex(parent.getRowSet());
+        final RowSet sliceRowSet = computeSliceRowSet(parent.getRowSet());
 
         final TableUpdateImpl downstream = new TableUpdateImpl();
         downstream.removed = upstream.removed().intersect(rowSet);
@@ -140,14 +181,14 @@ public class SliceLikeOperation implements QueryTable.Operation<QueryTable> {
         // propagate an empty MCS if modified is empty
         downstream.modifiedColumnSet = upstream.modifiedColumnSet();
         if (downstream.modified().isEmpty()) {
-            downstream.modifiedColumnSet = resultTable.modifiedColumnSet;
-            downstream.modifiedColumnSet().clear();
+            downstream.modifiedColumnSet = resultTable.getModifiedColumnSetForUpdates();
+            downstream.modifiedColumnSet.clear();
         }
 
         resultTable.notifyListeners(downstream);
     }
 
-    private WritableRowSet computeSliceIndex(RowSet useRowSet) {
+    private WritableRowSet computeSliceRowSet(RowSet useRowSet) {
         final long size = parent.size();
         long startSlice = getFirstPositionInclusive();
         long endSlice = getLastPositionExclusive();

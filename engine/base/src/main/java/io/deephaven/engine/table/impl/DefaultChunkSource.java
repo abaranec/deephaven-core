@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl;
 
 import io.deephaven.chunk.attributes.Any;
@@ -33,7 +32,7 @@ public interface DefaultChunkSource<ATTR extends Any> extends ChunkSource<ATTR> 
     }
 
     @Override
-    default Chunk<? extends ATTR> getChunk(@NotNull final GetContext context, long firstKey, long lastKey) {
+    default Chunk<? extends ATTR> getChunk(@NotNull final GetContext context, final long firstKey, final long lastKey) {
         try (RowSequence rowSequence = RowSequenceFactory.forRange(firstKey, lastKey)) {
             return getChunk(context, rowSequence);
         }
@@ -49,20 +48,25 @@ public interface DefaultChunkSource<ATTR extends Any> extends ChunkSource<ATTR> 
     interface WithPrev<ATTR extends Any> extends DefaultChunkSource<ATTR>, ChunkSource.WithPrev<ATTR> {
 
         @Override
-        default Chunk<? extends ATTR> getPrevChunk(@NotNull final GetContext context,
+        default Chunk<? extends ATTR> getPrevChunk(
+                @NotNull final GetContext context,
                 @NotNull final RowSequence rowSequence) {
             return getPrevChunkByFilling(context, rowSequence);
         }
 
         @Override
-        default Chunk<? extends ATTR> getPrevChunk(@NotNull final GetContext context, long firstKey, long lastKey) {
+        default Chunk<? extends ATTR> getPrevChunk(
+                @NotNull final GetContext context,
+                final long firstKey,
+                final long lastKey) {
             try (RowSequence rowSequence = RowSequenceFactory.forRange(firstKey, lastKey)) {
                 return getPrevChunk(context, rowSequence);
             }
         }
 
         @FinalDefault
-        default Chunk<ATTR> getPrevChunkByFilling(@NotNull final GetContext context,
+        default Chunk<ATTR> getPrevChunkByFilling(
+                @NotNull final GetContext context,
                 @NotNull final RowSequence rowSequence) {
             WritableChunk<ATTR> chunk = DefaultGetContext.getWritableChunk(context);
             fillPrevChunk(DefaultGetContext.getFillContext(context), chunk, rowSequence);
@@ -73,46 +77,43 @@ public interface DefaultChunkSource<ATTR extends Any> extends ChunkSource<ATTR> 
         default ChunkSource<ATTR> getPrevSource() {
             final ChunkSource.WithPrev<ATTR> chunkSource = this;
 
-            return new ChunkSource<ATTR>() {
+            return new ChunkSource<>() {
                 @Override
                 public ChunkType getChunkType() {
                     return chunkSource.getChunkType();
                 }
 
                 @Override
-                public Chunk<? extends ATTR> getChunk(@NotNull GetContext context, @NotNull RowSequence rowSequence) {
+                public Chunk<? extends ATTR> getChunk(
+                        @NotNull final GetContext context,
+                        @NotNull final RowSequence rowSequence) {
                     return chunkSource.getPrevChunk(context, rowSequence);
                 }
 
                 @Override
-                public Chunk<? extends ATTR> getChunk(@NotNull GetContext context, long firstKey, long lastKey) {
+                public Chunk<? extends ATTR> getChunk(
+                        @NotNull final GetContext context,
+                        final long firstKey,
+                        final long lastKey) {
                     return chunkSource.getPrevChunk(context, firstKey, lastKey);
                 }
 
                 @Override
-                public void fillChunk(@NotNull FillContext context, @NotNull WritableChunk<? super ATTR> destination,
-                        @NotNull RowSequence rowSequence) {
+                public void fillChunk(
+                        @NotNull final FillContext context,
+                        @NotNull final WritableChunk<? super ATTR> destination,
+                        @NotNull final RowSequence rowSequence) {
                     chunkSource.fillPrevChunk(context, destination, rowSequence);
                 }
 
                 @Override
-                public GetContext makeGetContext(int chunkCapacity, SharedContext sharedContext) {
+                public GetContext makeGetContext(final int chunkCapacity, final SharedContext sharedContext) {
                     return chunkSource.makeGetContext(chunkCapacity, sharedContext);
                 }
 
                 @Override
-                public GetContext makeGetContext(int chunkCapacity) {
-                    return chunkSource.makeGetContext(chunkCapacity);
-                }
-
-                @Override
-                public FillContext makeFillContext(int chunkCapacity, SharedContext sharedContext) {
+                public FillContext makeFillContext(final int chunkCapacity, final SharedContext sharedContext) {
                     return chunkSource.makeFillContext(chunkCapacity, sharedContext);
-                }
-
-                @Override
-                public FillContext makeFillContext(int chunkCapacity) {
-                    return chunkSource.makeFillContext(chunkCapacity);
                 }
             };
         }
@@ -124,13 +125,15 @@ public interface DefaultChunkSource<ATTR extends Any> extends ChunkSource<ATTR> 
      */
     interface SupportsContiguousGet<ATTR extends Any> extends DefaultChunkSource<ATTR> {
         @Override
-        default Chunk<? extends ATTR> getChunk(@NotNull final GetContext context,
+        default Chunk<? extends ATTR> getChunk(
+                @NotNull final GetContext context,
                 @NotNull final RowSequence rowSequence) {
-            return rowSequence.isContiguous() ? getChunk(context, rowSequence.firstRowKey(), rowSequence.lastRowKey())
+            return rowSequence.isContiguous()
+                    ? getChunk(context, rowSequence.firstRowKey(), rowSequence.lastRowKey())
                     : getChunkByFilling(context, rowSequence);
         }
 
         @Override
-        Chunk<? extends ATTR> getChunk(@NotNull final GetContext context, long firstKey, long lastKey);
+        Chunk<? extends ATTR> getChunk(@NotNull GetContext context, long firstKey, long lastKey);
     }
 }

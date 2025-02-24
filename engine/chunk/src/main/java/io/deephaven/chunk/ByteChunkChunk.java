@@ -1,23 +1,25 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit CharChunkChunk and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit CharChunkChunk and run "./gradlew replicateSourcesAndChunks" to regenerate
+//
+// @formatter:off
 package io.deephaven.chunk;
 
 import io.deephaven.chunk.attributes.Any;
 
 public class ByteChunkChunk<ATTR extends Any> extends ChunkChunkBase<ATTR> implements ChunkChunk<ATTR> {
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"unchecked", "rawtypes"})
     private static final ByteChunkChunk EMPTY = new ByteChunkChunk<>(new ByteChunk[0], 0, 0);
 
     public static <ATTR extends Any> ByteChunkChunk<ATTR> getEmptyChunk() {
-        //noinspection unchecked
+        // noinspection unchecked
         return EMPTY;
     }
 
     public static <ATTR extends Any> ByteChunk<ATTR>[] makeArray(int capacity) {
-        //noinspection unchecked
+        // noinspection unchecked
         return new ByteChunk[capacity];
     }
 
@@ -59,7 +61,7 @@ public class ByteChunkChunk<ATTR extends Any> extends ChunkChunkBase<ATTR> imple
         for (int ii = newCapacity; ii < oldCapacity; ++ii) {
             // Be friendly to the garbage collector
             innerData[ii] = null;
-            innerOffsets[ii] = 0;  // to be nice
+            innerOffsets[ii] = 0; // to be nice
         }
     }
 

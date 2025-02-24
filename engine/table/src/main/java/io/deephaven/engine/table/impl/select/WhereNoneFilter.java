@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.select;
 
 import io.deephaven.engine.rowset.WritableRowSet;
@@ -5,6 +8,7 @@ import io.deephaven.engine.table.Table;
 import io.deephaven.engine.table.TableDefinition;
 import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.engine.rowset.RowSetFactory;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.Collections;
 import java.util.List;
@@ -29,11 +33,20 @@ public class WhereNoneFilter extends WhereFilterImpl {
     }
 
     @Override
-    public void init(TableDefinition tableDefinition) {}
+    public void init(@NotNull final TableDefinition tableDefinition) {}
 
+    @NotNull
     @Override
-    public WritableRowSet filter(RowSet selection, RowSet fullSet, Table table, boolean usePrev) {
+    public WritableRowSet filter(
+            @NotNull RowSet selection, @NotNull RowSet fullSet, @NotNull Table table, boolean usePrev) {
         return RowSetFactory.empty();
+    }
+
+    @NotNull
+    @Override
+    public WritableRowSet filterInverse(
+            @NotNull RowSet selection, @NotNull RowSet fullSet, @NotNull Table table, boolean usePrev) {
+        return selection.copy();
     }
 
     @Override
@@ -47,5 +60,20 @@ public class WhereNoneFilter extends WhereFilterImpl {
     @Override
     public WhereFilter copy() {
         return INSTANCE;
+    }
+
+    @Override
+    public boolean isRefreshing() {
+        return false;
+    }
+
+    @Override
+    public boolean canMemoize() {
+        return true;
+    }
+
+    @Override
+    public String toString() {
+        return "WhereNoneFilter";
     }
 }

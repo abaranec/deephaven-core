@@ -1,12 +1,10 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.base.map;
 
 
 import io.deephaven.base.Copyable;
-import io.deephaven.base.Function;
 import io.deephaven.base.array.FastArray;
 
 import java.io.Externalizable;
@@ -14,6 +12,7 @@ import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
 import java.util.Arrays;
+import java.util.function.Supplier;
 
 public class FastArrayMapLongToObject<V extends Externalizable & Copyable<V>>
         implements Copyable<FastArrayMapLongToObject<V>> {
@@ -22,7 +21,7 @@ public class FastArrayMapLongToObject<V extends Externalizable & Copyable<V>>
 
     public FastArrayMapLongToObject() {}
 
-    public FastArrayMapLongToObject(final Function.Nullary<? extends KeyValuePairLongToObject<V>> newInstance) {
+    public FastArrayMapLongToObject(final Supplier<? extends KeyValuePairLongToObject<V>> newInstance) {
         array = new FastArray<KeyValuePairLongToObject<V>>(newInstance);
     }
 

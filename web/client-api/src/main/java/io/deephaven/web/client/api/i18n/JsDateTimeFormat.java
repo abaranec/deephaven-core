@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.web.client.api.i18n;
 
 import com.google.gwt.i18n.shared.DateTimeFormat;
@@ -10,6 +13,7 @@ import jsinterop.annotations.JsConstructor;
 import jsinterop.annotations.JsIgnore;
 import jsinterop.annotations.JsOptional;
 import jsinterop.annotations.JsType;
+import jsinterop.base.Any;
 
 import javax.annotation.Nonnull;
 import java.util.*;
@@ -20,6 +24,27 @@ import java.util.*;
  *
  * Other concerns that this handles includes accepting a js Date and ignoring the lack of nanos, accepting a js Number
  * and assuming it to be a lossy nano value, and parsing into a js Date.
+ *
+ *
+ * Utility class to parse and format various date/time values, using the same format patterns as are supported by the
+ * standard Java implementation used in the Deephaven server and swing client.
+ *
+ * As Deephaven internally uses nanosecond precision to record dates, this API expects nanoseconds in most use cases,
+ * with the one exception of the JS `Date` type, which is not capable of more precision than milliseconds. Note,
+ * however, that when passing nanoseconds as a JS `Number` there is likely to be some loss of precision, though this is
+ * still supported for easier interoperability with other JS code. The values returned by `parse()` will be an opaque
+ * object wrapping the full precision of the specified date, However, this object supports `toString()` and `valueOf()`
+ * to return a string representation of that value, as well as a `asNumber()` to return a JS `Number` value and a
+ * `asDate()` to return a JS `Date` value.
+ *
+ *
+ * Caveats:
+ *
+ *
+ * - The `D` format (for "day of year") is not supported by this implementation at this time. - The `%t` format for
+ * short timezone code is not supported by this implementation at this time, though `z` will work as expected in the
+ * browser to emit the user's own timezone.
+ *
  */
 @JsType(namespace = "dh.i18n", name = "DateTimeFormat")
 public class JsDateTimeFormat {
@@ -29,18 +54,50 @@ public class JsDateTimeFormat {
 
     private static final Map<String, JsDateTimeFormat> cache = new HashMap<>();
 
+    /**
+     *
+     * @param pattern
+     * @return a date format instance matching the specified format. If this format has not been specified before, a new
+     *         instance will be created and stored for later reuse.
+     */
     public static JsDateTimeFormat getFormat(String pattern) {
         return cache.computeIfAbsent(pattern, JsDateTimeFormat::new);
     }
 
-    public static String format(String pattern, Object date, @JsOptional JsTimeZone timeZone) {
+    /**
+     * Accepts a variety of input objects to interpret as a date, and formats them using the specified pattern. A
+     * `TimeZone` object can optionally be provided to format this date as the current date/time in that timezone.See
+     * the instance method for more details on input objects.
+     * 
+     * @param pattern
+     * @param date
+     * @param timeZone
+     * @return
+     */
+    public static String format(String pattern, Any date, @JsOptional JsTimeZone timeZone) {
         return getFormat(pattern).format(date, timeZone);
     }
 
+    /**
+     * Parses the given input string using the provided pattern, and returns a JS `Date` object in milliseconds.
+     * 
+     * @param pattern
+     * @param text
+     * @return
+     */
     public static JsDate parseAsDate(String pattern, String text) {
         return getFormat(pattern).parseAsDate(text);
     }
 
+    /**
+     * Parses the given input string using the provided pattern, and returns a wrapped Java `long` value in nanoseconds.
+     * A `TimeZone` object can optionally be provided to parse to a desired timezone.
+     * 
+     * @param pattern
+     * @param text
+     * @param tz
+     * @return
+     */
     public static DateWrapper parse(String pattern, String text, @JsOptional JsTimeZone tz) {
         return getFormat(pattern).parse(text, tz);
     }
@@ -51,6 +108,12 @@ public class JsDateTimeFormat {
 
     private final int nanoCount;
 
+    /**
+     * Creates a new date/time format instance. This generally should be avoided in favor of the static `getFormat`
+     * function, which will create and cache an instance so that later calls share the same instance.
+     * 
+     * @param pattern
+     */
     @JsConstructor
     public JsDateTimeFormat(String pattern) {
         // Look for repeated 'S', or fractions of a second. If we see max of 3, then the
@@ -103,13 +166,30 @@ public class JsDateTimeFormat {
         }
     }
 
+
+    /**
+     * Takes a variety of objects to interpret as a date, and formats them using this instance's pattern. Inputs can
+     * include a <b>String</b> value of a number expressed in nanoseconds, a <b>Number</b> value expressed in
+     * nanoseconds, a JS <b>Date</b> object (necessarily in milliseconds), or a wrapped Java <b>long</b> value,
+     * expressed in nanoseconds. A <b>TimeZone</b> object can optionally be provided to format this date as the current
+     * date/time in that timezone.
+     * 
+     * @param date
+     * @param timeZone
+     * @return String
+     */
     // TODO accept a TimeZone object here, or perhaps just a string
     // -(new Date()).getTimezoneOffset()/60 lets you read your current offset
     // new Intl.DateTimeFormat().resolvedOptions().timeZone lets you read your current tz name
     // It may be possible to compute the offset of a given date/time from DateTimeFormat and
     // synthesize a gwt TimeZone with the correct offset data to get nice output in some tz
     // other than the browser's current or UTC+/-OFFSET
-    public String format(Object date, @JsOptional JsTimeZone timeZone) {
+    public String format(Any date, @JsOptional JsTimeZone timeZone) {
+        return format((Object) date, timeZone);
+    }
+
+    @JsIgnore
+    public String format(Object date, JsTimeZone timeZone) {
         long nanos = longFromDate(date)
                 .orElseThrow(() -> new IllegalStateException("Can't format non-number, non-date value " + date));
         return formatAsLongNanos(nanos, timeZone);
@@ -157,7 +237,7 @@ public class JsDateTimeFormat {
             // append required digits (may truncate the number if requested)
             String nanoString = Integer.toString(nanos);
             assert nanoString.length() <= 9;
-            for (int i = nanoString.length(); i < 9; i++) {
+            for (int i = 0; i < 9 - nanoString.length() && i < nanoCount; i++) {
                 sb.append('0');
                 remainingNanoDigits--;
             }
@@ -170,6 +250,14 @@ public class JsDateTimeFormat {
         return sb.toString();
     }
 
+    /**
+     * Parses the given string using this instance's pattern, and returns a wrapped Java <b>long</b> value in
+     * nanoseconds. A <b>TimeZone</b> object can optionally be provided to parse to a desired timezone.
+     * 
+     * @param text
+     * @param tz
+     * @return
+     */
     public DateWrapper parse(String text, @JsOptional JsTimeZone tz) {
         if (tz != null) {
             return DateWrapper.of(parseWithTimezoneAsLong(text, tz.unwrap(), true));
@@ -220,6 +308,12 @@ public class JsDateTimeFormat {
         return new DateWrapper(date.getTime() * NANOS_PER_MILLI + nanosInParsedText);
     }
 
+    /**
+     * Parses the given string using this instance's pattern, and returns a JS <b>Date</b> object in milliseconds.
+     * 
+     * @param text
+     * @return
+     */
     public JsDate parseAsDate(String text) {
         return new JsDate(parse(text, null).getWrapped() / NANOS_PER_MILLI);
     }

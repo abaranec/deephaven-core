@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.client.impl;
 
 import io.deephaven.client.impl.TableHandle.TableHandleException;
@@ -5,11 +8,7 @@ import io.deephaven.proto.backplane.grpc.ExportedTableCreationResponse;
 import io.deephaven.proto.flight.util.SchemaHelper;
 import io.deephaven.qst.table.NewTable;
 import io.grpc.ManagedChannel;
-import org.apache.arrow.flight.Criteria;
-import org.apache.arrow.flight.FlightClient;
-import org.apache.arrow.flight.FlightGrpcUtilsExtension;
-import org.apache.arrow.flight.FlightInfo;
-import org.apache.arrow.flight.FlightStream;
+import org.apache.arrow.flight.*;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.types.pojo.Schema;
 
@@ -19,8 +18,20 @@ import java.util.concurrent.CompletableFuture;
 
 public class FlightSession implements AutoCloseable {
 
+    /**
+     * Creates a flight session. Closing the flight session does <b>not</b> close {@code channel}.
+     *
+     * @param session the session
+     * @param incomingAllocator the incoming allocator
+     * @param channel the managed channel
+     * @return the flight session
+     */
     public static FlightSession of(SessionImpl session, BufferAllocator incomingAllocator,
             ManagedChannel channel) {
+        // Note: this pattern of FlightClient owning the ManagedChannel does not mesh well with the idea that some
+        // other entity may be managing the authentication lifecycle. We'd prefer to pass in the stubs or "intercepted"
+        // channel directly, but that's not supported. So, we need to create the specific middleware interfaces so
+        // flight can do its own shims.
         final FlightClient client = FlightGrpcUtilsExtension.createFlightClientWithSharedChannel(
                 incomingAllocator, channel, Collections.singletonList(new SessionMiddleware(session)));
         return new FlightSession(session, client);
@@ -77,6 +88,18 @@ public class FlightSession implements AutoCloseable {
      */
     public FlightStream stream(HasTicketId ticketId) {
         return FlightClientHelper.get(client, ticketId);
+    }
+
+    /**
+     * Creates a new server side DoExchange session.
+     *
+     * @param descriptor the FlightDescriptor object to include on the first FlightData message (other fields will
+     *        remain null)
+     * @param options the GRPC otions to apply to this call
+     * @return the bi-directional ReaderWriter object
+     */
+    public FlightClient.ExchangeReaderWriter startExchange(FlightDescriptor descriptor, CallOption... options) {
+        return client.doExchange(descriptor, options);
     }
 
     /**
@@ -294,8 +317,17 @@ public class FlightSession implements AutoCloseable {
         return client.listFlights(Criteria.ALL);
     }
 
+    /**
+     * Closes {@code this} session by invoking {@link Session#closeFuture()} and closing the underlying
+     * {@link FlightClient}. More advanced users may prefer to explicitly call {@link Session#closeFuture()} and wait
+     * first. The state of the underlying {@link ManagedChannel} depends on how {@code this} was constructed. In most
+     * cases, closing {@code this} does <b>not</b> close the {@link ManagedChannel}.
+     *
+     * @throws InterruptedException if the current thread is interrupted
+     */
     @Override
     public void close() throws InterruptedException {
+        session.closeFuture();
         client.close();
     }
 }

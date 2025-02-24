@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.rowset;
 
 import io.deephaven.engine.rowset.chunkattributes.OrderedRowKeys;
@@ -49,6 +48,10 @@ public interface RowSetBuilderRandom {
 
     default void addOrderedRowKeysChunk(final LongChunk<? extends OrderedRowKeys> chunk) {
         addRowKeysChunk(chunk);
+    }
+
+    default void addOrderedRowKeysChunk(final LongChunk<OrderedRowKeys> chunk, int offset, int length) {
+        addKeys(new LongChunkIterator(chunk, offset, length));
     }
 
     default void addOrderedRowKeysChunk(final IntChunk<? extends OrderedRowKeys> chunk) {

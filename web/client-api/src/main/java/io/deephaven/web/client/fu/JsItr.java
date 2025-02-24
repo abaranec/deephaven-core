@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.web.client.fu;
 
 import elemental2.core.JsArray;
@@ -61,7 +64,7 @@ public class JsItr {
      * js forEach signature is a bit weird, so we'll adapt it to something saner here
      */
     public static <K, V> void forEach(JsMap<K, V> map, JsBiConsumer<K, V> callback) {
-        map.forEach((v, k, m) -> {
+        map.forEach((v, k) -> {
             callback.apply(k, v);
             return null;
         });

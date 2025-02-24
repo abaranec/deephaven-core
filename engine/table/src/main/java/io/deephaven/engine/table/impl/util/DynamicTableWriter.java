@@ -1,29 +1,31 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.util;
 
 import io.deephaven.base.verify.Assert;
 import io.deephaven.engine.rowset.RowSetFactory;
+import io.deephaven.engine.table.WritableColumnSource;
+import io.deephaven.engine.table.Table;
+import io.deephaven.engine.updategraph.UpdateGraph;
 import io.deephaven.qst.column.header.ColumnHeader;
 import io.deephaven.qst.table.TableHeader;
 import io.deephaven.qst.type.Type;
 import io.deephaven.tablelogger.Row;
 import io.deephaven.tablelogger.RowSetter;
 import io.deephaven.tablelogger.TableWriter;
-import io.deephaven.engine.table.DataColumn;
 import io.deephaven.engine.table.TableDefinition;
-import io.deephaven.engine.updategraph.UpdateGraphProcessor;
 import io.deephaven.util.QueryConstants;
 import io.deephaven.engine.table.impl.UpdateSourceQueryTable;
 import io.deephaven.engine.table.impl.sources.ArrayBackedColumnSource;
 import io.deephaven.engine.table.ColumnSource;
 import io.deephaven.engine.table.impl.sources.SingleValueColumnSource;
+import io.deephaven.util.mutable.MutableInt;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.function.Function;
 import java.util.function.IntFunction;
 import java.util.stream.Collectors;
 
@@ -31,11 +33,14 @@ import java.util.stream.Collectors;
  * The DynamicTableWriter creates an in-memory table using ArrayBackedColumnSources of the type specified in the
  * constructor. You can retrieve the table using the {@code getTable} function.
  * <p>
- * This class is not thread safe, you must synchronize externally.
+ * This class is not thread safe, you must synchronize externally. However, multiple setters may safely log
+ * concurrently.
+ *
+ * @implNote The constructor publishes {@code this} to the {@link UpdateGraph} and thus cannot be subclassed.
  */
-public class DynamicTableWriter implements TableWriter {
+public final class DynamicTableWriter implements TableWriter {
     private final UpdateSourceQueryTable table;
-    private final ArrayBackedColumnSource[] arrayColumnSources;
+    private final WritableColumnSource[] arrayColumnSources;
 
     private final String[] columnNames;
     private int allocatedSize;
@@ -130,7 +135,7 @@ public class DynamicTableWriter implements TableWriter {
     /**
      * Gets the table created by this DynamicTableWriter.
      * <p>
-     * The returned table is registered with the UpdateGraphProcessor, and new rows become visible within the run loop.
+     * The returned table is registered with the PeriodicUpdateGraph, and new rows become visible within the run loop.
      *
      * @return a live table with the output of this log
      */
@@ -162,11 +167,18 @@ public class DynamicTableWriter implements TableWriter {
      * @return a RowSetter for the given column
      */
     @Override
-    public RowSetter getSetter(String name) {
+    public PermissiveRowSetter getSetter(String name) {
         if (primaryRow == null) {
             primaryRow = new DynamicTableRow();
         }
         return primaryRow.getSetter(name);
+    }
+
+    private RowSetterImpl getSetter(final int columnIndex) {
+        if (primaryRow == null) {
+            primaryRow = new DynamicTableRow();
+        }
+        return primaryRow.setters[columnIndex];
     }
 
     @Override
@@ -180,7 +192,7 @@ public class DynamicTableWriter implements TableWriter {
     /**
      * Writes the current row created with the {@code getSetter} call, and advances the current row by one.
      * <p>
-     * The row will be made visible in the table after the UpdateGraphProcessor run cycle completes.
+     * The row will be made visible in the table after the PeriodicUpdateGraph run cycle completes.
      */
     @Override
     public void writeRow() {
@@ -202,7 +214,7 @@ public class DynamicTableWriter implements TableWriter {
             newSize = 2 * newSize;
         }
 
-        for (final ArrayBackedColumnSource arrayColumnSource : arrayColumnSources) {
+        for (final WritableColumnSource arrayColumnSource : arrayColumnSources) {
             if (arrayColumnSource != null) {
                 arrayColumnSource.ensureCapacity(newSize);
             }
@@ -244,7 +256,48 @@ public class DynamicTableWriter implements TableWriter {
         }
         for (int ii = 0; ii < values.length; ++ii) {
             // noinspection unchecked
-            getSetter(columnNames[ii]).set(values[ii]);
+            getSetter(ii).set(values[ii]);
+        }
+        writeRow();
+        flush();
+    }
+
+    /**
+     * This is a convenience function so that you can log an entire row at a time using a Map. You must specify all
+     * values in the setters map (and can't have any extras). The type of the value must be convertible (safely or
+     * unsafely) to the type of the permissive setter.
+     *
+     * @param values a map from column name to value for the row to be logged
+     */
+    @SuppressWarnings("unused")
+    public void logRowPermissive(Map<String, Object> values) {
+        if (values.size() != factoryMap.size()) {
+            throw new RuntimeException(
+                    "Incompatible logRowPermissive call: " + values.keySet() + " != " + factoryMap.keySet());
+        }
+        for (final Map.Entry<String, Object> value : values.entrySet()) {
+            getSetter(value.getKey()).setPermissive(value.getValue());
+        }
+        writeRow();
+        flush();
+    }
+
+    /**
+     * This is a convenience function so that you can log an entire row at a time. You must specify all values in the
+     * setters map (and can't have any extras). The type of the value must be convertible (safely or unsafely) to the
+     * type of the permissive setter.
+     *
+     * @param values an array containing values to be logged, in order of the fields specified by the constructor
+     */
+    @SuppressWarnings("unused")
+    public void logRowPermissive(Object... values) {
+        if (values.length != factoryMap.size()) {
+            throw new RuntimeException(
+                    "Incompatible logRowPermissive call, values length=" + values.length + " != setters="
+                            + factoryMap.size());
+        }
+        for (int ii = 0; ii < values.length; ++ii) {
+            getSetter(ii).setPermissive(values[ii]);
         }
         writeRow();
         flush();
@@ -305,6 +358,7 @@ public class DynamicTableWriter implements TableWriter {
             final IntFunction<Class<?>> columnTypes,
             final Map<String, Object> constantValues,
             final int allocatedSize) {
+
         final Map<String, ColumnSource<?>> sources = new LinkedHashMap<>();
         for (int i = 0; i < columnNames.length; i++) {
             if (constantValues.containsKey(columnNames[i])) {
@@ -314,7 +368,7 @@ public class DynamicTableWriter implements TableWriter {
                 singleValueColumnSource.set(constantValues.get(columnNames[i]));
                 sources.put(columnNames[i], singleValueColumnSource);
             } else {
-                ArrayBackedColumnSource<?> source =
+                WritableColumnSource<?> source =
                         ArrayBackedColumnSource.getMemoryColumnSource(allocatedSize,
                                 columnTypes.apply(i));
                 sources.put(columnNames[i], source);
@@ -333,59 +387,74 @@ public class DynamicTableWriter implements TableWriter {
 
     private DynamicTableWriter(final Map<String, ColumnSource<?>> sources, final Map<String, Object> constantValues,
             final int allocatedSize) {
-        this.allocatedSize = 256;
-        this.table = new UpdateSourceQueryTable(RowSetFactory.fromKeys().toTracking(), sources);
+        this.allocatedSize = allocatedSize;
+        table = new UpdateSourceQueryTable(RowSetFactory.fromKeys().toTracking(), sources);
+        table.setFlat();
+        table.setAttribute(Table.ADD_ONLY_TABLE_ATTRIBUTE, true);
+        table.setAttribute(Table.APPEND_ONLY_TABLE_ATTRIBUTE, true);
+
         final int nCols = sources.size();;
         this.columnNames = new String[nCols];
-        this.arrayColumnSources = new ArrayBackedColumnSource[nCols];
+        this.arrayColumnSources = new WritableColumnSource[nCols];
         int ii = 0;
-        final DataColumn[] columns = table.getColumns();
         for (Map.Entry<String, ColumnSource<?>> entry : sources.entrySet()) {
-            columnNames[ii] = entry.getKey();
-            ColumnSource<?> source = entry.getValue();
-            if (source instanceof ArrayBackedColumnSource) {
-                arrayColumnSources[ii] = (ArrayBackedColumnSource) source;
-            }
-            if (constantValues.containsKey(columnNames[ii])) {
+            final String columnName = columnNames[ii] = entry.getKey();
+            final ColumnSource<?> source = entry.getValue();
+            if (constantValues.containsKey(columnName)) {
                 continue;
             }
-            final int index = ii;
-            factoryMap.put(columns[index].getName(),
-                    (currentRow) -> createRowSetter(columns[index].getType(), arrayColumnSources[index]));
+            if (source instanceof WritableColumnSource) {
+                arrayColumnSources[ii] = (WritableColumnSource) source;
+            } else {
+                throw new IllegalStateException(
+                        "Expected ArrayBackedColumnSource, instead found " + source.getClass());
+            }
+            factoryMap.put(columnName,
+                    (currentRow) -> createRowSetter(source.getType(), (WritableColumnSource) source));
             ++ii;
         }
-        UpdateGraphProcessor.DEFAULT.addSource(table);
+        UpdateGraph updateGraph = table.getUpdateGraph();
+        updateGraph.addSource(table);
     }
 
-    private RowSetterImpl createRowSetter(Class type, ArrayBackedColumnSource buffer) {
+    @SuppressWarnings("unchecked")
+    private <T> RowSetterImpl<T> createRowSetter(Class<T> type, WritableColumnSource<T> buffer) {
+        final RowSetterImpl<?> result;
         if (type == boolean.class || type == Boolean.class) {
-            return new BooleanRowSetterImpl(buffer);
+            result = new BooleanRowSetterImpl((WritableColumnSource<Boolean>) buffer);
         } else if (type == byte.class || type == Byte.class) {
-            return new ByteRowSetterImpl(buffer);
+            result = new ByteRowSetterImpl((WritableColumnSource<Byte>) buffer);
         } else if (type == char.class || type == Character.class) {
-            return new CharRowSetterImpl(buffer);
+            result = new CharRowSetterImpl((WritableColumnSource<Character>) buffer);
         } else if (type == double.class || type == Double.class) {
-            return new DoubleRowSetterImpl(buffer);
+            result = new DoubleRowSetterImpl((WritableColumnSource<Double>) buffer);
         } else if (type == float.class || type == Float.class) {
-            return new FloatRowSetterImpl(buffer);
+            result = new FloatRowSetterImpl((WritableColumnSource<Float>) buffer);
         } else if (type == int.class || type == Integer.class) {
-            return new IntRowSetterImpl(buffer);
+            result = new IntRowSetterImpl((WritableColumnSource<Integer>) buffer);
         } else if (type == long.class || type == Long.class) {
-            return new LongRowSetterImpl(buffer);
+            result = new LongRowSetterImpl((WritableColumnSource<Long>) buffer);
         } else if (type == short.class || type == Short.class) {
-            return new ShortRowSetterImpl(buffer);
+            result = new ShortRowSetterImpl((WritableColumnSource<Short>) buffer);
         } else if (CharSequence.class.isAssignableFrom(type)) {
-            return new StringRowSetterImpl(buffer);
+            result = new StringRowSetterImpl((WritableColumnSource<String>) buffer);
+        } else {
+            result = new ObjectRowSetterImpl<>(buffer, type);
         }
-        return new ObjectRowSetterImpl(buffer, type);
+
+        return (RowSetterImpl<T>) result;
     }
 
-    private static abstract class RowSetterImpl implements RowSetter {
-        protected final ArrayBackedColumnSource columnSource;
-        protected int row;
-        private final Class type;
+    public interface PermissiveRowSetter<T> extends RowSetter<T> {
+        void setPermissive(Object value);
+    }
 
-        RowSetterImpl(ArrayBackedColumnSource columnSource, Class type) {
+    private static abstract class RowSetterImpl<T> implements PermissiveRowSetter<T> {
+        protected final WritableColumnSource<T> columnSource;
+        protected int row;
+        private final Class<T> type;
+
+        RowSetterImpl(WritableColumnSource<T> columnSource, Class<T> type) {
             this.columnSource = columnSource;
             this.type = type;
         }
@@ -398,13 +467,19 @@ public class DynamicTableWriter implements TableWriter {
         abstract void writeToColumnSource();
 
         @Override
-        public Class getType() {
+        public Class<T> getType() {
             return type;
         }
 
         @Override
-        public void set(Object value) {
+        public void set(T value) {
             throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void setPermissive(Object value) {
+            // noinspection unchecked
+            set((T) value);
         }
 
         @Override
@@ -448,16 +523,16 @@ public class DynamicTableWriter implements TableWriter {
         }
     }
 
-    private static class BooleanRowSetterImpl extends RowSetterImpl {
-        BooleanRowSetterImpl(ArrayBackedColumnSource array) {
+    private static class BooleanRowSetterImpl extends RowSetterImpl<Boolean> {
+        BooleanRowSetterImpl(WritableColumnSource<Boolean> array) {
             super(array, Boolean.class);
         }
 
         Boolean pendingBoolean;
 
         @Override
-        public void set(Object value) {
-            setBoolean(value == null ? QueryConstants.NULL_BOOLEAN : (Boolean) value);
+        public void set(Boolean value) {
+            setBoolean(value == null ? QueryConstants.NULL_BOOLEAN : value);
         }
 
         @Override
@@ -467,21 +542,25 @@ public class DynamicTableWriter implements TableWriter {
 
         @Override
         void writeToColumnSource() {
-            // noinspection unchecked
             columnSource.set(row, pendingBoolean);
         }
     }
 
-    private static class ByteRowSetterImpl extends RowSetterImpl {
-        ByteRowSetterImpl(ArrayBackedColumnSource array) {
+    private static class ByteRowSetterImpl extends RowSetterImpl<Byte> {
+        ByteRowSetterImpl(WritableColumnSource<Byte> array) {
             super(array, byte.class);
         }
 
         byte pendingByte = QueryConstants.NULL_BYTE;
 
         @Override
-        public void set(Object value) {
-            setByte(value == null ? QueryConstants.NULL_BYTE : (Byte) value);
+        public void set(Byte value) {
+            setByte(value == null ? QueryConstants.NULL_BYTE : value);
+        }
+
+        @Override
+        public void setPermissive(Object value) {
+            setByte(value == null ? QueryConstants.NULL_BYTE : ((Number) value).byteValue());
         }
 
         @Override
@@ -495,16 +574,16 @@ public class DynamicTableWriter implements TableWriter {
         }
     }
 
-    private static class CharRowSetterImpl extends RowSetterImpl {
-        CharRowSetterImpl(ArrayBackedColumnSource array) {
+    private static class CharRowSetterImpl extends RowSetterImpl<Character> {
+        CharRowSetterImpl(WritableColumnSource<Character> array) {
             super(array, char.class);
         }
 
         char pendingChar = QueryConstants.NULL_CHAR;
 
         @Override
-        public void set(Object value) {
-            setChar(value == null ? QueryConstants.NULL_CHAR : (Character) value);
+        public void set(Character value) {
+            setChar(value == null ? QueryConstants.NULL_CHAR : value);
         }
 
         @Override
@@ -518,16 +597,21 @@ public class DynamicTableWriter implements TableWriter {
         }
     }
 
-    private static class IntRowSetterImpl extends RowSetterImpl {
-        IntRowSetterImpl(ArrayBackedColumnSource array) {
+    private static class IntRowSetterImpl extends RowSetterImpl<Integer> {
+        IntRowSetterImpl(WritableColumnSource<Integer> array) {
             super(array, int.class);
         }
 
         int pendingInt = QueryConstants.NULL_INT;
 
         @Override
-        public void set(Object value) {
-            setInt(value == null ? QueryConstants.NULL_INT : (Integer) value);
+        public void set(Integer value) {
+            setInt(value == null ? QueryConstants.NULL_INT : value);
+        }
+
+        @Override
+        public void setPermissive(Object value) {
+            setInt(value == null ? QueryConstants.NULL_INT : ((Number) value).intValue());
         }
 
         @Override
@@ -541,16 +625,21 @@ public class DynamicTableWriter implements TableWriter {
         }
     }
 
-    private static class DoubleRowSetterImpl extends RowSetterImpl {
-        DoubleRowSetterImpl(ArrayBackedColumnSource array) {
+    private static class DoubleRowSetterImpl extends RowSetterImpl<Double> {
+        DoubleRowSetterImpl(WritableColumnSource<Double> array) {
             super(array, double.class);
         }
 
         double pendingDouble = QueryConstants.NULL_DOUBLE;
 
         @Override
-        public void set(Object value) {
-            setDouble(value == null ? QueryConstants.NULL_DOUBLE : (Double) value);
+        public void set(Double value) {
+            setDouble(value == null ? QueryConstants.NULL_DOUBLE : value);
+        }
+
+        @Override
+        public void setPermissive(Object value) {
+            setDouble(value == null ? QueryConstants.NULL_DOUBLE : ((Number) value).doubleValue());
         }
 
         @Override
@@ -564,16 +653,21 @@ public class DynamicTableWriter implements TableWriter {
         }
     }
 
-    private static class FloatRowSetterImpl extends RowSetterImpl {
-        FloatRowSetterImpl(ArrayBackedColumnSource array) {
+    private static class FloatRowSetterImpl extends RowSetterImpl<Float> {
+        FloatRowSetterImpl(WritableColumnSource<Float> array) {
             super(array, float.class);
         }
 
         float pendingFloat = QueryConstants.NULL_FLOAT;
 
         @Override
-        public void set(Object value) {
-            setFloat(value == null ? QueryConstants.NULL_FLOAT : (Float) value);
+        public void set(Float value) {
+            setFloat(value == null ? QueryConstants.NULL_FLOAT : value);
+        }
+
+        @Override
+        public void setPermissive(Object value) {
+            setFloat(value == null ? QueryConstants.NULL_FLOAT : ((Number) value).floatValue());
         }
 
         @Override
@@ -587,16 +681,21 @@ public class DynamicTableWriter implements TableWriter {
         }
     }
 
-    private static class LongRowSetterImpl extends RowSetterImpl {
-        LongRowSetterImpl(ArrayBackedColumnSource array) {
+    private static class LongRowSetterImpl extends RowSetterImpl<Long> {
+        LongRowSetterImpl(WritableColumnSource<Long> array) {
             super(array, long.class);
         }
 
         long pendingLong = QueryConstants.NULL_LONG;
 
         @Override
-        public void set(Object value) {
-            setLong(value == null ? QueryConstants.NULL_LONG : (Long) value);
+        public void set(Long value) {
+            setLong(value == null ? QueryConstants.NULL_LONG : value);
+        }
+
+        @Override
+        public void setPermissive(Object value) {
+            setLong(value == null ? QueryConstants.NULL_LONG : ((Number) value).longValue());
         }
 
         @Override
@@ -610,16 +709,21 @@ public class DynamicTableWriter implements TableWriter {
         }
     }
 
-    private static class ShortRowSetterImpl extends RowSetterImpl {
-        ShortRowSetterImpl(ArrayBackedColumnSource array) {
+    private static class ShortRowSetterImpl extends RowSetterImpl<Short> {
+        ShortRowSetterImpl(WritableColumnSource<Short> array) {
             super(array, short.class);
         }
 
         short pendingShort = QueryConstants.NULL_SHORT;
 
         @Override
-        public void set(Object value) {
-            setShort(value == null ? QueryConstants.NULL_SHORT : (Short) value);
+        public void set(Short value) {
+            setShort(value == null ? QueryConstants.NULL_SHORT : value);
+        }
+
+        @Override
+        public void setPermissive(Object value) {
+            setShort(value == null ? QueryConstants.NULL_SHORT : ((Number) value).shortValue());
         }
 
         @Override
@@ -633,47 +737,48 @@ public class DynamicTableWriter implements TableWriter {
         }
     }
 
-    private static class ObjectRowSetterImpl extends RowSetterImpl {
-        ObjectRowSetterImpl(ArrayBackedColumnSource array, Class type) {
+    private static class ObjectRowSetterImpl<T> extends RowSetterImpl<T> {
+        ObjectRowSetterImpl(WritableColumnSource<T> array, Class<T> type) {
             super(array, type);
         }
 
-        Object pendingObject;
+        T pendingObject;
 
         @Override
-        public void set(Object value) {
+        public void set(T value) {
             pendingObject = value;
         }
 
         @Override
         void writeToColumnSource() {
-            // noinspection unchecked
             columnSource.set(row, pendingObject);
         }
     }
 
-    private static class StringRowSetterImpl extends ObjectRowSetterImpl {
-        StringRowSetterImpl(@NotNull final ArrayBackedColumnSource array) {
+    private static class StringRowSetterImpl extends ObjectRowSetterImpl<String> {
+        StringRowSetterImpl(@NotNull final WritableColumnSource<String> array) {
             super(array, String.class);
-        }
-
-        @Override
-        public void set(final Object value) {
-            super.set(value == null ? null : value.toString());
         }
     }
 
     private class DynamicTableRow implements Row {
+        private final RowSetterImpl<?>[] setters;
+        private final Map<String, RowSetterImpl<?>> columnToSetter;
         private int row = lastSetterRow;
-        private final Map<String, RowSetterImpl> setterMap = factoryMap.entrySet().stream()
-                .collect(Collectors.toMap(Map.Entry::getKey, (e) -> (e.getValue().apply(row))));
         private Row.Flags flags = Flags.SingleRow;
 
+        private DynamicTableRow() {
+            setters = Arrays.stream(columnNames).map(cn -> factoryMap.get(cn).apply(row)).toArray(RowSetterImpl[]::new);
+            final MutableInt ci = new MutableInt(0);
+            columnToSetter = Arrays.stream(columnNames)
+                    .collect(Collectors.toMap(Function.identity(), cn -> setters[ci.getAndIncrement()]));
+        }
+
         @Override
-        public RowSetter getSetter(final String name) {
-            final RowSetter rowSetter = setterMap.get(name);
+        public PermissiveRowSetter<?> getSetter(final String name) {
+            final PermissiveRowSetter<?> rowSetter = columnToSetter.get(name);
             if (rowSetter == null) {
-                if (table.getColumnSourceMap().containsKey(name)) {
+                if (table.hasColumns(name)) {
                     throw new RuntimeException("Column has a constant value, can not get setter " + name);
                 } else {
                     throw new RuntimeException("Unknown column name " + name);
@@ -684,32 +789,34 @@ public class DynamicTableWriter implements TableWriter {
 
         @Override
         public void writeRow() {
-            boolean doFlush = false;
-            switch (flags) {
-                case SingleRow:
-                    doFlush = true;
-                case StartTransaction:
-                    if (lastCommittedRow != lastSetterRow) {
-                        lastSetterRow = lastCommittedRow + 1;
-                    }
-                    break;
-                case EndTransaction:
-                    doFlush = true;
-                    break;
-                case None:
-                    break;
-            }
-            row = lastSetterRow++;
+            synchronized (DynamicTableWriter.this) {
+                boolean doFlush = false;
+                switch (flags) {
+                    case SingleRow:
+                        doFlush = true;
+                    case StartTransaction:
+                        if (lastCommittedRow != lastSetterRow) {
+                            lastSetterRow = lastCommittedRow + 1;
+                        }
+                        break;
+                    case EndTransaction:
+                        doFlush = true;
+                        break;
+                    case None:
+                        break;
+                }
+                row = lastSetterRow++;
 
-            // Before this row can be returned to a pool, it needs to ensure that the underlying sources
-            // are appropriately sized to avoid race conditions.
-            ensureCapacity(row);
-            setterMap.values().forEach((x) -> x.setRow(row));
+                // Before this row can be returned to a pool, it needs to ensure that the underlying sources
+                // are appropriately sized to avoid race conditions.
+                ensureCapacity(row);
+                columnToSetter.values().forEach((x) -> x.setRow(row));
 
-            // The row has been committed during set, we just need to insert the row keys into the table
-            if (doFlush) {
-                DynamicTableWriter.this.addRangeToTableIndex(lastCommittedRow + 1, row);
-                lastCommittedRow = row;
+                // The row has been committed during set, we just need to insert the row keys into the table
+                if (doFlush) {
+                    DynamicTableWriter.this.addRangeToTableIndex(lastCommittedRow + 1, row);
+                    lastCommittedRow = row;
+                }
             }
         }
 

@@ -1,11 +1,18 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.web.client.api.widget.plot;
 
+import com.vertispan.tsdefs.annotations.TsInterface;
+import com.vertispan.tsdefs.annotations.TsTypeRef;
 import elemental2.core.JsObject;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.console_pb.figuredescriptor.SeriesDescriptor;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.console_pb.figuredescriptor.SourceDescriptor;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.console_pb.figuredescriptor.SeriesDescriptor;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.console_pb.figuredescriptor.SourceDescriptor;
+import io.deephaven.web.client.api.JsPartitionedTable;
 import io.deephaven.web.client.api.JsTable;
-import io.deephaven.web.client.api.TableMap;
+import io.deephaven.web.client.api.widget.plot.enums.JsSeriesPlotStyle;
 import jsinterop.annotations.JsIgnore;
+import jsinterop.annotations.JsNullable;
 import jsinterop.annotations.JsOptional;
 import jsinterop.annotations.JsProperty;
 import jsinterop.annotations.JsType;
@@ -13,7 +20,11 @@ import jsinterop.annotations.JsType;
 import java.util.Arrays;
 import java.util.Map;
 
-@JsType
+/**
+ * Provides access to the data for displaying in a figure.
+ */
+@TsInterface
+@JsType(namespace = "dh.plot", name = "Series")
 public class JsSeries {
 
     private final SeriesDescriptor descriptor;
@@ -47,7 +58,6 @@ public class JsSeries {
                 }
             } else {
                 assert dataSource.hasOneClick();
-                assert dataSource.getOneClick().equals(oneClick.getDescriptor());
             }
         }
         JsObject.freeze(sources);
@@ -59,15 +69,16 @@ public class JsSeries {
      * are loaded.
      */
     @JsIgnore
-    public void initSources(Map<Integer, JsTable> tables, Map<Integer, TableMap> tableMaps) {
+    public void initSources(Map<Integer, JsTable> tables, Map<Integer, JsPartitionedTable> partitionedTables) {
         Arrays.stream(sources).forEach(s -> s.initColumnType(tables));
         if (oneClick != null) {
-            oneClick.setTableMap(tableMaps.get(sources[0].getDescriptor().getTableMapId()));
+            oneClick.setPartitionedTable(partitionedTables.get(sources[0].getDescriptor().getPartitionedTableId()));
         }
     }
 
     /**
      * JS doesn't support method overloads, so we just ignore this one and mark the arg as optional in the JS version.
+     * Enable updates for this Series.
      */
     @JsIgnore
     public void subscribe() {
@@ -80,6 +91,9 @@ public class JsSeries {
         jsFigure.enqueueSubscriptionCheck();
     }
 
+    /**
+     * Disable updates for this Series.
+     */
     public void unsubscribe() {
         markUnsubscribed();
         jsFigure.enqueueSubscriptionCheck();
@@ -100,18 +114,29 @@ public class JsSeries {
         return subscribed;
     }
 
+    /**
+     * The plotting style to use for this series. See <b>SeriesPlotStyle</b> enum for more details.
+     * 
+     * @return int
+     */
     @JsProperty
-    @SuppressWarnings("unusable-by-js")
+    @TsTypeRef(JsSeriesPlotStyle.class)
     public int getPlotStyle() {
         return descriptor.getPlotStyle();
     }
 
+    /**
+     * The name for this series.
+     * 
+     * @return String
+     */
     @JsProperty
     public String getName() {
         return descriptor.getName();
     }
 
     @JsProperty(name = "isLinesVisible")
+    @JsNullable
     public Boolean getLinesVisible() {
         if (descriptor.hasLinesVisible()) {
             return descriptor.getLinesVisible();
@@ -120,6 +145,7 @@ public class JsSeries {
     }
 
     @JsProperty(name = "isShapesVisible")
+    @JsNullable
     public Boolean getShapesVisible() {
         if (descriptor.hasShapesVisible()) {
             return descriptor.getShapesVisible();
@@ -144,6 +170,7 @@ public class JsSeries {
     // }
 
     @JsProperty
+    @JsNullable
     public String getPointLabelFormat() {
         if (descriptor.hasPointLabelFormat()) {
             return descriptor.getPointLabelFormat();
@@ -152,6 +179,7 @@ public class JsSeries {
     }
 
     @JsProperty
+    @JsNullable
     public String getXToolTipPattern() {
         if (descriptor.hasXToolTipPattern()) {
             return descriptor.getXToolTipPattern();
@@ -160,6 +188,7 @@ public class JsSeries {
     }
 
     @JsProperty
+    @JsNullable
     public String getYToolTipPattern() {
         if (descriptor.hasYToolTipPattern()) {
             return descriptor.getYToolTipPattern();
@@ -173,6 +202,7 @@ public class JsSeries {
     }
 
     @JsProperty
+    @JsNullable
     public Double getShapeSize() {
         if (descriptor.hasShapeSize()) {
             return descriptor.getShapeSize();
@@ -190,6 +220,13 @@ public class JsSeries {
         return descriptor.getShape();
     }
 
+    /**
+     * Contains details on how to access data within the chart for this series. keyed with the way that this series uses
+     * the axis.
+     * 
+     * @return {@link SeriesDataSource}
+     *
+     */
     @JsProperty
     public SeriesDataSource[] getSources() {
         return sources;
@@ -205,6 +242,11 @@ public class JsSeries {
         this.multiSeries = multiSeries;
     }
 
+    /**
+     * indicates that this series belongs to a MultiSeries, null otherwise
+     * 
+     * @return dh.plot.MultiSeries
+     */
     @JsProperty
     public JsMultiSeries getMultiSeries() {
         return multiSeries;

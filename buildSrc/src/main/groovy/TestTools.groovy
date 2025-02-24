@@ -1,8 +1,6 @@
-import org.gradle.api.JavaVersion
 import org.gradle.api.Project
-import org.gradle.api.Task
 import org.gradle.api.artifacts.Dependency
-import org.gradle.api.plugins.JavaPluginConvention
+import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.reporting.Report
 import org.gradle.api.reporting.internal.SimpleReport
 import org.gradle.api.tasks.SourceSetContainer
@@ -26,7 +24,26 @@ class TestTools {
 
     static final String TEST_GROUP = "~Deephaven Test"
 
-    static Test addEngineTest(Project project, String type, boolean parallel=false, boolean passwordEnabled=false, boolean isolated=false) {
+    static Test addEngineSerialTest(Project project) {
+        return addEngineTest(project, 'Serial', false, true)
+    }
+
+    static Test addEngineParallelTest(Project project) {
+        // Add @Category(ParallelTest.class) to have your tests run in parallel
+        // Note: Supports JUnit4 or greater only (you use @Test annotations to mark test methods).
+        return addEngineTest(project, 'Parallel', true, false)
+    }
+
+    static Test addEngineOutOfBandTest(Project project) {
+        return addEngineTest(project, 'OutOfBand', true, false)
+    }
+
+    private static Test addEngineTest(
+        Project project,
+        String type,
+        boolean parallel = false,
+        boolean isolated = false
+    ) {
         Test mainTest = project.tasks.getByName('test') as Test
         Test t = project.tasks.create("test$type", Test)
 
@@ -52,7 +69,13 @@ By default only runs in CI; to run locally:
             dependsOn project.tasks.findByName('testClasses')
 
             if (parallel) {
-                maxParallelForks = 12
+                // We essentially want to set maxParallelForks for all "normal" tests. It will be capped by the number
+                // of gradle workers, org.gradle.workers.max. We aren't able to set set this property for all Test types,
+                // because testSerial needs special handling.
+                maxParallelForks = Runtime.runtime.availableProcessors()
+                if (project.hasProperty('forkEvery')) {
+                    forkEvery = project.property('forkEvery') as int
+                }
             } else {
                 maxParallelForks = 1
                 // == safe for strings in groovy
@@ -82,54 +105,18 @@ By default only runs in CI; to run locally:
             // wire up dependencies manually, since we don't get this for free in custom tasks
             // (it's usually assumed you will do a custom sourceSet for integration tests,
             // but we already use custom layouts which make "use separate sourcesets per module" in IntelliJ...troublesome).
-            SourceSetContainer sources = project.convention.getPlugin(JavaPluginConvention).sourceSets
+            SourceSetContainer sources = project.getExtensions().findByType(JavaPluginExtension).sourceSets
             setClasspath project.files(sources.getByName('test').output, sources.getByName('main').output, project.configurations.getByName(TEST_RUNTIME_CLASSPATH_CONFIGURATION_NAME))
-
-            if (passwordEnabled) {
-                def host = project.findProperty("${type.toLowerCase()}.test.host") ?: '0.0.0.0'
-                def password = project.findProperty("${type.toLowerCase()}.test.password")
-                t.systemProperty("${type.toLowerCase()}.test.host", host)
-                t.systemProperty("${type.toLowerCase()}.test.password", password)
-
-                if (password) {
-                    // When running with a valid password, make sure task `check` (and, by dependence, `build`) depends on us.
-                    project.tasks.getByName('check').dependsOn(t)
-                } else {
-                    // no password?  skip these tasks.
-                    t.onlyIf { false }
-                }
-                // This is necessary for the mysql/sqlserver tests, which must all be run in a suite.
-                // Do not cargo-cult this when extending @Category support for other test types.
-                t.include("**/*Suite.class")
-            }
 
             // we also need to adjust the reporting output directory of the alt task,
             // so we don't stomp over top of previous reports.
             reports.all {
                 Report report ->
-                    String rebased = report.destination.absolutePath
+                    String rebased = report.outputLocation.get().asFile.absolutePath
                             .replace "${separator}test$separator", "$separator$type$separator"
-                    (report as SimpleReport).destination = new File(rebased)
+                    (report as SimpleReport).outputLocation.set new File(rebased)
             }
-            // this is not part of the standard class; it is glued on later by jacoco plugin;
-            // we want to give each test it's own output files for jacoco analysis,
-            // so we don't accidentally stomp on previous output.
-            // TODO: verify jenkins is analyzing _all_ information here.
-            (t['jacoco'] as JacocoTaskExtension).with {
-                destinationFile = project.provider({ new File(project.buildDir, "jacoco/${type}.exec".toString()) } as Callable<File>)
-                classDumpDir = new File(project.buildDir, "jacoco/${type}Dumps".toString())
-            }
-            (project['jacocoTestReport'] as JacocoReport).with {
-                reports {
-                    JacocoReportsContainer c ->
-                        c.xml.enabled = true
-                        c.csv.enabled = true
-                        c.html.enabled = true
-                }
-            }
-
         }
-        project.tasks.findByName('jacocoTestReport').mustRunAfter(t)
 
         return t
     }

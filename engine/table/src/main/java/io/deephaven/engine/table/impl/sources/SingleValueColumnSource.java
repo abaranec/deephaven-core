@@ -1,31 +1,29 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources;
 
 import io.deephaven.chunk.attributes.Values;
+import io.deephaven.engine.rowset.RowSequence;
 import io.deephaven.engine.table.ChunkSink;
 import io.deephaven.engine.table.WritableColumnSource;
 import io.deephaven.engine.table.impl.AbstractColumnSource;
-import io.deephaven.engine.table.impl.util.ShiftData;
-
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.Serializable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public abstract class SingleValueColumnSource<T> extends AbstractColumnSource<T>
-        implements WritableColumnSource<T>, ChunkSink<Values>, ShiftData.ShiftCallback, Serializable {
+        implements WritableColumnSource<T>, ChunkSink<Values>, InMemoryColumnSource,
+        RowKeyAgnosticChunkSource<Values> {
 
     protected transient long changeTime;
     protected boolean isTrackingPrevValues;
 
-    private void readObject(ObjectInputStream ois) throws ClassNotFoundException, IOException {
-        ois.defaultReadObject();
+    SingleValueColumnSource(@NotNull final Class<T> type) {
+        this(type, null);
     }
 
-    SingleValueColumnSource(Class<T> type) {
-        super(type);
+    SingleValueColumnSource(@NotNull final Class<T> type, @Nullable final Class<?> elementType) {
+        super(type, elementType);
     }
 
     @Override
@@ -33,10 +31,11 @@ public abstract class SingleValueColumnSource<T> extends AbstractColumnSource<T>
         isTrackingPrevValues = true;
     }
 
-    @Override
-    public void shift(long start, long end, long offset) {}
-
     public static <T> SingleValueColumnSource<T> getSingleValueColumnSource(Class<T> type) {
+        return getSingleValueColumnSource(type, null);
+    }
+
+    public static <T> SingleValueColumnSource<T> getSingleValueColumnSource(Class<T> type, Class<?> componentType) {
         SingleValueColumnSource<?> result;
         if (type == Byte.class || type == byte.class) {
             result = new ByteSingleValueSource();
@@ -52,8 +51,10 @@ public abstract class SingleValueColumnSource<T> extends AbstractColumnSource<T>
             result = new LongSingleValueSource();
         } else if (type == Short.class || type == short.class) {
             result = new ShortSingleValueSource();
+        } else if (type == Boolean.class || type == boolean.class) {
+            result = new BooleanSingleValueSource();
         } else {
-            result = new ObjectSingleValueSource<>(type);
+            result = new ObjectSingleValueSource<>(type, componentType);
         }
         // noinspection unchecked
         return (SingleValueColumnSource<T>) result;
@@ -94,6 +95,22 @@ public abstract class SingleValueColumnSource<T> extends AbstractColumnSource<T>
 
     public void set(T value) {
         throw new UnsupportedOperationException();
+    }
+
+    public void setNull() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public final void setNull(long key) {
+        setNull();
+    }
+
+    @Override
+    public final void setNull(RowSequence rowSequence) {
+        if (!rowSequence.isEmpty()) {
+            setNull();
+        }
     }
 
     @Override

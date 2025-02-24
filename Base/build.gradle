@@ -1,12 +1,22 @@
+plugins {
+    id 'io.deephaven.project.register'
+    id 'java-library'
+}
+
 dependencies {
 
-    compile depTrove3, depAnnotations, depCommonsCompress
+    api project(':clock')
 
-    compile depCommonsLang3
+    implementation libs.trove
+    compileOnlyApi libs.jetbrains.annotations
+    implementation libs.commons.lang3
 
-    compile 'io.deephaven:hash:0.1.0'
+    api libs.deephaven.hash
 
-    testCompile fileTree(dir: "${rootDir}/test-libs", include: ['*.jar'])
+    testImplementation libs.junit4
+    testImplementation libs.jmock.junit4
+    testImplementation libs.jmock.imposters
+    testImplementation project(":base-test-utils")
 }
 
 sourceSets {
@@ -24,12 +34,12 @@ sourceSets {
 
 // TODO (core#116): Gradle test fixtures
 task jarTests(type: Jar, dependsOn: testClasses) {
-    classifier = 'tests'
+    archiveClassifier = 'tests'
     from sourceSets.test.output
 }
 configurations {
     tests {
-        extendsFrom testRuntime
+
     }
 }
 artifacts {

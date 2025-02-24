@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.appmode;
 
 import java.util.ArrayList;
@@ -6,10 +9,16 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.ServiceLoader;
 
 public class ApplicationState {
 
     public interface Factory {
+
+        static Iterable<Factory> loadFromServiceFactory() {
+            return ServiceLoader.load(Factory.class);
+        }
+
         ApplicationState create(Listener appStateListener);
     }
 
@@ -63,15 +72,6 @@ public class ApplicationState {
 
     public synchronized <T> void setField(String name, T value, String description) {
         setField(StandardField.of(name, value, description));
-    }
-
-    public synchronized <T> void setCustomField(String type, String name, T value) {
-        setField(CustomField.builder(type).of(name, value));
-    }
-
-    public synchronized <T> void setCustomField(String type, String name, T value,
-            String description) {
-        setField(CustomField.builder(type).of(name, value, description));
     }
 
     public synchronized void setField(Field<?> field) {

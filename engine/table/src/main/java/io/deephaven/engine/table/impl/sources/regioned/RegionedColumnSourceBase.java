@@ -1,8 +1,11 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources.regioned;
 
 import io.deephaven.base.verify.Assert;
 import io.deephaven.chunk.attributes.Values;
-import io.deephaven.engine.table.impl.sources.AbstractDeferredGroupingColumnSource;
+import io.deephaven.engine.table.impl.AbstractColumnSource;
 import io.deephaven.chunk.WritableChunk;
 import io.deephaven.engine.rowset.RowSequence;
 import io.deephaven.util.annotations.TestUseOnly;
@@ -13,7 +16,7 @@ import org.jetbrains.annotations.Nullable;
  * Partial implementation of {@link RegionedColumnSource} for array-backed and delegating implementations to extend.
  */
 abstract class RegionedColumnSourceBase<DATA_TYPE, ATTR extends Values, REGION_TYPE extends ColumnRegion<ATTR>>
-        extends AbstractDeferredGroupingColumnSource<DATA_TYPE>
+        extends AbstractColumnSource<DATA_TYPE>
         implements RegionedPageStore<Values, ATTR, REGION_TYPE>, RegionedColumnSource<DATA_TYPE> {
 
     static final Parameters PARAMETERS;
@@ -32,6 +35,11 @@ abstract class RegionedColumnSourceBase<DATA_TYPE, ATTR extends Values, REGION_T
 
     RegionedColumnSourceBase(@NotNull final Class<DATA_TYPE> type) {
         this(type, null);
+    }
+
+    @Override
+    public void invalidateRegion(final int regionIndex) {
+        getRegion(regionIndex).invalidate();
     }
 
     @Override

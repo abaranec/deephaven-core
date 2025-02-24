@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.base.pool;
 
 import io.deephaven.base.MockFactory;
@@ -37,7 +36,7 @@ public class TestThreadSafeFixedSizePool extends TestCase {
         }
         Pool<Object> pool =
                 ThreadSafeFixedSizePool.FACTORY.create(OBJECTS.length, m_mockObjectFactory, m_mockClearingProcedure);
-        assertEquals("call()call()call()call()call()call()call()call()call()call()call()call()call()call()",
+        assertEquals("get()get()get()get()get()get()get()get()get()get()get()get()get()get()",
                 m_mockObjectFactory.getActivityRecordAndReset());
 
         // take
@@ -47,7 +46,7 @@ public class TestThreadSafeFixedSizePool extends TestCase {
 
         // give
         pool.give(alphaObject);
-        assertEquals("call(alpha)", m_mockClearingProcedure.getActivityRecordAndReset());
+        assertEquals("accept(alpha)", m_mockClearingProcedure.getActivityRecordAndReset());
         checkNoOtherActivity();
 
         // (give on full pool would block)
@@ -71,7 +70,7 @@ public class TestThreadSafeFixedSizePool extends TestCase {
         // give
         for (Object object : OBJECTS) {
             pool.give(object);
-            assertEquals("call(" + object + ")", m_mockClearingProcedure.getActivityRecordAndReset());
+            assertEquals("accept(" + object + ")", m_mockClearingProcedure.getActivityRecordAndReset());
             checkNoOtherActivity();
         }
 
@@ -90,7 +89,7 @@ public class TestThreadSafeFixedSizePool extends TestCase {
             m_mockObjectFactory.add(object);
         }
         Pool<Object> pool = ThreadSafeFixedSizePool.FACTORY.create(OBJECTS.length, m_mockObjectFactory, null);
-        assertEquals("call()call()call()call()call()call()call()call()call()call()call()call()call()call()",
+        assertEquals("get()get()get()get()get()get()get()get()get()get()get()get()get()get()",
                 m_mockObjectFactory.getActivityRecordAndReset());
 
         // take
@@ -135,7 +134,7 @@ public class TestThreadSafeFixedSizePool extends TestCase {
             m_mockObjectFactory.add(object);
         }
         new ThreadSafeFixedSizePool<Object>(7, m_mockObjectFactory, null);
-        assertEquals("call()call()call()call()call()call()call()", m_mockObjectFactory.getActivityRecordAndReset());
+        assertEquals("get()get()get()get()get()get()get()", m_mockObjectFactory.getActivityRecordAndReset());
 
         // no factory
         try {
@@ -158,7 +157,7 @@ public class TestThreadSafeFixedSizePool extends TestCase {
             m_mockObjectFactory.add(object);
         }
         ThreadSafeFixedSizePool.FACTORY.create(7, m_mockObjectFactory, null);
-        assertEquals("call()call()call()call()call()call()call()", m_mockObjectFactory.getActivityRecordAndReset());
+        assertEquals("get()get()get()get()get()get()get()", m_mockObjectFactory.getActivityRecordAndReset());
     }
 
     // ----------------------------------------------------------------

@@ -1,21 +1,18 @@
-/*
- * Copyright (c) 2018 Deephaven and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.configuration;
+
+import io.deephaven.internal.log.LoggerFactory;
+import io.deephaven.io.logger.Logger;
+import org.apache.commons.lang3.StringEscapeUtils;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.*;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-
-import io.deephaven.io.logger.Logger;
-import io.deephaven.internal.log.LoggerFactory;
-import org.apache.commons.lang3.StringEscapeUtils;
-import org.jetbrains.annotations.NotNull;
-
-import static io.deephaven.configuration.Configuration.QUIET_PROPERTY;
 
 /**
  * Class for reading in a customized properties file, applying only the locally-relevant properties and keeping track of
@@ -108,7 +105,18 @@ public class ParsedProperties extends Properties {
      *        PropertyInspector when checking whether required or disallowed properties are present.
      */
     public ParsedProperties(final boolean ignoreScopes) {
-        context = new ConfigurationContext();
+        this(ignoreScopes, new DefaultConfigurationContext());
+    }
+
+    /**
+     * A constructor that starts with no existing scoped or final properties.
+     *
+     * @param ignoreScopes True if this parser should ignore scope restrictions, false otherwise. Used by the
+     *        PropertyInspector when checking whether required or disallowed properties are present.
+     * @param context the {@link ConfigurationContext} for determining environment settings
+     */
+    public ParsedProperties(final boolean ignoreScopes, @NotNull final ConfigurationContext context) {
+        this.context = context;
         finalProperties = new HashSet<>();
         lineNumbers = new HashMap<>();
         props = new LinkedHashMap<>();
@@ -648,7 +656,7 @@ public class ParsedProperties extends Properties {
      *
      */
     public synchronized void load(String fileName) throws IOException, ConfigurationException {
-        if (System.getProperty(QUIET_PROPERTY) == null) {
+        if (!Configuration.isQuiet()) {
             log.info("Loading " + fileName);
         }
         thisFile = fileName;

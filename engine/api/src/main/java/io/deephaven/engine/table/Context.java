@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table;
 
 import io.deephaven.util.SafeCloseable;
@@ -7,9 +10,9 @@ import io.deephaven.util.SafeCloseable;
  * Source, Functor or Sink.
  */
 public interface Context extends SafeCloseable {
+
     /**
      * Release any resources associated with this context. The context should not be used afterwards.
      */
     default void close() {}
-
 }

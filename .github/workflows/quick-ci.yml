@@ -1,0 +1,66 @@
+name: Quick CI
+
+on:
+  pull_request:
+    branches: [ 'main', 'rc/v*' ]
+  push:
+    branches: [ 'main', 'check/**', 'release/v*' ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quick:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check gitignore rules
+        run: .github/scripts/check-gitignore-rules.sh
+
+      - name: Setup JDK 11
+        id: setup-java-11
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Set JAVA_HOME
+        run: echo "JAVA_HOME=${{ steps.setup-java-11.outputs.path }}" >> $GITHUB_ENV
+
+      - name: Setup gradle properties
+        run: |
+          .github/scripts/gradle-properties.sh >> gradle.properties
+          cat gradle.properties
+
+      - name: Quick Task
+        # Even though quick includes spotlessCheck, we want to make sure it runs first and fails ASAP for quick feedback
+        run: ./gradlew --scan spotlessCheck quick
+
+      - name: Upload JVM Error Logs
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: quick-ci-jvm-err
+          path: '**/*_pid*.log'
+          if-no-files-found: ignore
+
+  verify-python-min-version:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install vermin
+        run: pip install vermin==1.6.0
+
+      - name: Verify minimum version support
+        run: vermin -t=3.8 --no-tips --eval-annotations --violations --feature fstring-self-doc --feature union-types py/server/deephaven py/client py/client-ticking py/embedded-server

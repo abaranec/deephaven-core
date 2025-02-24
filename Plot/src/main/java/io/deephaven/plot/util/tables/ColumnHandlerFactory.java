@@ -1,18 +1,20 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.plot.util.tables;
 
+import io.deephaven.engine.rowset.RowSet;
+import io.deephaven.engine.table.ColumnSource;
 import io.deephaven.plot.errors.PlotInfo;
 import io.deephaven.plot.errors.PlotUnsupportedOperationException;
 import io.deephaven.plot.util.ArgumentValidations;
-import io.deephaven.engine.table.DataColumn;
 import io.deephaven.engine.table.Table;
-import io.deephaven.time.DateTime;
 import io.deephaven.gui.color.Paint;
+import io.deephaven.time.DateTimeUtils;
 
 import java.io.Serializable;
+import java.time.Instant;
+import java.time.ZonedDateTime;
 import java.util.Date;
 
 import static io.deephaven.util.QueryConstants.*;
@@ -32,7 +34,7 @@ public class ColumnHandlerFactory implements Serializable {
             this.isNumeric = isNumeric;
         }
 
-        private boolean isNumeric;
+        private final boolean isNumeric;
 
         public boolean isNumeric() {
             return isNumeric;
@@ -104,8 +106,9 @@ public class ColumnHandlerFactory implements Serializable {
         private Table table;
         private final String columnName;
         private final Class type;
-        private transient DataColumn dataColumn;
         private final PlotInfo plotInfo;
+        private transient RowSet rowSet;
+        private transient ColumnSource<?> columnSource;
 
         private ColumnHandlerTable(final Table table, final String columnName, Class type, final PlotInfo plotInfo) {
             this.type = type;
@@ -115,12 +118,22 @@ public class ColumnHandlerFactory implements Serializable {
             this.plotInfo = plotInfo;
         }
 
-        protected DataColumn getDataColumn() {
-            if (dataColumn == null) {
-                dataColumn = table.getColumn(columnName);
+        private void ensureInitialized() {
+            if (columnSource == null) {
+                final Table coalesced = table.coalesce();
+                rowSet = coalesced.getRowSet();
+                columnSource = coalesced.getColumnSource(columnName);
             }
+        }
 
-            return dataColumn;
+        protected ColumnSource<?> getColumnSource() {
+            ensureInitialized();
+            return columnSource;
+        }
+
+        protected RowSet getRowSet() {
+            ensureInitialized();
+            return rowSet;
         }
 
         public TableHandle getTableHandle() {
@@ -132,11 +145,13 @@ public class ColumnHandlerFactory implements Serializable {
         }
 
         public int size() {
-            return getDataColumn().intSize();
+            ensureInitialized();
+            return rowSet.intSize();
         }
 
         public Object get(final int i) {
-            return getDataColumn().get(i);
+            ensureInitialized();
+            return columnSource.get(rowSet.get(i));
         }
 
         public Class type() {
@@ -155,7 +170,8 @@ public class ColumnHandlerFactory implements Serializable {
         private final String columnName;
         private final Class type;
         private final PlotInfo plotInfo;
-        private transient DataColumn dataColumn;
+        private transient RowSet rowSet;
+        private transient ColumnSource<?> columnSource;
 
         private ColumnHandlerHandle(final TableHandle tableHandle, final String columnName, final Class type,
                 final PlotInfo plotInfo) {
@@ -166,12 +182,22 @@ public class ColumnHandlerFactory implements Serializable {
             this.plotInfo = plotInfo;
         }
 
-        protected DataColumn getDataColumn() {
-            if (dataColumn == null) {
-                dataColumn = tableHandle.getTable().getColumn(columnName);
+        private void ensureInitialized() {
+            if (columnSource == null) {
+                final Table table = tableHandle.getTable().coalesce();
+                rowSet = table.getRowSet();
+                columnSource = table.getColumnSource(columnName);
             }
+        }
 
-            return dataColumn;
+        protected ColumnSource<?> getColumnSource() {
+            ensureInitialized();
+            return columnSource;
+        }
+
+        protected RowSet getRowSet() {
+            ensureInitialized();
+            return rowSet;
         }
 
         public TableHandle getTableHandle() {
@@ -183,11 +209,13 @@ public class ColumnHandlerFactory implements Serializable {
         }
 
         public int size() {
-            return getDataColumn().intSize();
+            ensureInitialized();
+            return rowSet.intSize();
         }
 
         public Object get(final int i) {
-            return getDataColumn().get(i);
+            ensureInitialized();
+            return columnSource.get(rowSet.get(i));
         }
 
         public Class type() {
@@ -215,7 +243,7 @@ public class ColumnHandlerFactory implements Serializable {
         ArgumentValidations.assertNotNull(columnName, "columnName", plotInfo);
         ArgumentValidations.assertColumnsInTable(tableHandle.getTable(), plotInfo, columnName);
 
-        final Class type = tableHandle.getTable().getColumn(columnName).getType();
+        final Class type = tableHandle.getTable().getDefinition().getColumn(columnName).getDataType();
 
         if (type.equals(short.class)) {
             return new ColumnHandlerHandle(tableHandle, columnName, type, plotInfo) {
@@ -226,7 +254,7 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final short value = getDataColumn().getShort(i);
+                    final short value = getColumnSource().getShort(getRowSet().get(i));
                     return value == NULL_SHORT ? Double.NaN : value;
                 }
 
@@ -240,7 +268,7 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final int value = getDataColumn().getInt(i);
+                    final int value = getColumnSource().getInt(getRowSet().get(i));
                     return value == NULL_INT ? Double.NaN : value;
                 }
 
@@ -254,7 +282,7 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final long value = getDataColumn().getLong(i);
+                    final long value = getColumnSource().getLong(getRowSet().get(i));
                     return value == NULL_LONG ? Double.NaN : value;
                 }
 
@@ -268,7 +296,7 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final double value = getDataColumn().getFloat(i);
+                    final float value = getColumnSource().getFloat(getRowSet().get(i));
                     return value == NULL_FLOAT ? Double.NaN : value;
                 }
 
@@ -282,7 +310,7 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final double value = getDataColumn().getDouble(i);
+                    final double value = getColumnSource().getDouble(getRowSet().get(i));
                     return value == NULL_DOUBLE ? Double.NaN : value;
                 }
 
@@ -296,7 +324,7 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final Number value = (Number) getDataColumn().get(i);
+                    final Number value = (Number) get(i);
                     return value == null ? Double.NaN : value.doubleValue();
                 }
 
@@ -310,7 +338,7 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final Number value = (Number) getDataColumn().get(i);
+                    final Number value = (Number) get(i);
                     return value == null ? Double.NaN : value.doubleValue();
                 }
 
@@ -324,7 +352,7 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final Number value = (Number) getDataColumn().get(i);
+                    final Number value = (Number) get(i);
                     return value == null ? Double.NaN : value.doubleValue();
                 }
 
@@ -338,7 +366,7 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final Number value = (Number) getDataColumn().get(i);
+                    final Number value = (Number) get(i);
                     return value == null ? Double.NaN : value.doubleValue();
                 }
 
@@ -352,7 +380,7 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final Number value = (Number) getDataColumn().get(i);
+                    final Number value = (Number) get(i);
                     return value == null ? Double.NaN : value.doubleValue();
                 }
 
@@ -366,7 +394,7 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final Number value = (Number) getDataColumn().get(i);
+                    final Number value = (Number) get(i);
                     return value == null ? Double.NaN : value.doubleValue();
                 }
 
@@ -380,12 +408,12 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final Date value = (Date) getDataColumn().get(i);
+                    final Date value = (Date) get(i);
                     return value == null ? Double.NaN : value.getTime() * 1000000;
                 }
 
             };
-        } else if (type.equals(DateTime.class)) {
+        } else if (type.equals(Instant.class)) {
             return new ColumnHandlerHandle(tableHandle, columnName, type, plotInfo) {
                 @Override
                 public TypeClassification typeClassification() {
@@ -394,8 +422,22 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final DateTime value = (DateTime) getDataColumn().get(i);
-                    return value == null ? Double.NaN : value.getNanos();
+                    final Instant value = (Instant) get(i);
+                    return value == null ? Double.NaN : DateTimeUtils.epochNanos(value);
+                }
+
+            };
+        } else if (type.equals(ZonedDateTime.class)) {
+            return new ColumnHandlerHandle(tableHandle, columnName, type, plotInfo) {
+                @Override
+                public TypeClassification typeClassification() {
+                    return TypeClassification.TIME;
+                }
+
+                @Override
+                public double getDouble(int i) {
+                    final ZonedDateTime value = (ZonedDateTime) get(i);
+                    return value == null ? Double.NaN : DateTimeUtils.epochNanos(value);
                 }
 
             };
@@ -432,7 +474,7 @@ public class ColumnHandlerFactory implements Serializable {
         ArgumentValidations.assertNotNull(table, "table", plotInfo);
         ArgumentValidations.assertNotNull(columnName, "columnName", plotInfo);
 
-        final Class type = table.getColumn(columnName).getType();
+        final Class type = table.getDefinition().getColumn(columnName).getDataType();
 
         if (type.equals(short.class)) {
             return new ColumnHandlerTable(table, columnName, type, plotInfo) {
@@ -443,7 +485,7 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final short value = getDataColumn().getShort(i);
+                    final short value = getColumnSource().getShort(getRowSet().get(i));
                     return value == NULL_SHORT ? Double.NaN : value;
                 }
 
@@ -457,7 +499,7 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final int value = getDataColumn().getInt(i);
+                    final int value = getColumnSource().getInt(getRowSet().get(i));
                     return value == NULL_INT ? Double.NaN : value;
                 }
 
@@ -471,7 +513,7 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final long value = getDataColumn().getLong(i);
+                    final long value = getColumnSource().getLong(getRowSet().get(i));
                     return value == NULL_LONG ? Double.NaN : value;
                 }
 
@@ -485,7 +527,7 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final double value = getDataColumn().getFloat(i);
+                    final float value = getColumnSource().getFloat(getRowSet().get(i));
                     return value == NULL_FLOAT ? Double.NaN : value;
                 }
 
@@ -499,7 +541,7 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final double value = getDataColumn().getDouble(i);
+                    final double value = getColumnSource().getDouble(getRowSet().get(i));
                     return value == NULL_DOUBLE ? Double.NaN : value;
                 }
 
@@ -513,7 +555,7 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final Number value = (Number) getDataColumn().get(i);
+                    final Number value = (Number) get(i);
                     return value == null ? Double.NaN : value.doubleValue();
                 }
 
@@ -527,7 +569,7 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final Number value = (Number) getDataColumn().get(i);
+                    final Number value = (Number) get(i);
                     return value == null ? Double.NaN : value.doubleValue();
                 }
 
@@ -541,7 +583,7 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final Number value = (Number) getDataColumn().get(i);
+                    final Number value = (Number) get(i);
                     return value == null ? Double.NaN : value.doubleValue();
                 }
 
@@ -555,7 +597,7 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final Number value = (Number) getDataColumn().get(i);
+                    final Number value = (Number) get(i);
                     return value == null ? Double.NaN : value.doubleValue();
                 }
 
@@ -569,7 +611,7 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final Number value = (Number) getDataColumn().get(i);
+                    final Number value = (Number) get(i);
                     return value == null ? Double.NaN : value.doubleValue();
                 }
 
@@ -583,7 +625,7 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final Number value = (Number) getDataColumn().get(i);
+                    final Number value = (Number) get(i);
                     return value == null ? Double.NaN : value.doubleValue();
                 }
 
@@ -597,12 +639,12 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final Date value = (Date) getDataColumn().get(i);
+                    final Date value = (Date) get(i);
                     return value == null ? Double.NaN : value.getTime() * 1000000;
                 }
 
             };
-        } else if (type.equals(DateTime.class)) {
+        } else if (type.equals(Instant.class)) {
             return new ColumnHandlerTable(table, columnName, type, plotInfo) {
                 @Override
                 public TypeClassification typeClassification() {
@@ -611,8 +653,22 @@ public class ColumnHandlerFactory implements Serializable {
 
                 @Override
                 public double getDouble(int i) {
-                    final DateTime value = (DateTime) getDataColumn().get(i);
-                    return value == null ? Double.NaN : value.getNanos();
+                    final Instant value = (Instant) get(i);
+                    return value == null ? Double.NaN : DateTimeUtils.epochNanos(value);
+                }
+
+            };
+        } else if (type.equals(ZonedDateTime.class)) {
+            return new ColumnHandlerTable(table, columnName, type, plotInfo) {
+                @Override
+                public TypeClassification typeClassification() {
+                    return TypeClassification.TIME;
+                }
+
+                @Override
+                public double getDouble(int i) {
+                    final ZonedDateTime value = (ZonedDateTime) get(i);
+                    return value == null ? Double.NaN : DateTimeUtils.epochNanos(value);
                 }
 
             };
@@ -651,7 +707,7 @@ public class ColumnHandlerFactory implements Serializable {
         ArgumentValidations.assertNotNull(tableHandle, "tableHandle", plotInfo);
         ArgumentValidations.assertNotNull(columnName, "columnName", plotInfo);
 
-        final Class type = tableHandle.getTable().getColumn(columnName).getType();
+        final Class type = tableHandle.getTable().getDefinition().getColumn(columnName).getDataType();
 
         if (Comparable.class.isAssignableFrom(type)) {
             return new ColumnHandlerHandle(tableHandle, columnName, type, plotInfo) {
@@ -689,7 +745,7 @@ public class ColumnHandlerFactory implements Serializable {
         ArgumentValidations.assertNotNull(table, "table", plotInfo);
         ArgumentValidations.assertNotNull(columnName, "columnName", plotInfo);
 
-        final Class type = table.getColumn(columnName).getType();
+        final Class type = table.getDefinition().getColumn(columnName).getDataType();
 
         if (Comparable.class.isAssignableFrom(type)) {
             return new ColumnHandlerTable(table, columnName, type, plotInfo) {
@@ -725,7 +781,7 @@ public class ColumnHandlerFactory implements Serializable {
         ArgumentValidations.assertNotNull(tableHandle, "tableHandle", plotInfo);
         ArgumentValidations.assertNotNull(columnName, "columnName", plotInfo);
 
-        final Class type = tableHandle.getTable().getColumn(columnName).getType();
+        final Class type = tableHandle.getTable().getDefinition().getColumn(columnName).getDataType();
         return new ColumnHandlerHandle(tableHandle, columnName, type, plotInfo) {
             @Override
             public TypeClassification typeClassification() {
@@ -754,7 +810,7 @@ public class ColumnHandlerFactory implements Serializable {
         ArgumentValidations.assertNotNull(table, "table", plotInfo);
         ArgumentValidations.assertNotNull(columnName, "columnName", plotInfo);
 
-        final Class type = table.getColumn(columnName).getType();
+        final Class type = table.getDefinition().getColumn(columnName).getDataType();
         return new ColumnHandlerTable(table, columnName, type, plotInfo) {
             @Override
             public TypeClassification typeClassification() {

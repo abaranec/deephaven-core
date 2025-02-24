@@ -1,23 +1,31 @@
-version: "3.4"
-
 services:
   server:
     image: ${DEEPHAVEN_SERVER_IMAGE}
-
+    # For jprofiler, replace the line before this comment block with the line below:
+    #build:
+    #  context: ./jprofiler-server
+    #  args:
+    #    - DEEPHAVEN_SERVER_IMAGE=${DEEPHAVEN_SERVER_IMAGE}
     environment:
       # https://bugs.openjdk.java.net/browse/JDK-8230305
       # cgroups v2 resource reservations only work w/ java 15+ ATM, so it's best for our java processes to be explicit
       # with max memory.
       #
       # To turn on debug logging, add: -Dlogback.configurationFile=logback-debug.xml
-      - JAVA_TOOL_OPTIONS=-Xmx4g -Ddeephaven.console.type=${DEEPHAVEN_CONSOLE_TYPE} -Ddeephaven.application.dir=${DEEPHAVEN_APPLICATION_DIR}
+      - START_OPTS=-Xmx4g -Ddeephaven.console.type=${DEEPHAVEN_CONSOLE_TYPE} -Ddeephaven.application.dir=${DEEPHAVEN_APPLICATION_DIR} -Dauthentication.psk=${DEEPHAVEN_PSK}
+      #
       # For remote debugging switch the line above for the one below (and also change the ports below)
-      # - JAVA_TOOL_OPTIONS=-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005 -Xmx4g -Ddeephaven.console.type=${DEEPHAVEN_CONSOLE_TYPE} -Ddeephaven.application.dir=${DEEPHAVEN_APPLICATION_DIR}
+      # - START_OPTS=-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005 -Xmx4g -Ddeephaven.console.type=${DEEPHAVEN_CONSOLE_TYPE} -Ddeephaven.application.dir=${DEEPHAVEN_APPLICATION_DIR}
+      #
+      # For jprofiler sessions (if you tweaked the jprofiler version in jprofiler-server/Dockerfile you need to tweak path)
+      # - START_OPTS=-agentpath:/opt/jprofiler13.0/bin/linux-x64/libjprofilerti.so=port=8849,nowait -Xmx4g -Ddeephaven.console.type=${DEEPHAVEN_CONSOLE_TYPE} -Ddeephaven.application.dir=${DEEPHAVEN_APPLICATION_DIR}
 
-    expose:
-      - '8080'
-#    ports:
-#      - '5005:5005'        # For remote debugging (change if using different port)
+    ports:
+      - "${DEEPHAVEN_PORT}:10000"
+# For remote debugging (change if using different port)
+#      - '5005:5005'
+# For jprofiler (change if using different port)
+#      - '8849:8849'
 
     # Note: using old-style volume mounts, so that the directories get created if they don't exist
     # See https://docs.docker.com/storage/bind-mounts/#differences-between--v-and---mount-behavior
@@ -28,55 +36,13 @@ services:
       resources:
         limits:
           cpus: '4.0'
-          memory: 4500M
-        reservations:
-          memory: 1000M
 
     # Allows the querying of this process jinfo/jmap
-    # docker-compose exec server jmap -heap 1
-    # docker-compose exec server jinfo 1
+    # docker compose exec server jmap -heap 1
+    # docker compose exec server jinfo 1
     #
     # Add NET_ADMIN to allow throttling network speeds
     # $ docker exec -it core_server_1 apt-get install iproute2
     # $ docker exec core_server_1 tc qdisc add dev eth0 root netem delay 10ms
     cap_add:
       - SYS_PTRACE
-
-  web:
-    image: deephaven/web:local-build
-    expose:
-      - "80"
-    volumes:
-      - ./data:/data
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 256M
-
-  # Should only be used for non-production deployments, see grpc-proxy/README.md for more info
-  grpc-proxy:
-    image: deephaven/grpc-proxy:local-build
-    environment:
-      - BACKEND_ADDR=server:8080
-    expose:
-      - '8080'
-#      - '8443' #unused
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 256M
-
-  envoy:
-    # A reverse proxy configured for no SSL on localhost. It fronts the requests
-    # for the static content and the websocket proxy.
-    image: deephaven/envoy:local-build
-    ports:
-      - "${PORT}:10000"
-#      - '9090:9090' #envoy admin
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 256M

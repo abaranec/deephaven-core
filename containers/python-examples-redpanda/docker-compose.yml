@@ -1,41 +1,12 @@
-version: "3.4"
-
 services:
-  server:
+  deephaven:
     image: ghcr.io/deephaven/server:${VERSION:-latest}
-    expose:
-      - '8080'
-    volumes:
-      - ./data:/data
-      - api-cache:/cache
-    environment:
-      - JAVA_TOOL_OPTIONS=-Xmx4g -Ddeephaven.console.type=python
-
-  web:
-    image: ghcr.io/deephaven/web:${VERSION:-latest}
-    expose:
-      - '80'
-    volumes:
-      - ./data:/data
-      - web-tmp:/tmp
-
-  grpc-proxy:
-    image: ghcr.io/deephaven/grpc-proxy:${VERSION:-latest}
-    environment:
-      - BACKEND_ADDR=server:8080
-    depends_on:
-      - server
-    expose:
-      - '8080'
-
-  envoy:
-    image: ghcr.io/deephaven/envoy:${VERSION:-latest}
-    depends_on:
-      - web
-      - grpc-proxy
-      - server
     ports:
-      - "${PORT:-10000}:10000"
+      - "${DEEPHAVEN_PORT:-10000}:10000"
+    volumes:
+      - ./data:/data
+    environment:
+      - START_OPTS=-Xmx4g
 
   examples:
     image: ghcr.io/deephaven/examples
@@ -43,40 +14,19 @@ services:
       - ./data:/data
     command: initialize
 
-
   redpanda:
     command:
     - redpanda
     - start
-    - --smp
-    - '1'
-    - --reserve-memory
-    - 0M
-    - --overprovisioned
-    - --node-id
-    - '0'
-    - --kafka-addr
-    - PLAINTEXT://0.0.0.0:29092,OUTSIDE://0.0.0.0:9092
-    - --advertise-kafka-addr
-    - PLAINTEXT://redpanda:29092,OUTSIDE://localhost:9092
-    image: docker.vectorized.io/vectorized/redpanda:v21.4.13
+    - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+    - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+    - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
+    - --smp 1
+    - --memory 1G
+    - --mode dev-container
+    image: docker.redpanda.com/redpandadata/redpanda:v23.2.18
     ports:
+    - 8081:8081
+    - 18081:18081
     - 9092:9092
-    - 29092:29092
-
-  registry:
-    image: apicurio/apicurio-registry-mem:1.2.2.Final
-    expose:
-      - 8080
-    ports:
-      - "8081:8080"
-    environment:
-      QUARKUS_PROFILE: prod
-      KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
-      APPLICATION_ID: registry_id
-      APPLICATION_SERVER: localhost:9000
-
-volumes:
-    web-tmp:
-    api-cache:
-      
+    - 19092:19092

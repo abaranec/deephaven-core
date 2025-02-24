@@ -1,12 +1,14 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.web.client.api.batch;
 
-import elemental2.dom.CustomEventInit;
 import elemental2.promise.Promise;
 import elemental2.promise.Promise.PromiseExecutorCallbackFn.RejectCallbackFn;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.ticket_pb.Ticket;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.table_pb.BatchTableRequest;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.table_pb.ExportedTableCreationResponse;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.table_pb.TableReference;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.ticket_pb.Ticket;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.table_pb.BatchTableRequest;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.table_pb.ExportedTableCreationResponse;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.table_pb.TableReference;
 import io.deephaven.web.client.api.*;
 import io.deephaven.web.client.api.barrage.stream.ResponseStreamWrapper;
 import io.deephaven.web.client.api.batch.BatchBuilder.BatchOp;
@@ -17,7 +19,6 @@ import io.deephaven.web.client.state.ClientTableState;
 import io.deephaven.web.shared.data.CustomColumnDescriptor;
 import io.deephaven.web.shared.fu.JsConsumer;
 import io.deephaven.web.shared.fu.MappedIterable;
-import jsinterop.annotations.JsMethod;
 import jsinterop.base.JsPropertyMap;
 
 import java.util.ArrayList;
@@ -211,7 +212,7 @@ public class RequestBatcher {
                     boolean sortChanged = !prevState.getSorts().equals(active.getSorts());
                     boolean filterChanged = !prevState.getFilters().equals(active.getFilters());
                     boolean customColumnChanged = !prevState.getCustomColumns().equals(active.getCustomColumns());
-                    table.fireEvent(HasEventHandling.EVENT_REQUEST_SUCCEEDED);
+                    table.fireEvent(JsTable.EVENT_REQUEST_SUCCEEDED);
                     // TODO think more about the order of events, and what kinds of things one might bind to each
                     if (sortChanged) {
                         table.fireEvent(JsTable.EVENT_SORTCHANGED);
@@ -309,7 +310,7 @@ public class RequestBatcher {
                     boolean sortChanged = !lastVisibleState.getSorts().equals(state.getSorts());
                     boolean filterChanged = !lastVisibleState.getFilters().equals(state.getFilters());
                     boolean customColumnChanged = !lastVisibleState.getCustomColumns().equals(state.getCustomColumns());
-                    table.fireEvent(HasEventHandling.EVENT_REQUEST_SUCCEEDED);
+                    table.fireEvent(JsTable.EVENT_REQUEST_SUCCEEDED);
                     // TODO think more about the order of events, and what kinds of things one might bind to each
                     if (sortChanged) {
                         table.fireEvent(JsTable.EVENT_SORTCHANGED);
@@ -339,7 +340,6 @@ public class RequestBatcher {
     }
 
     private void failTable(JsTable t, String failureMessage) {
-        final CustomEventInit event = CustomEventInit.create();
         ClientTableState best = t.state();
         for (ClientTableState state : best.reversed()) {
             if (allStates().anyMatch(state::equals)) {
@@ -348,9 +348,6 @@ public class RequestBatcher {
             }
         }
 
-        event.setDetail(JsPropertyMap.of(
-                "errorMessage", failureMessage,
-                "configuration", best.toJs()));
         try {
             t.rollback();
         } catch (Exception e) {
@@ -358,7 +355,9 @@ public class RequestBatcher {
                     "An exception occurred trying to rollback the table. This means that there will be no ticking data until the table configuration is applied again in a way that makes sense. See IDS-5199 for more detail.",
                     e);
         }
-        t.fireEvent(HasEventHandling.EVENT_REQUEST_FAILED, event);
+        t.fireEvent(CoreClient.EVENT_REQUEST_FAILED, JsPropertyMap.of(
+                "errorMessage", failureMessage,
+                "configuration", best.toJs()));
     }
 
     private void failed(RejectCallbackFn reject, String fail) {
@@ -373,7 +372,6 @@ public class RequestBatcher {
         // any batches that depend on us must also be failed / cancelled...
     }
 
-    @JsMethod
     public void setSort(Sort[] newSort) {
         builder.setSort(Arrays.asList(newSort));
     }
@@ -382,7 +380,6 @@ public class RequestBatcher {
         builder.setSort(newSort);
     }
 
-    @JsMethod
     public void setFilter(FilterCondition[] newFilter) {
         builder.setFilter(Arrays.asList(newFilter));
     }
@@ -391,7 +388,6 @@ public class RequestBatcher {
         builder.setFilter(newFilter);
     }
 
-    @JsMethod
     public void setCustomColumns(String[] newColumns) {
         builder.setCustomColumns(CustomColumnDescriptor.from(newColumns));
     }
@@ -400,7 +396,6 @@ public class RequestBatcher {
         builder.setCustomColumns(newColumns);
     }
 
-    @JsMethod
     public void setFlat(boolean isFlat) {
         builder.setFlat(isFlat);
     }

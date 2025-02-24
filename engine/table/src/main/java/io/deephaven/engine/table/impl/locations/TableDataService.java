@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.locations;
 
 import org.jetbrains.annotations.NotNull;
@@ -20,6 +19,22 @@ public interface TableDataService {
      */
     @NotNull
     TableLocationProvider getTableLocationProvider(@NotNull TableKey tableKey);
+
+    /**
+     * Request the single raw {@link TableLocationProvider} from this service that has the {@link TableLocation} for
+     * {@code tableKey} and {@code tableLocationKey}. A raw {@link TableLocationProvider} does not compose multiple
+     * {@link TableLocationProvider TableLocationProviders} or delegate to other implementations.
+     *
+     * @param tableKey The {@link TableKey} to lookup
+     * @param tableLocationKey The {@link TableLocationKey} to lookup
+     * @return The raw {@link TableLocationProvider} that has the {@link TableLocation} for {@code tableKey} and
+     *         {@code tableLocationKey}, or {@code null} if there is none
+     * @throws TableDataException If more than one {@link TableLocationProvider} has the {@link TableLocation}
+     *
+     */
+    @Nullable
+    TableLocationProvider getRawTableLocationProvider(@NotNull final TableKey tableKey,
+            @NotNull final TableLocationKey tableLocationKey);
 
     /**
      * Forget all state for subsequent requests for all tables.
@@ -47,7 +62,7 @@ public interface TableDataService {
      * Get a detailed description string.
      *
      * @return A description string
-     * @implNote Defaults to {@link #toString()}
+     * @implNote Defaults to {@link Object#toString()}
      */
     default String describe() {
         return toString();

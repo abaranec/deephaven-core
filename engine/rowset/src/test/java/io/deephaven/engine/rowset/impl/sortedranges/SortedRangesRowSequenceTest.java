@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.rowset.impl.sortedranges;
 
 import static org.junit.Assert.*;
@@ -5,9 +8,9 @@ import static org.junit.Assert.*;
 import io.deephaven.engine.rowset.RowSequence;
 import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.engine.rowset.impl.RowSequenceTestBase;
-import io.deephaven.engine.rowset.impl.RowSetTstUtils;
-import io.deephaven.engine.rowset.impl.TrackingWritableRowSetImpl;
-import org.apache.commons.lang3.mutable.MutableInt;
+import io.deephaven.engine.rowset.impl.WritableRowSetImpl;
+import io.deephaven.engine.testutil.rowset.RowSetTstUtils;
+import io.deephaven.util.mutable.MutableInt;
 import org.junit.Test;
 
 public class SortedRangesRowSequenceTest extends RowSequenceTestBase {
@@ -23,7 +26,7 @@ public class SortedRangesRowSequenceTest extends RowSequenceTestBase {
                 throw new IllegalStateException();
             }
         }
-        return new TrackingWritableRowSetImpl(sar);
+        return new WritableRowSetImpl(sar);
     }
 
     @Test
@@ -103,12 +106,12 @@ public class SortedRangesRowSequenceTest extends RowSequenceTestBase {
             final long[] expected = new long[] {5, 6, 7, 8, 9, 15, 20, 21, 22, 23, 24};
             final MutableInt i = new MutableInt(0);
             rs.forEachRowKey((final long v) -> {
-                final int j = i.intValue();
+                final int j = i.get();
                 assertEquals("v==" + v + " && j==" + j, expected[j], v);
                 i.increment();
                 return true;
             });
-            assertEquals(expected.length, i.intValue());
+            assertEquals(expected.length, i.get());
         }
     }
 
@@ -148,7 +151,7 @@ public class SortedRangesRowSequenceTest extends RowSequenceTestBase {
                     final String m2 = m + " && accum==" + accum;
                     final RowSequence rs = rsIt.getNextRowSequenceWithLength(step);
                     final RowSet expected =
-                            new TrackingWritableRowSetImpl(sr.ixSubindexByPosOnNew(accum, accum + step));
+                            new WritableRowSetImpl(sr.ixSubindexByPosOnNew(accum, accum + step));
                     final RowSet fromOk = rs.asRowSet();
                     assertEquals(m2, expected.size(), fromOk.size());
                     assertTrue(m2, expected.subsetOf(fromOk));

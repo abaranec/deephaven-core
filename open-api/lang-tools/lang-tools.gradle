@@ -1,37 +1,36 @@
 plugins {
     id 'groovy'
+    id 'io.deephaven.project.register'
+    id 'java-library'
 }
 
-apply from: "$rootDir/gradle/web-common.gradle"
-
-Classpaths.inheritCommonsText(project)
 dependencies {
+    implementation libs.commons.text
 
-    compile project(':open-api-shared-ide'),
-            project(':open-api-lang-parser')
+    implementation project(':open-api-lang-parser')
+    implementation project(':engine-table')
+    implementation project(':engine-function')
+    implementation project(':IO')
+    implementation project(':log-factory')
 
-    compile project(':engine-table'),
-            project(':engine-function'),
-            project(':IO')
+    testImplementation libs.spockframework.core
 
-    testImplementation 'org.spockframework:spock-core:2.0-groovy-3.0'
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit.jupiter
 
-    Classpaths.inheritJUnitPlatform(project)
-    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation libs.groovy
+    testImplementation libs.groovy.templates
 
-    Classpaths.inheritGroovy(project, 'groovy', 'testCompile')
-    Classpaths.inheritGroovy(project, 'groovy-templates', 'testCompile')
-
-    testCompile TestTools.projectDependency(project, 'engine-table')
-    testRuntime project(':configs')
-    testRuntime project(':test-configs')
-    testRuntime(project(':Numerics'))
+    testImplementation project(':engine-test-utils')
+    testRuntimeOnly project(':configs')
+    testRuntimeOnly project(':test-configs')
+    testRuntimeOnly project(':Numerics')
     // intellij can be dumb and leave out our resources directory (sometimes)...
     // Do not cargo-cult this unless you have similar issues
-    testRuntime files('build/resources/main')
+    testRuntimeOnly files('build/resources/main')
 
     testRuntimeOnly project(':log-to-slf4j')
-    Classpaths.inheritSlf4j(project, 'slf4j-simple', 'testRuntimeOnly')
+    testRuntimeOnly libs.slf4j.simple
 }
 
 test {

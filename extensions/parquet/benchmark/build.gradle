@@ -1,0 +1,74 @@
+plugins {
+    id 'java-library'
+    id 'io.deephaven.project.register'
+}
+
+description 'Parquet Benchmark: Benchmarks for Parquet modules'
+
+sourceSets {
+    test {
+        java {
+            srcDir 'src/benchmark/java'
+        }
+    }
+}
+
+dependencies {
+    testImplementation project(':extensions-parquet-table')
+    testImplementation project(':engine-table')
+    testImplementation project(':BenchmarkSupport')
+    testImplementation TestTools.projectDependency(project, 'engine-rowset')
+    testImplementation TestTools.projectDependency(project, 'engine-table')
+
+    testAnnotationProcessor libs.jmh.generator.annprocess
+    testCompileOnly libs.jmh.generator.annprocess
+
+    testRuntimeOnly project(path: ':configs')
+    testRuntimeOnly project(path: ':test-configs')
+}
+
+task jmhRun(type: JavaExec)  {
+    new File("$rootDir/tmp/workspace").mkdirs()
+    new File("$rootDir/tmp/logs").mkdirs()
+    workingDir "$rootDir/tmp/workspace"
+
+    classpath = sourceSets.test.runtimeClasspath
+
+    mainClass.set 'io.deephaven.benchmarking.runner.BenchmarkRunner'
+
+    // arguments to pass to the application
+    jvmArgs '-DConfiguration.rootFile=dh-tests.prop',
+            "-Dworkspace=$rootDir/tmp/workspace",
+            '-Dconfiguration.quiet=true',
+            '-Djava.awt.headless=true',
+            '-DQueryTable.memoizeResults=false',
+            '-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=9500'
+}
+
+def createJmhTask = {
+    taskName, cliArgs, jvmAddArgs=[], heapSize='8g' -> tasks.create(taskName, JavaExec, { JavaExec task ->
+        new File("$rootDir/tmp/workspace").mkdirs()
+        new File("$rootDir/tmp/logs").mkdirs()
+
+        task.workingDir "$rootDir/tmp/workspace"
+        task.classpath = sourceSets.test.runtimeClasspath
+        task.mainClass.set 'io.deephaven.benchmarking.runner.BenchmarkRunner'
+
+        // arguments to pass to the application
+        def jvmArgs = [ '-DConfiguration.rootFile=dh-tests.prop',
+                "-Dworkspace=$rootDir/tmp/workspace",
+                '-Dconfiguration.quiet=true',
+                '-Djava.awt.headless=true',
+                '-DQueryTable.memoizeResults=false',
+                "-Xmx$heapSize"
+                //'-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=9501'
+        ]
+        jvmArgs.addAll(jvmAddArgs)
+        task.jvmArgs jvmArgs
+        task.args cliArgs
+
+        return
+    })
+}
+
+createJmhTask('jmhRunTableWrite', 'TableWriteBenchmark')

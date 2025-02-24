@@ -1,17 +1,23 @@
 plugins {
     id 'com.bmuschko.docker-remote-api'
+    id 'io.deephaven.project.register'
 }
 
-evaluationDependsOn ':proto'
-evaluationDependsOn ':proto:proto-backplane-grpc'
 evaluationDependsOn Docker.registryProject('node')
 
-def backplaneProject = project(':proto:proto-backplane-grpc')
+configurations {
+    js
+}
+
+dependencies {
+    js project(path: ':proto:proto-backplane-grpc', configuration: 'js')
+}
+
 def webpackSourcesLocation = layout.buildDirectory.dir("${buildDir}/dhapi")
 
-Docker.registerDockerTask(project, 'webpackSources') {
+def webpackSources = Docker.registerDockerTask(project, 'webpackSources') {
     copyIn {
-        from(backplaneProject.tasks.findByName('generateProtobuf').outputs.files) {
+        from(configurations.js) {
             // note: we are only copying the JS and not TS files.
             include '**/*.js'
             into 'raw-js-openapi/build/js-src'
@@ -28,20 +34,17 @@ Docker.registerDockerTask(project, 'webpackSources') {
             into 'raw-js-openapi/'
         }
         from ('Dockerfile')
-        from ('../package.json')
-        from ('../package-lock.json')
+        from ('package.json')
+        from ('package-lock.json')
+        from ('.npmrc')
     }
     parentContainers = [ Docker.registryTask(project, 'node') ]
-    imageName = 'deephaven/js-out:local-build'
+    imageName = Docker.localImageName('js-out')
     containerOutPath = '/usr/src/app/raw-js-openapi/build/js-out'
     copyOut {
         include 'dh-internal.js'
         into(webpackSourcesLocation.get().dir('jsapi'))
     }
-}
-
-configurations {
-    js
 }
 
 artifacts {

@@ -1,24 +1,28 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl;
 
 import io.deephaven.base.verify.Assert;
+import io.deephaven.engine.context.ExecutionContext;
 import io.deephaven.engine.updategraph.LogicalClock;
 
 /**
  * Shift state used by the {@link io.deephaven.engine.table.impl.sources.BitShiftingColumnSource}.
  */
 public class CrossJoinShiftState {
+    private final LogicalClock clock;
+    private final boolean leftOuterJoin;
     private int numShiftBits;
     private int prevNumShiftBits;
     private long mask;
     private long prevMask;
     private long updatedClockTick = 0;
 
-    public CrossJoinShiftState(final int numInitialShiftBits) {
+    public CrossJoinShiftState(final int numInitialShiftBits, final boolean leftOuterJoin) {
         setNumShiftBits(numInitialShiftBits);
+        this.clock = ExecutionContext.getContext().getUpdateGraph().clock();
+        this.leftOuterJoin = leftOuterJoin;
     }
 
     void setNumShiftBits(final int newNumShiftBits) {
@@ -32,7 +36,7 @@ public class CrossJoinShiftState {
         Assert.lt(newNumShiftBits, "newNumShiftBits", 63, "63");
         Assert.gt(newNumShiftBits, "newNumShiftBits", 0, "0");
 
-        final long currentStep = LogicalClock.DEFAULT.currentStep();
+        final long currentStep = clock.currentStep();
         if (updatedClockTick != currentStep) {
             prevMask = mask;
             prevNumShiftBits = numShiftBits;
@@ -48,7 +52,7 @@ public class CrossJoinShiftState {
 
     public int getPrevNumShiftBits() {
         if (updatedClockTick > 0) {
-            if (updatedClockTick == LogicalClock.DEFAULT.currentStep()) {
+            if (updatedClockTick == clock.currentStep()) {
                 return prevNumShiftBits;
             }
             updatedClockTick = 0;
@@ -56,20 +60,24 @@ public class CrossJoinShiftState {
         return numShiftBits;
     }
 
-    public long getShifted(long index) {
-        return index >> getNumShiftBits();
+    public boolean leftOuterJoin() {
+        return leftOuterJoin;
     }
 
-    public long getPrevShifted(long index) {
-        return index >> getPrevNumShiftBits();
+    public long getShifted(long rowKey) {
+        return rowKey >> getNumShiftBits();
     }
 
-    public long getMasked(long index) {
-        return index & getMask();
+    public long getPrevShifted(long rowKey) {
+        return rowKey >> getPrevNumShiftBits();
     }
 
-    public long getPrevMasked(long index) {
-        return index & getPrevMask();
+    public long getMasked(long rowKey) {
+        return rowKey & getMask();
+    }
+
+    public long getPrevMasked(long rowKey) {
+        return rowKey & getPrevMask();
     }
 
     private long getMask() {
@@ -78,7 +86,7 @@ public class CrossJoinShiftState {
 
     private long getPrevMask() {
         if (updatedClockTick > 0) {
-            if (updatedClockTick == LogicalClock.DEFAULT.currentStep()) {
+            if (updatedClockTick == clock.currentStep()) {
                 return prevMask;
             }
             updatedClockTick = 0;

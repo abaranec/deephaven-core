@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.server.appmode;
 
 import io.deephaven.appmode.ApplicationState;
@@ -18,16 +21,6 @@ public class ScriptApplicationState extends ApplicationState {
     @Override
     public synchronized <T> void setField(String name, T value, String description) {
         super.setField(name, scriptSession.unwrapObject(value), description);
-    }
-
-    @Override
-    public synchronized <T> void setCustomField(String type, String name, T value) {
-        super.setCustomField(type, name, scriptSession.unwrapObject(value));
-    }
-
-    @Override
-    public synchronized <T> void setCustomField(String type, String name, T value, String description) {
-        super.setCustomField(type, name, scriptSession.unwrapObject(value), description);
     }
 
     @Override

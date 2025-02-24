@@ -1,12 +1,22 @@
-dependencies {
-    compile project(':Base'), project(':DataStructures'), project(':IO'), project(':Configuration'), project(':FishUtil'),
-            project(':Net')
-    compile depAllocation
+plugins {
+    id 'io.deephaven.project.register'
+}
 
-    testCompile project(path: ':Base', configuration: 'tests')
+dependencies {
+    implementation project(':Base')
+    implementation project(':DataStructures')
+    implementation project(':IO')
+    implementation project(':Configuration')
+    implementation project(':log-factory')
+    implementation project(':engine-context')
+    implementation project(':util-thread')
+    compileOnly libs.google.java.allocation.instrumenter
+
+    testImplementation project(path: ':Base', configuration: 'tests')
 
     testRuntimeOnly project(':log-to-slf4j')
-    Classpaths.inheritSlf4j(project, 'slf4j-simple', 'testRuntimeOnly')
+    testRuntimeOnly libs.slf4j.simple
+    testImplementation libs.junit4
 }
 
 test {
@@ -16,8 +26,7 @@ test {
     maxHeapSize = '3g'
 
     systemProperty 'Configuration.rootFile', 'lib-tests.prop'
-    systemProperty 'devroot', "$rootDir"
-    systemProperty 'workspace', "$rootDir/tmp/workspace"
+    systemProperty 'deephaven.dataDir', "$rootDir/tmp/workspace"
     systemProperty 'configuration.quiet', 'true'
 
     exclude '**/NoTest*'

@@ -1,14 +1,33 @@
 plugins {
     id 'java-library'
+    id 'io.deephaven.project.register'
 }
 
 description 'Reflective Replicators: Source code generators and replicators with compile-time dependencies on their inputs'
 
 dependencies {
-    implementation project(':replication-util'),
-            project(':engine-table')
+    implementation project(':replication-util')
+    implementation project(':engine-table')
+    implementation libs.squareup.javapoet
+    implementation libs.trove
+    implementation libs.commons.io
+    implementation libs.commons.lang3
+
+    runtimeOnly project(':log-to-slf4j')
+    runtimeOnly project(path: ':configs')
+    runtimeOnly project(path: ':test-configs')
+    runtimeOnly libs.slf4j.simple
+
+    implementation libs.arrow.vector
+
+    // needed at compile + runtime due to our use of code-generation at runtime
+    implementation libs.jetbrains.annotations
 }
 
 task replicateAll {
     dependsOn Tasks.registerMainExecTask(project, 'replicateHashTable', 'io.deephaven.replicators.ReplicateHashTable')
+    dependsOn Tasks.registerMainExecTask(project, 'replicateTypedHashers', 'io.deephaven.replicators.ReplicateTypedHashers')
+
+    dependsOn Tasks.registerMainExecTask(project, 'generateArrowColumnSources', 'io.deephaven.replicators.GenerateArrowColumnSources')
+    dependsOn Tasks.registerMainExecTask(project, 'generateArrowColumnTestSources', 'io.deephaven.replicators.GenerateArrowColumnSourceTests')
 }

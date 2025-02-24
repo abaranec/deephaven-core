@@ -1,23 +1,23 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl;
 
+import io.deephaven.api.ColumnName;
+import io.deephaven.api.JoinMatch;
+import io.deephaven.api.RangeJoinMatch;
+import io.deephaven.api.agg.Aggregation;
 import io.deephaven.engine.table.Table;
-import io.deephaven.engine.table.MatchPair;
-import io.deephaven.engine.table.WouldMatchPair;
-import io.deephaven.engine.table.impl.by.AggregationFactory;
-import io.deephaven.engine.table.impl.by.AggregationMemoKey;
-import io.deephaven.engine.table.impl.by.AggregationSpec;
 import io.deephaven.engine.table.impl.select.*;
 import io.deephaven.engine.table.impl.sources.regioned.SymbolTableSource;
 import org.jetbrains.annotations.NotNull;
 
 import java.lang.ref.WeakReference;
-import java.util.Arrays;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 
 /**
  * Indices for memoized operations on QueryTable.
- *
+ * <p>
  * When a null key is returned from one of the static methods; the operation will not be memoized (e.g., if we might
  * depend on the query scope; we can't memoize the operation).
  */
@@ -53,6 +53,16 @@ public abstract class MemoizedOperationKey {
         @Override
         boolean attributesCompatible(Map<String, Object> oldAttributes, Map<String, Object> newAttributes) {
             return true;
+        }
+
+        @Override
+        abstract BaseTable.CopyAttributeOperation copyType();
+    }
+
+    abstract static class BlinkIncompatibleMemoizedOperationKey extends MemoizedOperationKey {
+        @Override
+        boolean attributesCompatible(Map<String, Object> oldAttributes, Map<String, Object> newAttributes) {
+            return BlinkTableTools.hasBlink(oldAttributes) == BlinkTableTools.hasBlink(newAttributes);
         }
 
         @Override
@@ -95,45 +105,35 @@ public abstract class MemoizedOperationKey {
         return Reverse.REVERSE_INSTANCE;
     }
 
-    public static MemoizedOperationKey treeTable(String idColumn, String parentColumn) {
-        return new TreeTable(idColumn, parentColumn);
+    public static MemoizedOperationKey tree(String idColumn, String parentColumn) {
+        return new Tree(idColumn, parentColumn);
     }
 
-    public static MemoizedOperationKey by(AggregationSpec aggregationSpec,
-            SelectColumn[] groupByColumns) {
-        if (!isMemoizable(groupByColumns)) {
-            return null;
-        }
-        final AggregationMemoKey aggregationMemoKey = aggregationSpec.getMemoKey();
-        if (aggregationMemoKey == null) {
-            return null;
-        }
-        return new GroupBy(aggregationMemoKey, groupByColumns);
+    public static MemoizedOperationKey aggBy(
+            Collection<? extends Aggregation> aggregations,
+            boolean preserveEmpty,
+            Table initialGroups,
+            Collection<? extends ColumnName> groupByColumns) {
+        return new AggBy(new ArrayList<>(aggregations), preserveEmpty, initialGroups, new ArrayList<>(groupByColumns));
     }
 
-    public static MemoizedOperationKey partitionBy(boolean dropKeys, SelectColumn[] groupByColumns) {
-        if (!isMemoizable(groupByColumns)) {
-            return null;
-        }
-        return new PartitionBy(dropKeys, groupByColumns);
+    public static MemoizedOperationKey partitionBy(boolean dropKeys, Collection<? extends ColumnName> groupByColumns) {
+        return new PartitionBy(dropKeys, new ArrayList<>(groupByColumns));
+    }
+
+    public static MemoizedOperationKey rollup(Collection<? extends Aggregation> aggregations,
+            Collection<? extends ColumnName> groupByColumns, boolean includeConstituents) {
+        return new Rollup(new AggBy(new ArrayList<>(aggregations), false, null, new ArrayList<>(groupByColumns)),
+                includeConstituents);
+    }
+
+    public static MemoizedOperationKey blinkToAppendOnly(final long sizeLimit, @NotNull final Object key) {
+        return new BlinkToAppendOnly(sizeLimit, key);
     }
 
     private static boolean isMemoizable(SelectColumn[] selectColumn) {
         return Arrays.stream(selectColumn)
                 .allMatch(sc -> sc instanceof SourceColumn || sc instanceof ReinterpretedColumn);
-    }
-
-    public static MemoizedOperationKey rollup(AggregationFactory aggregationFactory, SelectColumn[] columns,
-            boolean includeConstituents) {
-        if (!isMemoizable(columns)) {
-            return null;
-        }
-
-        final AggregationMemoKey aggregationMemoKey = aggregationFactory.getMemoKey();
-        if (aggregationMemoKey == null) {
-            return null;
-        }
-        return new Rollup(aggregationMemoKey, columns, includeConstituents);
     }
 
     private static class Flatten extends AttributeAgnosticMemoizedOperationKey {
@@ -169,13 +169,15 @@ public abstract class MemoizedOperationKey {
         }
 
         @Override
-        public boolean equals(Object o) {
-            if (this == o)
+        public boolean equals(final Object other) {
+            if (this == other) {
                 return true;
-            if (o == null || getClass() != o.getClass())
+            }
+            if (other == null || getClass() != other.getClass()) {
                 return false;
+            }
 
-            final SelectUpdateViewOrUpdateView selectOrView = (SelectUpdateViewOrUpdateView) o;
+            final SelectUpdateViewOrUpdateView selectOrView = (SelectUpdateViewOrUpdateView) other;
 
             return flavor == selectOrView.flavor && Arrays.equals(selectColumns, selectOrView.selectColumns);
         }
@@ -213,13 +215,15 @@ public abstract class MemoizedOperationKey {
         }
 
         @Override
-        public boolean equals(Object o) {
-            if (this == o)
+        public boolean equals(final Object other) {
+            if (this == other) {
                 return true;
-            if (o == null || getClass() != o.getClass())
+            }
+            if (other == null || getClass() != other.getClass()) {
                 return false;
+            }
 
-            final DropColumns dropColumns = (DropColumns) o;
+            final DropColumns dropColumns = (DropColumns) other;
 
             return Arrays.equals(columns, dropColumns.columns);
         }
@@ -243,13 +247,15 @@ public abstract class MemoizedOperationKey {
         }
 
         @Override
-        public boolean equals(Object o) {
-            if (this == o)
+        public boolean equals(final Object other) {
+            if (this == other) {
                 return true;
-            if (o == null || getClass() != o.getClass())
+            }
+            if (other == null || getClass() != other.getClass()) {
                 return false;
+            }
 
-            final Sort sort = (Sort) o;
+            final Sort sort = (Sort) other;
 
             return Arrays.equals(sortPairs, sort.sortPairs);
         }
@@ -278,8 +284,8 @@ public abstract class MemoizedOperationKey {
         static final Reverse REVERSE_INSTANCE = new Reverse();
 
         @Override
-        public boolean equals(Object o) {
-            return o != null && o.getClass() == getClass();
+        public boolean equals(final Object other) {
+            return other != null && getClass() == other.getClass();
         }
 
         @Override
@@ -301,12 +307,14 @@ public abstract class MemoizedOperationKey {
         }
 
         @Override
-        public boolean equals(Object o) {
-            if (this == o)
+        public boolean equals(final Object other) {
+            if (this == other) {
                 return true;
-            if (o == null || getClass() != o.getClass())
+            }
+            if (other == null || getClass() != other.getClass()) {
                 return false;
-            final Filter filter = (Filter) o;
+            }
+            final Filter filter = (Filter) other;
             return Arrays.equals(filters, filter.filters);
         }
 
@@ -322,60 +330,90 @@ public abstract class MemoizedOperationKey {
         }
     }
 
-    private static class TreeTable extends MemoizedOperationKey {
+    private static class Tree extends MemoizedOperationKey {
         private final String idColumn;
         private final String parentColumn;
 
 
-        private TreeTable(String idColumn, String parentColumn) {
+        private Tree(String idColumn, String parentColumn) {
             this.idColumn = idColumn;
             this.parentColumn = parentColumn;
         }
 
         @Override
-        public boolean equals(Object o) {
-            if (this == o)
+        public boolean equals(final Object other) {
+            if (this == other) {
                 return true;
-            if (o == null || getClass() != o.getClass())
+            }
+            if (other == null || getClass() != other.getClass()) {
                 return false;
-            final TreeTable treeTable = (TreeTable) o;
-            return Objects.equals(idColumn, treeTable.idColumn) &&
-                    Objects.equals(parentColumn, treeTable.parentColumn);
+            }
+            final Tree tree = (Tree) other;
+            return Objects.equals(idColumn, tree.idColumn) &&
+                    Objects.equals(parentColumn, tree.parentColumn);
         }
 
         @Override
         public int hashCode() {
             return Objects.hash(idColumn, parentColumn);
         }
-    }
 
-    private static class GroupBy extends AttributeAgnosticMemoizedOperationKey {
-        private final AggregationMemoKey aggregationKey;
-        private final SelectColumn[] groupByColumns;
-
-        private GroupBy(@NotNull AggregationMemoKey aggregationKey, SelectColumn[] groupByColumns) {
-            this.aggregationKey = aggregationKey;
-            this.groupByColumns = groupByColumns;
+        @Override
+        BaseTable.CopyAttributeOperation copyType() {
+            return BaseTable.CopyAttributeOperation.Tree;
         }
 
         @Override
-        public boolean equals(Object o) {
-            if (this == o)
+        BaseTable.CopyAttributeOperation getParentCopyType() {
+            return BaseTable.CopyAttributeOperation.TreeCopy;
+        }
+    }
+
+    private static class AggBy extends BlinkIncompatibleMemoizedOperationKey {
+
+        private final List<? extends Aggregation> aggregations;
+        private final boolean preserveEmpty;
+        private final WeakReference<Table> initialGroups;
+        private final List<? extends ColumnName> groupByColumns;
+
+        private final int cachedHashCode;
+
+        private AggBy(
+                List<? extends Aggregation> aggregations,
+                boolean preserveEmpty,
+                Table initialGroups,
+                List<? extends ColumnName> groupByColumns) {
+            this.aggregations = aggregations;
+            this.preserveEmpty = preserveEmpty;
+            this.initialGroups = initialGroups == null ? null : new WeakReference<>(initialGroups);
+            this.groupByColumns = groupByColumns;
+
+            int hash = aggregations.hashCode();
+            hash = 31 * hash + Boolean.hashCode(preserveEmpty);
+            hash = 31 * hash + System.identityHashCode(initialGroups);
+            hash = 31 * hash + groupByColumns.hashCode();
+            this.cachedHashCode = hash;
+        }
+
+        @Override
+        public boolean equals(final Object other) {
+            if (this == other) {
                 return true;
-            if (o == null || getClass() != o.getClass())
+            }
+            if (other == null || getClass() != other.getClass()) {
                 return false;
-            final GroupBy groupBy = (GroupBy) o;
-            return Objects.equals(aggregationKey, groupBy.aggregationKey) &&
-                    Arrays.equals(groupByColumns, groupBy.groupByColumns);
+            }
+            AggBy aggBy = (AggBy) other;
+            return aggregations.equals(aggBy.aggregations)
+                    && preserveEmpty == aggBy.preserveEmpty
+                    && equalWeakRefsByReferentIdentity(initialGroups, aggBy.initialGroups)
+                    && groupByColumns.equals(aggBy.groupByColumns);
         }
 
         @Override
         public int hashCode() {
-            int result = Objects.hash(aggregationKey);
-            result = 31 * result + Arrays.hashCode(groupByColumns);
-            return result;
+            return cachedHashCode;
         }
-
 
         @Override
         BaseTable.CopyAttributeOperation copyType() {
@@ -384,55 +422,60 @@ public abstract class MemoizedOperationKey {
     }
 
     static class PartitionBy extends MemoizedOperationKey {
-        private final boolean dropKeys;
-        private final SelectColumn[] groupByColumns;
 
-        private PartitionBy(boolean dropKeys, SelectColumn[] groupByColumns) {
+        private final boolean dropKeys;
+        private final List<? extends ColumnName> groupByColumns;
+
+        private PartitionBy(boolean dropKeys, List<? extends ColumnName> groupByColumns) {
             this.dropKeys = dropKeys;
             this.groupByColumns = groupByColumns;
         }
 
         @Override
-        public boolean equals(Object o) {
-            if (this == o)
+        public boolean equals(final Object other) {
+            if (this == other) {
                 return true;
-            if (o == null || getClass() != o.getClass())
+            }
+            if (other == null || getClass() != other.getClass()) {
                 return false;
-            final PartitionBy by = (PartitionBy) o;
-            return dropKeys == by.dropKeys &&
-                    Arrays.equals(groupByColumns, by.groupByColumns);
+            }
+            PartitionBy that = (PartitionBy) other;
+            return dropKeys == that.dropKeys && groupByColumns.equals(that.groupByColumns);
         }
 
         @Override
         public int hashCode() {
-            int result = Objects.hash(dropKeys);
-            result = 31 * result + Arrays.hashCode(groupByColumns);
+            int result = (dropKeys ? 1 : 0);
+            result = 31 * result + groupByColumns.hashCode();
             return result;
         }
     }
 
-    private static class Rollup extends AttributeAgnosticMemoizedOperationKey {
-        private final GroupBy groupBy;
+    private static class Rollup extends BlinkIncompatibleMemoizedOperationKey {
+
+        private final AggBy aggBy;
         private final boolean includeConstituents;
 
-        Rollup(@NotNull AggregationMemoKey aggregationKey, SelectColumn[] groupByColumns, boolean includeConstituents) {
+        Rollup(AggBy aggBy, boolean includeConstituents) {
             this.includeConstituents = includeConstituents;
-            this.groupBy = new GroupBy(aggregationKey, groupByColumns);
+            this.aggBy = aggBy;
         }
 
         @Override
         public int hashCode() {
-            return 31 * groupBy.hashCode() + Boolean.hashCode(includeConstituents);
+            return 31 * aggBy.hashCode() + Boolean.hashCode(includeConstituents);
         }
 
         @Override
-        public boolean equals(Object o) {
-            if (this == o)
+        public boolean equals(final Object other) {
+            if (this == other) {
                 return true;
-            if (o == null || getClass() != o.getClass())
+            }
+            if (other == null || getClass() != other.getClass()) {
                 return false;
-            final Rollup rollup = (Rollup) o;
-            return Objects.equals(groupBy, rollup.groupBy) && includeConstituents == rollup.includeConstituents;
+            }
+            final Rollup rollup = (Rollup) other;
+            return includeConstituents == rollup.includeConstituents && Objects.equals(aggBy, rollup.aggBy);
         }
 
         @Override
@@ -446,23 +489,23 @@ public abstract class MemoizedOperationKey {
         }
     }
 
-    public static MemoizedOperationKey symbolTable(@NotNull final SymbolTableSource symbolTableSource,
+    public static MemoizedOperationKey symbolTable(@NotNull final SymbolTableSource<?> symbolTableSource,
             final boolean useLookupCaching) {
         return new SymbolTable(symbolTableSource, useLookupCaching);
     }
 
     private static final class SymbolTable extends MemoizedOperationKey {
 
-        private final SymbolTableSource symbolTableSource;
+        private final SymbolTableSource<?> symbolTableSource;
         private final boolean useLookupCaching;
 
-        private SymbolTable(@NotNull final SymbolTableSource symbolTableSource, final boolean useLookupCaching) {
+        private SymbolTable(@NotNull final SymbolTableSource<?> symbolTableSource, final boolean useLookupCaching) {
             this.symbolTableSource = symbolTableSource;
             this.useLookupCaching = useLookupCaching;
         }
 
         @Override
-        public final boolean equals(final Object other) {
+        public boolean equals(final Object other) {
             if (this == other) {
                 return true;
             }
@@ -475,31 +518,35 @@ public abstract class MemoizedOperationKey {
         }
 
         @Override
-        public final int hashCode() {
+        public int hashCode() {
             return 31 * System.identityHashCode(symbolTableSource) + Boolean.hashCode(useLookupCaching);
         }
     }
 
     private static final class WouldMatch extends AttributeAgnosticMemoizedOperationKey {
-        private final WouldMatchPair[] pairs;
+        private final String[] names;
+        private final WhereFilter[] filters;
 
-        private WouldMatch(WouldMatchPair[] pairs) {
-            this.pairs = pairs;
+        private WouldMatch(String[] names, WhereFilter[] filters) {
+            this.names = names;
+            this.filters = filters;
         }
 
         @Override
-        public boolean equals(Object obj) {
-            if (this == obj)
+        public boolean equals(final Object other) {
+            if (this == other) {
                 return true;
-            if (obj == null || getClass() != obj.getClass())
+            }
+            if (other == null || getClass() != other.getClass()) {
                 return false;
-            final WouldMatch wouldMatch = (WouldMatch) obj;
-            return Arrays.equals(pairs, wouldMatch.pairs);
+            }
+            final WouldMatch wouldMatch = (WouldMatch) other;
+            return Arrays.equals(names, wouldMatch.names) && Arrays.equals(filters, wouldMatch.filters);
         }
 
         @Override
         public int hashCode() {
-            return Arrays.hashCode(pairs);
+            return Arrays.hashCode(names) ^ Arrays.hashCode(filters);
         }
 
         @Override
@@ -508,44 +555,45 @@ public abstract class MemoizedOperationKey {
         }
     }
 
-    public static WouldMatch wouldMatch(WouldMatchPair... pairs) {
-        return new WouldMatch(pairs);
+    public static MemoizedOperationKey wouldMatch(String[] names, WhereFilter... filters) {
+        if (Arrays.stream(filters).allMatch(WhereFilter::canMemoize)) {
+            return new WouldMatch(names, filters);
+        }
+        return null;
     }
 
     private static class CrossJoin extends AttributeAgnosticMemoizedOperationKey {
-        private final WeakReference<Table> rightTableCandidate;
+        private final WeakReference<Table> rightTableReference;
         private final MatchPair[] columnsToMatch;
         private final MatchPair[] columnsToAdd;
         private final int numRightBitsToReserve;
         private final int cachedHashCode;
 
-        CrossJoin(final Table rightTableCandidate, final MatchPair[] columnsToMatch,
+        CrossJoin(final Table rightTable, final MatchPair[] columnsToMatch,
                 final MatchPair[] columnsToAdd, final int numRightBitsToReserve) {
-            this.rightTableCandidate = new WeakReference<>(rightTableCandidate);
+            this.rightTableReference = new WeakReference<>(rightTable);
             this.columnsToMatch = columnsToMatch;
             this.columnsToAdd = columnsToAdd;
             this.numRightBitsToReserve = numRightBitsToReserve;
 
             // precompute hash as right table may disappear
             int hash = Integer.hashCode(numRightBitsToReserve);
-            hash = 31 * hash + System.identityHashCode(rightTableCandidate);
+            hash = 31 * hash + System.identityHashCode(rightTable);
             hash = 31 * hash + Arrays.hashCode(columnsToMatch);
             hash = 31 * hash + Arrays.hashCode(columnsToAdd);
             this.cachedHashCode = hash;
         }
 
         @Override
-        public boolean equals(Object o) {
-            if (this == o)
+        public boolean equals(final Object other) {
+            if (this == other) {
                 return true;
-            if (o == null || getClass() != o.getClass())
+            }
+            if (other == null || getClass() != other.getClass()) {
                 return false;
-            final CrossJoin crossJoin = (CrossJoin) o;
-            final Table rTable = rightTableCandidate.get();
-            final Table oTable = crossJoin.rightTableCandidate.get();
-            if (rTable == null || oTable == null)
-                return false;
-            return rTable == oTable &&
+            }
+            final CrossJoin crossJoin = (CrossJoin) other;
+            return equalWeakRefsByReferentIdentity(rightTableReference, crossJoin.rightTableReference) &&
                     numRightBitsToReserve == crossJoin.numRightBitsToReserve &&
                     Arrays.equals(columnsToMatch, crossJoin.columnsToMatch) &&
                     Arrays.equals(columnsToAdd, crossJoin.columnsToAdd);
@@ -562,8 +610,118 @@ public abstract class MemoizedOperationKey {
         }
     }
 
-    public static CrossJoin crossJoin(final Table rightTableCandidate, final MatchPair[] columnsToMatch,
+    public static MemoizedOperationKey crossJoin(final Table rightTable, final MatchPair[] columnsToMatch,
             final MatchPair[] columnsToAdd, final int numRightBitsToReserve) {
-        return new CrossJoin(rightTableCandidate, columnsToMatch, columnsToAdd, numRightBitsToReserve);
+        return new CrossJoin(rightTable, columnsToMatch, columnsToAdd, numRightBitsToReserve);
+    }
+
+    private static class RangeJoin extends AttributeAgnosticMemoizedOperationKey {
+
+        private final WeakReference<Table> rightTableReference;
+        private final JoinMatch[] exactMatches;
+        private final RangeJoinMatch rangeMatch;
+        private final Aggregation[] aggregations;
+
+        private final int cachedHashCode;
+
+        private RangeJoin(
+                @NotNull final Table rightTable,
+                @NotNull final Collection<? extends JoinMatch> exactMatches,
+                @NotNull final RangeJoinMatch rangeMatch,
+                @NotNull final Collection<? extends Aggregation> aggregations) {
+            this.rightTableReference = new WeakReference<>(rightTable);
+            this.exactMatches = exactMatches.toArray(JoinMatch[]::new);
+            this.rangeMatch = rangeMatch;
+            this.aggregations = aggregations.toArray(Aggregation[]::new);
+
+            // precompute hash as right table may disappear
+            int hash = System.identityHashCode(rightTable);
+            hash = 31 * hash + Arrays.hashCode(this.exactMatches);
+            hash = 31 * hash + rangeMatch.hashCode();
+            hash = 31 * hash + Arrays.hashCode(this.aggregations);
+            this.cachedHashCode = hash;
+        }
+
+        @Override
+        public boolean equals(final Object other) {
+            if (this == other) {
+                return true;
+            }
+            if (other == null || getClass() != other.getClass()) {
+                return false;
+            }
+            final RangeJoin otherRangeJoin = (RangeJoin) other;
+            return equalWeakRefsByReferentIdentity(rightTableReference, otherRangeJoin.rightTableReference) &&
+                    Arrays.equals(exactMatches, otherRangeJoin.exactMatches) &&
+                    rangeMatch.equals(otherRangeJoin.rangeMatch) &&
+                    Arrays.equals(aggregations, otherRangeJoin.aggregations);
+        }
+
+        @Override
+        public int hashCode() {
+            return cachedHashCode;
+        }
+
+        @Override
+        BaseTable.CopyAttributeOperation copyType() {
+            return BaseTable.CopyAttributeOperation.None;
+        }
+    }
+
+    public static MemoizedOperationKey rangeJoin(
+            @NotNull final Table rightTable,
+            @NotNull final Collection<? extends JoinMatch> exactMatches,
+            @NotNull final RangeJoinMatch rangeMatch,
+            @NotNull final Collection<? extends Aggregation> aggregations) {
+        return new RangeJoin(rightTable, exactMatches, rangeMatch, aggregations);
+    }
+
+    protected static boolean equalWeakRefsByReferentIdentity(final WeakReference<?> r1, final WeakReference<?> r2) {
+        if (r1 == r2) {
+            return true;
+        }
+        if (r1 == null || r2 == null) {
+            return false;
+        }
+        final Object t1 = r1.get();
+        final Object t2 = r2.get();
+        if (t1 == null || t2 == null) {
+            return false;
+        }
+        return t1 == t2;
+    }
+
+    private static class BlinkToAppendOnly extends AttributeAgnosticMemoizedOperationKey {
+        private final long sizeLimit;
+        private final Object key;
+
+        private BlinkToAppendOnly(final long sizeLimit, @NotNull final Object key) {
+            this.sizeLimit = sizeLimit;
+            this.key = Objects.requireNonNull(key);
+        }
+
+        @Override
+        public boolean equals(final Object other) {
+            if (this == other) {
+                return true;
+            }
+            if (other == null || getClass() != other.getClass()) {
+                return false;
+            }
+
+            final BlinkToAppendOnly blinkToAppendOnly = (BlinkToAppendOnly) other;
+
+            return sizeLimit == blinkToAppendOnly.sizeLimit && key.equals(blinkToAppendOnly.key);
+        }
+
+        @Override
+        public int hashCode() {
+            return 31 * key.hashCode() + Long.hashCode(sizeLimit);
+        }
+
+        @Override
+        BaseTable.CopyAttributeOperation copyType() {
+            return BaseTable.CopyAttributeOperation.None;
+        }
     }
 }

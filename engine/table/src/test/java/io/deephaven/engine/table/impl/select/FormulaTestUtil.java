@@ -1,13 +1,16 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.select;
 
 import io.deephaven.base.verify.Assert;
+import io.deephaven.engine.context.ExecutionContext;
 import io.deephaven.engine.table.Table;
 import io.deephaven.vector.ByteVectorDirect;
 import io.deephaven.vector.ObjectVector;
 import io.deephaven.vector.ObjectVectorDirect;
 import io.deephaven.vector.IntVectorDirect;
-import io.deephaven.engine.table.lang.QueryLibrary;
-import io.deephaven.engine.table.lang.QueryScope;
+import io.deephaven.engine.context.QueryScope;
 import io.deephaven.util.type.ArrayTypeUtils;
 import io.deephaven.util.QueryConstants;
 import io.deephaven.engine.util.TableTools;
@@ -97,12 +100,12 @@ public class FormulaTestUtil {
     }
 
     static void setUpQueryLibrary() {
-        QueryLibrary.importPackage(Package.getPackage("java.util.concurrent"));
+        ExecutionContext.getContext().getQueryLibrary().importPackage(Package.getPackage("java.util.concurrent"));
 
-        QueryLibrary.importClass(Calendar.class);
-        QueryLibrary.importClass(ArrayTypeUtils.class);
+        ExecutionContext.getContext().getQueryLibrary().importClass(Calendar.class);
+        ExecutionContext.getContext().getQueryLibrary().importClass(ArrayTypeUtils.class);
 
-        QueryLibrary.importStatic(FormulaTestUtil.class);
+        ExecutionContext.getContext().getQueryLibrary().importStatic(FormulaTestUtil.class);
     }
 
     static void setUpQueryScope() {
@@ -139,7 +142,6 @@ public class FormulaTestUtil {
         QueryScope.addParam("myIntVector", new IntVectorDirect(BASE_VALUES));
         QueryScope.addParam("myByteVector", new ByteVectorDirect(ArrayTypeUtils
                 .getUnboxedArray(IntStream.of(BASE_VALUES).boxed().map(Integer::byteValue).toArray(Byte[]::new))));
-        // QueryScope.addParam("myBooleanVector", BooleanVector.class);
 
         QueryScope.addParam("ExampleQuantity", 1);
         QueryScope.addParam("ExampleQuantity2", 2d);

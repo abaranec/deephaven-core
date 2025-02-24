@@ -1,6 +1,9 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl;
 
-import io.deephaven.function.*;
+import io.deephaven.function.Numeric;
 import io.deephaven.vector.*;
 import io.deephaven.util.compare.CharComparisons;
 import io.deephaven.util.compare.DoubleComparisons;
@@ -11,11 +14,13 @@ import io.deephaven.util.QueryConstants;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 
+import static io.deephaven.util.QueryConstants.NULL_DOUBLE;
+
 public class QueryTableAggregationTestFormulaStaticMethods {
     public static ByteVector abs(ByteVector values) {
         final byte[] result = new byte[values.intSize()];
         for (int ii = 0; ii < values.size(); ++ii) {
-            result[ii] = ByteNumericPrimitives.abs(values.get(ii));
+            result[ii] = Numeric.abs(values.get(ii));
         }
         return new ByteVectorDirect(result);
     }
@@ -23,7 +28,7 @@ public class QueryTableAggregationTestFormulaStaticMethods {
     public static ShortVector abs(ShortVector values) {
         final short[] result = new short[values.intSize()];
         for (int ii = 0; ii < values.size(); ++ii) {
-            result[ii] = ShortNumericPrimitives.abs(values.get(ii));
+            result[ii] = Numeric.abs(values.get(ii));
         }
         return new ShortVectorDirect(result);
     }
@@ -31,7 +36,7 @@ public class QueryTableAggregationTestFormulaStaticMethods {
     public static IntVector abs(IntVector values) {
         final int[] result = new int[values.intSize()];
         for (int ii = 0; ii < values.size(); ++ii) {
-            result[ii] = IntegerNumericPrimitives.abs(values.get(ii));
+            result[ii] = Numeric.abs(values.get(ii));
         }
         return new IntVectorDirect(result);
     }
@@ -39,7 +44,7 @@ public class QueryTableAggregationTestFormulaStaticMethods {
     public static LongVector abs(LongVector values) {
         final long[] result = new long[values.intSize()];
         for (int ii = 0; ii < values.size(); ++ii) {
-            result[ii] = LongNumericPrimitives.abs(values.get(ii));
+            result[ii] = Numeric.abs(values.get(ii));
         }
         return new LongVectorDirect(result);
     }
@@ -47,7 +52,7 @@ public class QueryTableAggregationTestFormulaStaticMethods {
     public static FloatVector abs(FloatVector values) {
         final float[] result = new float[values.intSize()];
         for (int ii = 0; ii < values.size(); ++ii) {
-            result[ii] = FloatNumericPrimitives.abs(values.get(ii));
+            result[ii] = Numeric.abs(values.get(ii));
         }
         return new FloatVectorDirect(result);
     }
@@ -55,7 +60,7 @@ public class QueryTableAggregationTestFormulaStaticMethods {
     public static DoubleVector abs(DoubleVector values) {
         final double[] result = new double[values.intSize()];
         for (int ii = 0; ii < values.size(); ++ii) {
-            result[ii] = DoubleNumericPrimitives.abs(values.get(ii));
+            result[ii] = Numeric.abs(values.get(ii));
         }
         return new DoubleVectorDirect(result);
     }
@@ -354,6 +359,7 @@ public class QueryTableAggregationTestFormulaStaticMethods {
         double sum = 0;
         double sum2 = 0;
         int count = 0;
+        int nullCount = 0;
 
         for (int ii = 0; ii < values.size(); ++ii) {
             final char c = values.get(ii);
@@ -361,10 +367,24 @@ public class QueryTableAggregationTestFormulaStaticMethods {
                 sum += c;
                 sum2 += c * c;
                 count++;
+            } else {
+                nullCount++;
             }
+        }
+        if (nullCount == values.size()) {
+            return NULL_DOUBLE;
         }
 
         return (sum2 - sum * sum / count) / (count - 1);
+    }
+
+    public static double stdChar(CharVector values) {
+        if (values == null) {
+            return NULL_DOUBLE;
+        }
+
+        final double v = varChar(values);
+        return v == NULL_DOUBLE ? NULL_DOUBLE : Math.sqrt(v);
     }
 
     public static BigDecimal varBigInt(ObjectVector<BigInteger> values) {
@@ -564,6 +584,11 @@ public class QueryTableAggregationTestFormulaStaticMethods {
             case "Sym":
                 return "(String)" + QueryTableAggregationTestFormulaStaticMethods.class.getCanonicalName() + ".minObj("
                         + col + ")";
+            case "boolCol":
+            case "bigI":
+            case "bigD":
+            case "dt":
+                return GroovyStaticImports.class.getCanonicalName() + ".minObj(" + col + ")";
             default:
                 return GroovyStaticImports.class.getCanonicalName() + ".min(" + col + ")";
         }
@@ -579,6 +604,11 @@ public class QueryTableAggregationTestFormulaStaticMethods {
             case "Sym":
                 return "(String)" + QueryTableAggregationTestFormulaStaticMethods.class.getCanonicalName() + ".maxObj("
                         + col + ")";
+            case "boolCol":
+            case "bigI":
+            case "bigD":
+            case "dt":
+                return GroovyStaticImports.class.getCanonicalName() + ".maxObj(" + col + ")";
             default:
                 return GroovyStaticImports.class.getCanonicalName() + ".max(" + col + ")";
         }
@@ -601,11 +631,13 @@ public class QueryTableAggregationTestFormulaStaticMethods {
 
     static String stdFunction(String col) {
         switch (col) {
+            case "charCol":
+                return QueryTableAggregationTestFormulaStaticMethods.class.getCanonicalName() + ".stdChar(" + col + ")";
             case "bigI":
             case "bigD":
                 return "io.deephaven.util.BigDecimalUtils.sqrt(" + varFunction(col) + ", 10)";
             default:
-                return "Math.sqrt(" + varFunction(col) + ")";
+                return "std(" + col + ")";
         }
     }
 

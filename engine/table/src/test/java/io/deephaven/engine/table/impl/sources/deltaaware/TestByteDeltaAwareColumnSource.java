@@ -1,11 +1,13 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit TestCharacterDeltaAwareColumnSource and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit TestCharacterDeltaAwareColumnSource and run "./gradlew replicateSourceAndChunkTests" to regenerate
+//
+// @formatter:off
 package io.deephaven.engine.table.impl.sources.deltaaware;
 
-import io.deephaven.engine.updategraph.UpdateGraphProcessor;
+import io.deephaven.engine.context.ExecutionContext;
 import io.deephaven.chunk.ArrayGenerator;
 import io.deephaven.engine.table.ChunkSource;
 import io.deephaven.chunk.ByteChunk;
@@ -14,8 +16,12 @@ import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.engine.rowset.RowSetBuilderSequential;
 import io.deephaven.engine.rowset.RowSetFactory;
 
+import io.deephaven.engine.testutil.ControlledUpdateGraph;
+import io.deephaven.engine.testutil.junit4.EngineCleanup;
+import io.deephaven.util.SafeCloseable;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 
 import java.util.HashMap;
@@ -26,15 +32,21 @@ import static io.deephaven.util.QueryConstants.*;
 import static junit.framework.TestCase.*;
 
 public class TestByteDeltaAwareColumnSource {
+
+    @Rule
+    public final EngineCleanup framework = new EngineCleanup();
+
+    DeltaAwareColumnSource<Byte> source;
+
     @Before
-    public void setUp() throws Exception {
-        UpdateGraphProcessor.DEFAULT.enableUnitTestMode();
-        UpdateGraphProcessor.DEFAULT.resetForUnitTests(false);
+    public void setUp() {
+        source = new DeltaAwareColumnSource<>(byte.class);
     }
 
     @After
-    public void tearDown() throws Exception {
-        UpdateGraphProcessor.DEFAULT.resetForUnitTests(true);
+    public void tearDown() {
+        source.releaseCachedResources();
+        source = null;
     }
 
     @Test
@@ -44,8 +56,7 @@ public class TestByteDeltaAwareColumnSource {
         final long key1 = 6;
         final byte expected1 = ArrayGenerator.randomBytes(rng, 1)[0];
 
-        UpdateGraphProcessor.DEFAULT.startCycleForUnitTests();
-        final DeltaAwareColumnSource<Byte> source = new DeltaAwareColumnSource<>(byte.class);
+        ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().startCycleForUnitTests();
         source.ensureCapacity(10);
 
         source.set(key1, expected1);
@@ -53,7 +64,7 @@ public class TestByteDeltaAwareColumnSource {
         final byte actual1 = source.getByte(key1);
         assertEquals(NULL_BYTE, actual0);
         assertEquals(expected1, actual1);
-        UpdateGraphProcessor.DEFAULT.completeCycleForUnitTests();
+        ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().completeCycleForUnitTests();
     }
 
     @Test
@@ -65,15 +76,14 @@ public class TestByteDeltaAwareColumnSource {
         final byte expected0_0 = values[0];
         final byte expected0_1 = values[1];
         final byte expected1 = values[2];
-        UpdateGraphProcessor.DEFAULT.startCycleForUnitTests();
-        final DeltaAwareColumnSource<Byte> source = new DeltaAwareColumnSource<>(byte.class);
+        ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().startCycleForUnitTests();
         source.ensureCapacity(10);
         source.set(key0, expected0_0);
-        UpdateGraphProcessor.DEFAULT.completeCycleForUnitTests();
+        ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().completeCycleForUnitTests();
 
         source.startTrackingPrevValues();
 
-        UpdateGraphProcessor.DEFAULT.startCycleForUnitTests();
+        ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().startCycleForUnitTests();
         source.set(key0, expected0_1);
         source.set(key1, expected1);
 
@@ -87,20 +97,18 @@ public class TestByteDeltaAwareColumnSource {
         assertEquals(NULL_BYTE, actual1_0);
         assertEquals(expected1, actual1_1);
 
-        UpdateGraphProcessor.DEFAULT.completeCycleForUnitTests();
+        ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().completeCycleForUnitTests();
     }
 
     /**
-     * We make a structure that looks like this. Then we query the whole thing with one range and see if we get what
-     * we expect. Then we query with three subranges and again see if we get what we expect. Then in a second generation,
-     * we write some new values, which creates a baseline/delta situation. We do those same queries again (note that
-     * the subranges have been carefully chosen to span baseline and delta, so they're challenging) and again see if we
-     * get what we expect.
-     * Pictorially, the situation looks like this (best viewed with a monospace font).
-     * baseline: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
-     * query1:   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-     * query2:             ^^^^^^^^^^^^^^^^^^^^               ^^^^^^^^^^               ^^^^^^^^^^^^^^^^^^^^
-     * delta:                        DDDDDDDDDDDDDDDDDDDD                    DDDDDDDDDDDDDDDDDDDD
+     * We make a structure that looks like this. Then we query the whole thing with one range and see if we get what we
+     * expect. Then we query with three subranges and again see if we get what we expect. Then in a second generation,
+     * we write some new values, which creates a baseline/delta situation. We do those same queries again (note that the
+     * subranges have been carefully chosen to span baseline and delta, so they're challenging) and again see if we get
+     * what we expect. Pictorially, the situation looks like this (best viewed with a monospace font). baseline:
+     * BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB query1:
+     * ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ query2:
+     * ^^^^^^^^^^^^^^^^^^^^ ^^^^^^^^^^ ^^^^^^^^^^^^^^^^^^^^ delta: DDDDDDDDDDDDDDDDDDDD DDDDDDDDDDDDDDDDDDDD
      */
     @Test
     public void overlapping() {
@@ -110,11 +118,10 @@ public class TestByteDeltaAwareColumnSource {
         final byte[] valuesPhase2 = ArrayGenerator.randomBytes(rng, length);
         final HashMap<Long, Byte> expectedPrev = new HashMap<>();
         final HashMap<Long, Byte> expectedCurrent = new HashMap<>();
-        UpdateGraphProcessor.DEFAULT.startCycleForUnitTests();
-        final DeltaAwareColumnSource<Byte> source = new DeltaAwareColumnSource<>(byte.class);
+        ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().startCycleForUnitTests();
         source.ensureCapacity(length);
         for (long ii = 0; ii < length; ++ii) {
-            final byte value = valuesPhase1[(int)ii];
+            final byte value = valuesPhase1[(int) ii];
             source.set(ii, value);
             expectedPrev.put(ii, value);
             expectedCurrent.put(ii, value);
@@ -129,28 +136,28 @@ public class TestByteDeltaAwareColumnSource {
         // Check some subranges using three ranges.
         final long[] threeRanges = {10, 30, 45, 55, 70, 90};
         checkUsingChunk(source, expectedCurrent, expectedPrev, threeRanges);
-        UpdateGraphProcessor.DEFAULT.completeCycleForUnitTests();
+        ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().completeCycleForUnitTests();
 
         // Now start the second cycle so we have different current and prev values.
-        UpdateGraphProcessor.DEFAULT.startCycleForUnitTests();
+        ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().startCycleForUnitTests();
         for (long ii = 20; ii < 40; ++ii) {
-            final byte value = valuesPhase2[(int)ii];
+            final byte value = valuesPhase2[(int) ii];
             source.set(ii, value);
             expectedCurrent.put(ii, value);
         }
         for (long ii = 60; ii < 80; ++ii) {
-            final byte value = valuesPhase2[(int)ii];
+            final byte value = valuesPhase2[(int) ii];
             source.set(ii, value);
             expectedCurrent.put(ii, value);
         }
         checkUsingGet(source, expectedCurrent, expectedPrev, 0, length);
         checkUsingChunk(source, expectedCurrent, expectedPrev, singleRange);
         checkUsingChunk(source, expectedCurrent, expectedPrev, threeRanges);
-        UpdateGraphProcessor.DEFAULT.completeCycleForUnitTests();
+        ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().completeCycleForUnitTests();
     }
 
     private static void checkUsingGet(DeltaAwareColumnSource<Byte> source, Map<Long, Byte> expectedCurrent,
-                                      Map<Long, Byte> expectedPrev, int begin, int end) {
+            Map<Long, Byte> expectedPrev, int begin, int end) {
         // Check the whole thing by using individual get calls: current and prev.
         // current...
         for (long ii = begin; ii < end; ++ii) {
@@ -167,7 +174,7 @@ public class TestByteDeltaAwareColumnSource {
     }
 
     private static void checkUsingChunk(DeltaAwareColumnSource<Byte> dacs, Map<Long, Byte> expectedCurrent,
-                                        Map<Long, Byte> expectedPrev, long[] ranges) {
+            Map<Long, Byte> expectedPrev, long[] ranges) {
         final RowSet rowSet = rangesToIndex(ranges);
         assertEquals(rowSet.size() % 2, 0);
 
@@ -196,7 +203,7 @@ public class TestByteDeltaAwareColumnSource {
 
     private static void checkChunk(ByteChunk<? extends Values> values, Map<Long, Byte> expected, RowSet keys) {
         int sliceOffset = 0;
-        for (final RowSet.Iterator it = keys.iterator(); it.hasNext(); ) {
+        for (final RowSet.Iterator it = keys.iterator(); it.hasNext();) {
             final long key = it.nextLong();
             final byte expectedValue = expected.get(key);
             final byte actualValue = values.get(sliceOffset++);

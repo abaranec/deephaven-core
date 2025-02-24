@@ -1,15 +1,20 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.util.datastructures;
 
-import io.deephaven.base.Procedure;
 import io.deephaven.base.reference.SimpleReference;
 import io.deephaven.base.reference.WeakReferenceWrapper;
 import io.deephaven.base.verify.Assert;
 import io.deephaven.base.verify.Require;
+import org.apache.commons.lang3.function.TriConsumer;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.lang.reflect.Array;
 import java.util.Arrays;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 /**
  * <p>
@@ -50,12 +55,12 @@ public class SubscriptionSet<LISTENER_TYPE> {
          * Activate this subscription entry. Must hold the lock on the enclosing subscription set.
          */
         public void activate() {
-            Assert.holdsLock(SubscriptionSet.this, "SubscriptionSet.this");
+            Assert.assertion(Thread.holdsLock(SubscriptionSet.this), "Thread.holdsLock(SubscriptionSet.this)");
             active = true;
         }
     }
 
-    private Entry subscriptions[];
+    private Entry[] subscriptions;
     private int size;
 
     public SubscriptionSet() {
@@ -98,8 +103,8 @@ public class SubscriptionSet<LISTENER_TYPE> {
     }
 
     /**
-     * Make an entry for a listener, in order to pass it to {@link #add(Object, Entry)}. May be called without holding
-     * any locks.
+     * Make an entry for a listener, in order to pass it to {@link #add(Object, SubscriptionSet.Entry)}. May be called
+     * without holding any locks.
      *
      * @param listener The listener
      * @return A new entry for the listener
@@ -116,7 +121,7 @@ public class SubscriptionSet<LISTENER_TYPE> {
      * @param entry An entry for the listener to be added
      * @return Whether this operation caused the set to become <b>non-empty</b>
      */
-    public final boolean add(final @NotNull LISTENER_TYPE listener, final @NotNull Entry entry) {
+    public final boolean add(@NotNull final LISTENER_TYPE listener, @NotNull final Entry entry) {
         Require.eq(listener, "listener", entry.getListener(), "entry.getListener()");
 
         final int initialSize = size;
@@ -169,7 +174,7 @@ public class SubscriptionSet<LISTENER_TYPE> {
      * @param activeOnly Whether to restrict this notification to active subscriptions only
      * @return Whether this operation caused the set to become <b>empty</b>
      */
-    public final boolean deliverNotification(@NotNull final Procedure.Unary<LISTENER_TYPE> procedure,
+    public final boolean deliverNotification(@NotNull final Consumer<LISTENER_TYPE> procedure,
             final boolean activeOnly) {
         final int initialSize = size;
         for (int si = 0; si < size;) {
@@ -180,7 +185,7 @@ public class SubscriptionSet<LISTENER_TYPE> {
                 continue; // si is not incremented in this case - we'll reconsider the same slot if necessary.
             }
             if (!activeOnly || currentEntry.isActive()) {
-                procedure.call(currentListener);
+                procedure.accept(currentListener);
             }
             ++si;
         }
@@ -196,7 +201,7 @@ public class SubscriptionSet<LISTENER_TYPE> {
      * @return Whether this operation caused the set to become <b>empty</b>
      */
     public final <NOTIFICATION_TYPE> boolean deliverNotification(
-            @NotNull final Procedure.Binary<LISTENER_TYPE, NOTIFICATION_TYPE> procedure,
+            @NotNull final BiConsumer<LISTENER_TYPE, NOTIFICATION_TYPE> procedure,
             @Nullable final NOTIFICATION_TYPE notification,
             final boolean activeOnly) {
         final int initialSize = size;
@@ -208,7 +213,37 @@ public class SubscriptionSet<LISTENER_TYPE> {
                 continue; // si is not incremented in this case - we'll reconsider the same slot if necessary.
             }
             if (!activeOnly || currentEntry.isActive()) {
-                procedure.call(currentListener, notification);
+                procedure.accept(currentListener, notification);
+            }
+            ++si;
+        }
+        return initialSize > 0 && size == 0;
+    }
+
+    /**
+     * Dispatch a notification to all subscribers. Clean up any GC'd subscriptions.
+     *
+     * @param procedure The notification procedure to invoke
+     * @param firstNotification The first item to deliver
+     * @param secondNotification The second item to deliver (must be of the same type as {@code firstNotification})
+     * @param activeOnly Whether to restrict this notification to active subscriptions only
+     * @return Whether this operation caused the set to become <b>empty</b>
+     */
+    public final <NOTIFICATION_TYPE> boolean deliverNotification(
+            @NotNull final TriConsumer<LISTENER_TYPE, NOTIFICATION_TYPE, NOTIFICATION_TYPE> procedure,
+            @Nullable final NOTIFICATION_TYPE firstNotification,
+            @Nullable final NOTIFICATION_TYPE secondNotification,
+            final boolean activeOnly) {
+        final int initialSize = size;
+        for (int si = 0; si < size;) {
+            final Entry currentEntry = subscriptions[si];
+            final LISTENER_TYPE currentListener = currentEntry.getListener();
+            if (currentListener == null) {
+                removeAt(si);
+                continue; // si is not incremented in this case - we'll reconsider the same slot if necessary.
+            }
+            if (!activeOnly || currentEntry.isActive()) {
+                procedure.accept(currentListener, firstNotification, secondNotification);
             }
             ++si;
         }

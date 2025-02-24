@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.qst.array;
 
 import io.deephaven.qst.type.PrimitiveType;
@@ -47,25 +50,36 @@ public interface PrimitiveArray<T> extends Array<T> {
         return builder(type, data.size()).add(data).build();
     }
 
+    /**
+     * @return the boxed value at {@code index}
+     */
+    T value(int index);
+
+    /**
+     * @return whether the value at {@code index} is {@code null}
+     */
+    boolean isNull(int index);
+
     PrimitiveType<T> componentType();
 
-    <V extends Visitor> V walk(V visitor);
+    <R> R walk(Visitor<R> visitor);
 
-    interface Visitor {
-        void visit(ByteArray byteArray);
 
-        void visit(BooleanArray booleanArray);
+    interface Visitor<R> {
+        R visit(ByteArray byteArray);
 
-        void visit(CharArray charArray);
+        R visit(BooleanArray booleanArray);
 
-        void visit(ShortArray shortArray);
+        R visit(CharArray charArray);
 
-        void visit(IntArray intArray);
+        R visit(ShortArray shortArray);
 
-        void visit(LongArray longArray);
+        R visit(IntArray intArray);
 
-        void visit(FloatArray floatArray);
+        R visit(LongArray longArray);
 
-        void visit(DoubleArray doubleArray);
+        R visit(FloatArray floatArray);
+
+        R visit(DoubleArray doubleArray);
     }
 }

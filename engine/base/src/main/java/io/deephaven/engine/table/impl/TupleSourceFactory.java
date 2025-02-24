@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl;
 
 import io.deephaven.engine.table.ColumnSource;
@@ -30,7 +33,7 @@ public class TupleSourceFactory {
         /**
          * See {@link TupleSourceFactory#makeTupleSource(ColumnSource[])}.
          */
-        TupleSource makeTupleSource(@NotNull ColumnSource... columnSources);
+        <TUPLE_TYPE> TupleSource<TUPLE_TYPE> makeTupleSource(@NotNull ColumnSource... columnSources);
     }
 
     /**
@@ -39,7 +42,7 @@ public class TupleSourceFactory {
      * @param columnSources The column sources
      * @return The tuple factory
      */
-    public static TupleSource makeTupleSource(@NotNull final ColumnSource... columnSources) {
+    public static <TUPLE_TYPE> TupleSource<TUPLE_TYPE> makeTupleSource(@NotNull final ColumnSource... columnSources) {
         return tupleSourceCreator().makeTupleSource(columnSources);
     }
 }

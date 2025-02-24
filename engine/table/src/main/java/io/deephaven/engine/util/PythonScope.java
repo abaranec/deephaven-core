@@ -1,14 +1,12 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.util;
 
 import org.jpy.PyDictWrapper;
+import org.jpy.PyObject;
 
-import java.util.AbstractMap.SimpleImmutableEntry;
-import java.util.Collection;
-import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Optional;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * A collection of methods around retrieving objects from the given Python scope.
@@ -27,26 +25,6 @@ public interface PythonScope<PyObj> {
      * @return the value, or empty
      */
     Optional<PyObj> getValueRaw(String name);
-
-    /**
-     * Retrieves all keys from the give scope.
-     * <p>
-     * No conversion is done.
-     * <p>
-     * Technically, the keys can be tuples...
-     *
-     * @return the keys
-     */
-    Stream<PyObj> getKeysRaw();
-
-    /**
-     * Retrieves all keys and values from the given scope.
-     * <p>
-     * No conversion is done.
-     *
-     * @return the keys and values
-     */
-    Stream<Entry<PyObj, PyObj>> getEntriesRaw();
 
     /**
      * The helper method to turn a raw key into a string key.
@@ -82,7 +60,7 @@ public interface PythonScope<PyObj> {
     }
 
     /**
-     * Equivalent to {@link #getValueRaw(String)}.map({@link #convertValue(PyObj)})
+     * Equivalent to {@link #getValueRaw(String)}.map({@link #convertValue(Object)})
      *
      * @param name the name of the python variable
      * @return the converted object value, or empty
@@ -106,7 +84,7 @@ public interface PythonScope<PyObj> {
     }
 
     /**
-     * Equivalent to {@link #getValue(String)}.map(x -> (T)x);
+     * Equivalent to {@link #getValue(String)}.map(x -&gt; (T)x);
      *
      * @param name the name of the python variable
      * @param <T> the return type
@@ -119,52 +97,25 @@ public interface PythonScope<PyObj> {
     }
 
     /**
-     * Equivalent to {@link #getKeysRaw()}.map({@link #convertStringKey(PyObj)})
-     *
-     * @return the string keys
+     * @return the Python's __main__ module namespace
      */
-    default Stream<String> getKeys() {
-        return getKeysRaw()
-                .map(this::convertStringKey);
-    }
+    PyDictWrapper mainGlobals();
 
     /**
-     * Equivalent to {@link #getEntriesRaw()}, where the keys have been converted via {@link #convertStringKey(PyObj)}
-     * and the values via {@link #convertValue(PyObj)}
-     *
-     * @return the string keys and converted values
+     * @return the current scope or the main globals if no scope is set
      */
-    default Stream<Entry<String, Object>> getEntries() {
-        return getEntriesRaw()
-                .map(e -> new SimpleImmutableEntry<>(convertStringKey(e.getKey()), convertValue(e.getValue())));
-    }
+    PyDictWrapper currentScope();
 
     /**
-     * Equivalent to {@link #getKeys()}.collect(someCollector)
+     * Push the provided Python scope into the thread scope stack for subsequent operations on Tables
      *
-     * @return the string keys, as a collection
+     * @param pydict a Python dictionary representing the current scope under which the Python code in running, it is
+     *        the combination of module globals and function locals
      */
-    default Collection<String> getKeysCollection() {
-        return getKeys()
-                .collect(Collectors.toList());
-    }
+    void pushScope(PyObject pydict);
 
     /**
-     * Equivalent to {@link #getEntries()}.collect(someMapCollector)
-     *
-     * @return the string keys and converted values, as a map
+     * Pop the last Python scope pushed by {@link #pushScope(PyObject pydict)} from the thread scope stack
      */
-    default Map<String, Object> getEntriesMap() {
-        return getEntries()
-                .collect(Collectors.toMap(Entry::getKey, Entry::getValue));
-
-        // we're currently making sure that we don't convert None to null...
-        /*
-         * // workaround since the collector doesn't work w/ null values //
-         * https://bugs.openjdk.java.net/browse/JDK-8148463 return getEntries() .collect( HashMap::new, (map, entry) ->
-         * map.put(entry.getKey(), entry.getValue()), HashMap::putAll);
-         */
-    }
-
-    public PyDictWrapper globals();
+    void popScope();
 }

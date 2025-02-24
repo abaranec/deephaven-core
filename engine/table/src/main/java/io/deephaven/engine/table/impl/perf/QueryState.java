@@ -1,10 +1,9 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.perf;
 
 public enum QueryState {
 
-    RUNNING, FINISHED, INTERRUPTED
+    NOT_STARTED, RUNNING, FINISHED, SUSPENDED, INTERRUPTED
 }

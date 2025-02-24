@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.base;
 
 import java.util.AbstractSet;
@@ -17,7 +16,7 @@ import java.util.Set;
  * expanding). This set only has one {@link Iterator}, which is reused. This set is not thread safe.
  * <P>
  * Note: This class extends {@link HashSet} rather than {@link Set} (or {@link AbstractSet}) only because one of the
- * fields where we want to use it ({@link sun.nio.ch.SelectorImpl#keys}) is (improperly) declared as a HashSet rather
+ * fields where we want to use it ({@code sun.nio.ch.SelectorImpl#keys}) is (improperly) declared as a HashSet rather
  * than a Set.
  */
 public class LowGarbageArraySet<T> extends HashSet<T> {

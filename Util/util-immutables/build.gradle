@@ -1,7 +1,0 @@
-plugins {
-    id 'java-library'
-}
-
-dependencies {
-    compileOnlyApi 'org.immutables:value-annotations:2.8.1'
-}

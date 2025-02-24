@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.clientsupport.plotdownsampling;
 
 import io.deephaven.chunk.attributes.Values;
@@ -8,7 +11,7 @@ import io.deephaven.engine.table.TableUpdate;
 import io.deephaven.engine.table.impl.TableUpdateImpl;
 import io.deephaven.engine.rowset.chunkattributes.OrderedRowKeys;
 import io.deephaven.internal.log.LoggerFactory;
-import io.deephaven.time.DateTime;
+import io.deephaven.function.Numeric;
 import io.deephaven.hash.KeyedLongObjectHash;
 import io.deephaven.hash.KeyedLongObjectHashMap;
 import io.deephaven.hash.KeyedLongObjectKey;
@@ -22,11 +25,11 @@ import io.deephaven.engine.table.ColumnSource;
 import io.deephaven.engine.table.impl.sources.ReinterpretUtils;
 import io.deephaven.chunk.Chunk;
 import io.deephaven.chunk.LongChunk;
-import io.deephaven.function.LongNumericPrimitives;
 import org.apache.commons.lang3.mutable.Mutable;
 import org.apache.commons.lang3.mutable.MutableObject;
 import org.jetbrains.annotations.Nullable;
 
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
@@ -106,12 +109,12 @@ public class RunChartDownsample implements Function<Table, Table> {
         // TODO restore this to support non-QueryTable types
         // if (wholeTable instanceof BaseTable) {
         // BaseTable baseTable = (BaseTable) wholeTable;
-        // final SwapListener swapListener =
-        // baseTable.createSwapListenerIfRefreshing(SwapListener::new);
+        // final OperationSnapshotControl snapshotControl =
+        // baseTable.createSnapshotControlIfRefreshing(OperationSnapshotControl::new);
         //
         // final Mutable<QueryTable> result = new MutableObject<>();
         //
-        // baseTable.initializeWithSnapshot("downsample", swapListener, (prevRequested, beforeClock) -> {
+        // baseTable.initializeWithSnapshot("downsample", snapshotControl, (prevRequested, beforeClock) -> {
         // final boolean usePrev = prevRequested && baseTable.isRefreshing();
         // final WritableRowSet rowSetToUse = usePrev ? baseTable.build().copyPrev() : baseTable.build();
         //
@@ -132,22 +135,21 @@ public class RunChartDownsample implements Function<Table, Table> {
         throw new IllegalArgumentException("Can't downsample table of type " + wholeTable.getClass());
     }
 
-    private Table makeDownsampledQueryTable(final QueryTable wholeQueryTable, final DownsampleKey memoKey) {
-        final SwapListener swapListener =
-                wholeQueryTable.createSwapListenerIfRefreshing(SwapListener::new);
+    private static Table makeDownsampledQueryTable(final QueryTable wholeQueryTable, final DownsampleKey memoKey) {
+        final OperationSnapshotControl snapshotControl =
+                wholeQueryTable.createSnapshotControlIfRefreshing(OperationSnapshotControl::new);
 
         final Mutable<Table> result = new MutableObject<>();
 
-        wholeQueryTable.initializeWithSnapshot("downsample", swapListener, (prevRequested, beforeClock) -> {
+        BaseTable.initializeWithSnapshot("downsample", snapshotControl, (prevRequested, beforeClock) -> {
             final boolean usePrev = prevRequested && wholeQueryTable.isRefreshing();
 
             final DownsamplerListener downsampleListener = DownsamplerListener.of(wholeQueryTable, memoKey);
             downsampleListener.init(usePrev);
             result.setValue(downsampleListener.resultTable);
 
-            if (swapListener != null) {
-                swapListener.setListenerAndResult(downsampleListener, downsampleListener.resultTable);
-                downsampleListener.resultTable.addParentReference(swapListener);
+            if (snapshotControl != null) {
+                snapshotControl.setListenerAndResult(downsampleListener, downsampleListener.resultTable);
                 downsampleListener.resultTable.addParentReference(downsampleListener);
             }
 
@@ -273,7 +275,9 @@ public class RunChartDownsample implements Function<Table, Table> {
                     }
                 };
 
-        private DownsamplerListener(final QueryTable sourceTable, final QueryTable resultTable,
+        private DownsamplerListener(
+                final QueryTable sourceTable,
+                final QueryTable resultTable,
                 final DownsampleKey key) {
             super("downsample listener", sourceTable, resultTable);
             this.sourceTable = sourceTable;
@@ -282,14 +286,14 @@ public class RunChartDownsample implements Function<Table, Table> {
             this.key = key;
 
             final ColumnSource xSource = sourceTable.getColumnSource(key.xColumnName);
-            if (xSource.getType() == DateTime.class) {
-                this.xColumnSource = ReinterpretUtils.dateTimeToLongSource(xSource);
+            if (xSource.getType() == Instant.class) {
+                this.xColumnSource = ReinterpretUtils.instantToLongSource(xSource);
             } else if (xSource.allowsReinterpret(long.class)) {
                 // noinspection unchecked
                 this.xColumnSource = xSource.reinterpret(long.class);
             } else {
                 throw new IllegalArgumentException(
-                        "Cannot use non-DateTime, non-long x column " + key.xColumnName + " in downsample");
+                        "Cannot use non-Instant, non-long x column " + key.xColumnName + " in downsample");
             }
 
             this.valueColumnSources = Arrays.stream(this.key.yColumnNames)
@@ -311,12 +315,6 @@ public class RunChartDownsample implements Function<Table, Table> {
                 rangeMode = RangeMode.AUTO;
             }
             allYColumnIndexes = IntStream.range(0, key.yColumnNames.length).toArray();
-        }
-
-        @Override
-        protected void destroy() {
-            super.destroy();
-            states.values().forEach(BucketState::close);
         }
 
         @Override
@@ -551,7 +549,7 @@ public class RunChartDownsample implements Function<Table, Table> {
                 BucketState bucket = null;
                 for (int indexInChunk = 0; indexInChunk < xValueChunk.size(); indexInChunk++) {
                     final long xValue = xValueChunk.get(indexInChunk);
-                    final long bin = LongNumericPrimitives.lowerBin(xValue, nanosPerPx);
+                    final long bin = Numeric.lowerBin(xValue, nanosPerPx);
 
                     if (lastBin != bin || bucket == null) {
                         bucket = getOrCreateBucket(bin);
@@ -581,7 +579,7 @@ public class RunChartDownsample implements Function<Table, Table> {
                 final long lastBin = 0;
                 BucketState bucket = null;
                 for (int i = 0; i < dateChunk.size(); i++) {
-                    final long bin = LongNumericPrimitives.lowerBin(dateChunk.get(i), nanosPerPx);
+                    final long bin = Numeric.lowerBin(dateChunk.get(i), nanosPerPx);
 
                     if (lastBin != bin || bucket == null) {
                         bucket = getBucket(bin);
@@ -618,8 +616,8 @@ public class RunChartDownsample implements Function<Table, Table> {
                 final long lastBin = 0;
                 BucketState bucket = null;
                 for (int indexInChunk = 0; indexInChunk < oldDateChunk.size(); indexInChunk++) {
-                    final long bin = LongNumericPrimitives.lowerBin(oldDateChunk.get(indexInChunk), nanosPerPx);
-                    final long newBin = LongNumericPrimitives.lowerBin(newDateChunk.get(indexInChunk), nanosPerPx);
+                    final long bin = Numeric.lowerBin(oldDateChunk.get(indexInChunk), nanosPerPx);
+                    final long newBin = Numeric.lowerBin(newDateChunk.get(indexInChunk), nanosPerPx);
 
                     if (lastBin != bin || bucket == null) {
                         bucket = getBucket(bin);
@@ -650,7 +648,7 @@ public class RunChartDownsample implements Function<Table, Table> {
         }
 
         private BucketState getBucket(final long bin) {
-            // long bin = LongNumericPrimitives.lowerBin(xValue, nanosPerPx);
+            // long bin = Numeric.lowerBin(xValue, nanosPerPx);
             if (rangeMode == RangeMode.ZOOM) {
                 if (bin + nanosPerPx < key.zoomRange[0]) {
                     return head;
@@ -680,7 +678,6 @@ public class RunChartDownsample implements Function<Table, Table> {
                     // if it has no keys at all, remove it so we quit checking it
                     iterator.remove();
                     releasePosition(bucket.getOffset());
-                    bucket.close();
                 } else {
                     bucket.rescanIfNeeded(context);
                 }
@@ -690,7 +687,7 @@ public class RunChartDownsample implements Function<Table, Table> {
         /**
          * Indicates that a change has probably happened and we should notify the result table. The contents of the
          * change will be our state map (i.e. there is
-         * 
+         *
          * @param upstream the change that happened upstream
          * @param lastRowSet the base rowSet to use when considering what items to tell the result table changed. if
          *        this.rowSet, then update it normally, otherwise this.rowSet must be empty and this.rowSet should be

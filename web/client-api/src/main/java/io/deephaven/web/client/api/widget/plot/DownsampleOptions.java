@@ -1,9 +1,12 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.web.client.api.widget.plot;
 
 import jsinterop.annotations.JsType;
 
 @JsType(namespace = "dh.plot")
-public final class DownsampleOptions {
+public class DownsampleOptions {
     /**
      * Max number of items in the series before DEFAULT will not attempt to load the series without downsampling. Above
      * this size if downsample fails or is not applicable, the series won't be loaded unless DISABLE is passed to

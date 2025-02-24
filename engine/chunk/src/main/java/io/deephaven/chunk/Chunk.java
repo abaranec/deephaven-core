@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.chunk;
 
 import io.deephaven.chunk.attributes.Any;
@@ -48,8 +51,8 @@ public interface Chunk<ATTR extends Any> {
      * Make a new Chunk that represents either exactly the same view on the underlying data as this Chunk, or a subrange
      * of that view. The view is defined as [0..size) (in the coordinate space of this Chunk).
      * 
-     * @param offset Offset of the new Chunk, relative to this Chunk. 0 ≤ offset ≤ this.size
-     * @param capacity Capacity and initial size of the new Chunk. 0 ≤ capacity ≤ this.size - {@code offset}.
+     * @param offset Offset of the new Chunk, relative to this Chunk. 0 &le; offset &le; this.size
+     * @param capacity Capacity and initial size of the new Chunk. 0 &le; capacity &le; this.size - {@code offset}.
      * @return The new Chunk. A new Chunk will always be returned, even if the Chunks represent the same view.
      */
     Chunk<ATTR> slice(int offset, int capacity);
@@ -114,8 +117,7 @@ public interface Chunk<ATTR extends Any> {
     default void checkChunkType(ChunkType expected) {
         final ChunkType actual = getChunkType();
         if (actual != expected) {
-            throw new IllegalArgumentException(
-                    String.format("Expected chunk type '%s', but is '%s'.", expected, actual));
+            throw new IllegalArgumentException("Expected chunk type '" + expected + "', but is '" + actual + "'.");
         }
     }
 
@@ -127,7 +129,7 @@ public interface Chunk<ATTR extends Any> {
     /**
      * @return true iff this and chunk are aliases, that is they refer to the same underlying data
      */
-    boolean isAlias(Chunk chunk);
+    boolean isAlias(Chunk<?> chunk);
 
     <V extends Visitor<ATTR>> V walk(V visitor);
 
@@ -141,7 +143,6 @@ public interface Chunk<ATTR extends Any> {
 
     default CharChunk<ATTR> asCharChunk() {
         return (CharChunk<ATTR>) this;
-
     }
 
     default ShortChunk<ATTR> asShortChunk() {
@@ -170,7 +171,7 @@ public interface Chunk<ATTR extends Any> {
 
     /**
      * Downcast the attribute.
-     *
+     * <p>
      * When you know the data in this chunk which you plan to read is a more specific sub-type, you can downcast the
      * attribute with this helper method. This might be necessary, for instance, when you have a RowKeys chunk which you
      * sort, and now want to treat it as an OrderedRowKeys.
@@ -178,7 +179,6 @@ public interface Chunk<ATTR extends Any> {
      * @apiNote Upcast should not be necessary on read-only chunks, as a read-only chunk method should accept an upper
      *          bound wildcard.
      */
-
     static <ATTR extends Any, ATTR_DERIV extends ATTR> Chunk<ATTR_DERIV> downcast(Chunk<? extends ATTR> self) {
         // noinspection unchecked
         return (Chunk<ATTR_DERIV>) self;

@@ -1,6 +1,10 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.qst.array;
 
 import io.deephaven.qst.type.BooleanType;
+import io.deephaven.util.BooleanUtils;
 
 import java.util.Arrays;
 import java.util.Collection;
@@ -59,19 +63,28 @@ public final class BooleanArray extends PrimitiveArrayBase<Boolean> {
     }
 
     @Override
+    public final Boolean value(int index) {
+        return BooleanUtils.byteAsBoolean(values[index]);
+    }
+
+    @Override
+    public boolean isNull(int index) {
+        return BooleanUtils.isNull(values[index]);
+    }
+
+    @Override
     public final int size() {
         return values().length;
     }
 
     @Override
     public final BooleanType componentType() {
-        return BooleanType.instance();
+        return BooleanType.of();
     }
 
     @Override
-    public final <V extends PrimitiveArray.Visitor> V walk(V visitor) {
-        visitor.visit(this);
-        return visitor;
+    public final <R> R walk(PrimitiveArray.Visitor<R> visitor) {
+        return visitor.visit(this);
     }
 
     @Override

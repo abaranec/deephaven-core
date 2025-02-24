@@ -1,8 +1,10 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit UngroupedBoxedCharArrayColumnSource and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit UngroupedBoxedCharArrayColumnSource and run "./gradlew replicateSourcesAndChunks" to regenerate
+//
+// @formatter:off
 package io.deephaven.engine.table.impl.sources;
 
 import io.deephaven.engine.table.ColumnSource;
@@ -18,7 +20,8 @@ import static io.deephaven.util.QueryConstants.NULL_DOUBLE;
  *
  * (C-har is deliberately spelled that way in order to prevent Replicate from altering this very comment).
  */
-public class UngroupedBoxedDoubleArrayColumnSource extends UngroupedColumnSource<Double> implements MutableColumnSourceGetDefaults.ForObject<Double> {
+public class UngroupedBoxedDoubleArrayColumnSource extends UngroupedColumnSource<Double>
+        implements MutableColumnSourceGetDefaults.ForObject<Double> {
     private ColumnSource<Double[]> innerSource;
 
     @Override
@@ -33,19 +36,19 @@ public class UngroupedBoxedDoubleArrayColumnSource extends UngroupedColumnSource
     }
 
     @Override
-    public Double get(long index) {
-        final double result = getDouble(index);
-        return (result == NULL_DOUBLE?null:result);
+    public Double get(long rowKey) {
+        final double result = getDouble(rowKey);
+        return (result == NULL_DOUBLE ? null : result);
     }
 
 
     @Override
-    public double getDouble(long index) {
-        if (index < 0) {
+    public double getDouble(long rowKey) {
+        if (rowKey < 0) {
             return NULL_DOUBLE;
         }
-        long segment = index>>base;
-        int offset = (int) (index & ((1<<base) - 1));
+        long segment = rowKey >> base;
+        int offset = (int) (rowKey & ((1 << base) - 1));
         Double[] array = innerSource.get(segment);
         if (array == null || offset >= array.length || array[offset] == null) {
             return NULL_DOUBLE;
@@ -55,18 +58,18 @@ public class UngroupedBoxedDoubleArrayColumnSource extends UngroupedColumnSource
 
 
     @Override
-    public Double getPrev(long index) {
-        final double result = getPrevDouble(index);
-        return (result == NULL_DOUBLE?null:result);
+    public Double getPrev(long rowKey) {
+        final double result = getPrevDouble(rowKey);
+        return (result == NULL_DOUBLE ? null : result);
     }
 
     @Override
-    public double getPrevDouble(long index) {
-        if (index < 0) {
+    public double getPrevDouble(long rowKey) {
+        if (rowKey < 0) {
             return NULL_DOUBLE;
         }
-        long segment = index>> getPrevBase();
-        int offset = (int) (index & ((1<< getPrevBase()) - 1));
+        long segment = rowKey >> getPrevBase();
+        int offset = (int) (rowKey & ((1 << getPrevBase()) - 1));
         Double[] array = innerSource.getPrev(segment);
         if (array == null || offset >= array.length || array[offset] == null) {
             return NULL_DOUBLE;

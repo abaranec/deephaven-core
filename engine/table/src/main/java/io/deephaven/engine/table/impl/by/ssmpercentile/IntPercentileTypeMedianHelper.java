@@ -1,11 +1,13 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit CharPercentileTypeMedianHelper and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit CharPercentileTypeMedianHelper and run "./gradlew replicateSegmentedSortedMultiset" to regenerate
+//
+// @formatter:off
 package io.deephaven.engine.table.impl.by.ssmpercentile;
 
-import io.deephaven.engine.table.impl.sources.ArrayBackedColumnSource;
+import io.deephaven.engine.table.WritableColumnSource;
 import io.deephaven.engine.table.impl.sources.DoubleArraySource;
 import io.deephaven.engine.table.impl.ssms.IntSegmentedSortedMultiset;
 import io.deephaven.engine.table.impl.ssms.SegmentedSortedMultiSet;
@@ -16,11 +18,11 @@ public class IntPercentileTypeMedianHelper extends IntPercentileTypeHelper {
     private final double percentile;
     private final DoubleArraySource resultColumn;
 
-    IntPercentileTypeMedianHelper(double percentile, ArrayBackedColumnSource resultColumn) {
+    IntPercentileTypeMedianHelper(double percentile, WritableColumnSource resultColumn) {
         super(percentile, null);
         this.percentile = percentile;
         // region resultColumn
-        this.resultColumn = (DoubleArraySource)resultColumn;
+        this.resultColumn = (DoubleArraySource) resultColumn;
         // endregion
     }
 
@@ -34,7 +36,7 @@ public class IntPercentileTypeMedianHelper extends IntPercentileTypeHelper {
         if (totalSize == 0) {
             newResult = NULL_DOUBLE;
         } else {
-            final long targetLo = (int)((totalSize - 1) * percentile) + 1;
+            final long targetLo = (int) ((totalSize - 1) * percentile) + 1;
             if (loSize < targetLo) {
                 ssmHi.moveFrontToBack(ssmLo, targetLo - loSize);
             } else if (loSize > targetLo) {
@@ -42,11 +44,12 @@ public class IntPercentileTypeMedianHelper extends IntPercentileTypeHelper {
             }
 
             if (ssmLo.totalSize() == ssmHi.totalSize()) {
-                // region averageMedian
-                return setResult(destination, (((IntSegmentedSortedMultiset)ssmLo).getMaxInt() + ((IntSegmentedSortedMultiset)ssmHi).getMinInt()) / 2.0);
-                // endregion averageMedian
+                // region averageEvenlyDivided
+                return setResult(destination, (((IntSegmentedSortedMultiset) ssmLo).getMaxInt()
+                        + ((IntSegmentedSortedMultiset) ssmHi).getMinInt()) / 2.0);
+                // endregion averageEvenlyDivided
             } else {
-                return setResult(destination, ((IntSegmentedSortedMultiset)ssmLo).getMaxInt());
+                return setResult(destination, ((IntSegmentedSortedMultiset) ssmLo).getMaxInt());
             }
         }
         return setResult(destination, newResult);

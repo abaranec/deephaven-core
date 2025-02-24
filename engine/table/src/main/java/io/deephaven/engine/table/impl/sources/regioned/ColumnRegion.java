@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources.regioned;
 
 import io.deephaven.engine.table.Releasable;
@@ -14,6 +17,11 @@ public interface ColumnRegion<ATTR extends Any> extends Page<ATTR>, Releasable {
     default long firstRowOffset() {
         return 0;
     }
+
+    /**
+     * Invalidate the region -- any further reads that cannot be completed consistently and correctly will fail.
+     */
+    void invalidate();
 
     abstract class Null<ATTR extends Any>
             extends GenericColumnRegionBase<ATTR>

@@ -1,12 +1,10 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.api.util;
 
 import javax.lang.model.SourceVersion;
 import java.util.*;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -86,6 +84,12 @@ public class NameValidator {
 
             return name;
         }
+
+        private boolean isValid(String name) {
+            ValidationCode code =
+                    getCode(name, pattern, checkReservedVariableNames, checkValidJavaWord);
+            return code.isValid();
+        }
     }
 
     private static final Set<String> QUERY_LANG_RESERVED_VARIABLE_NAMES =
@@ -96,16 +100,32 @@ public class NameValidator {
         return Type.TABLE.validate(name);
     }
 
+    public static boolean isValidTableName(String name) {
+        return Type.TABLE.isValid(name);
+    }
+
     public static String validateNamespaceName(String name) {
         return Type.NAMESPACE.validate(name);
+    }
+
+    public static boolean isValidNamespaceName(String name) {
+        return Type.NAMESPACE.isValid(name);
     }
 
     public static String validatePartitionName(String name) {
         return Type.PARTITION.validate(name);
     }
 
+    public static boolean isValidPartitionName(String name) {
+        return Type.PARTITION.isValid(name);
+    }
+
     public static String validateQueryParameterName(String name) {
         return Type.QUERY_PARAM.validate(name);
+    }
+
+    public static boolean isValidQueryParameterName(String name) {
+        return Type.QUERY_PARAM.isValid(name);
     }
 
     public static String validateColumnName(String name) {
@@ -113,12 +133,7 @@ public class NameValidator {
     }
 
     public static boolean isValidColumnName(String name) {
-        try {
-            validateColumnName(name);
-            return true;
-        } catch (InvalidNameException e) {
-            return false;
-        }
+        return Type.COLUMN.isValid(name);
     }
 
     private static ValidationCode getCode(String name, Pattern pattern,
@@ -209,7 +224,7 @@ public class NameValidator {
             Set<String> takenNames) {
         return legalizeName(name, customReplace, takenNames, "Can not legalize column name " + name,
                 COLUMN_PREFIX, STERILE_COLUMN_AND_QUERY_REGEX, true, true,
-                NameValidator::validateColumnName);
+                NameValidator::isValidColumnName);
     }
 
     public static String[] legalizeColumnNames(String[] names) {
@@ -264,7 +279,7 @@ public class NameValidator {
             Function<String, String> customReplace, Set<String> takenNames) {
         return legalizeName(name, customReplace, takenNames, "Can not legalize table name " + name,
                 QUERY_PREFIX, STERILE_COLUMN_AND_QUERY_REGEX, true, true,
-                NameValidator::validateQueryParameterName);
+                NameValidator::isValidQueryParameterName);
     }
 
     public static String[] legalizeQueryParameterNames(String[] names) {
@@ -318,7 +333,7 @@ public class NameValidator {
             Set<String> takenNames) {
         return legalizeName(name, customReplace, takenNames, "Can not legalize table name " + name,
                 TABLE_PREFIX, STERILE_TABLE_AND_NAMESPACE_REGEX, false, true,
-                NameValidator::validateTableName);
+                NameValidator::isValidTableName);
     }
 
     public static boolean isLegalTableName(String name) {
@@ -340,12 +355,11 @@ public class NameValidator {
      * @param customReplace a function that is applied to the name before processing legality
      * @param takenNames the list of names that are already taken
      * @return whether the name is valid for a new table
-     * 
      */
     public static boolean isLegalTableName(String name, Function<String, String> customReplace,
             Set<String> takenNames) {
         return isLegal(name, customReplace, takenNames, STERILE_TABLE_AND_NAMESPACE_REGEX, false,
-                true, NameValidator::validateTableName);
+                true, NameValidator::isValidTableName);
     }
 
     public static String[] legalizeTableNames(String[] names) {
@@ -400,7 +414,7 @@ public class NameValidator {
             Set<String> takenNames) {
         return legalizeName(name, customReplace, takenNames,
                 "Can not legalize namespace name " + name, null, STERILE_TABLE_AND_NAMESPACE_REGEX,
-                false, false, NameValidator::validateNamespaceName);
+                false, false, NameValidator::isValidNamespaceName);
     }
 
     /**
@@ -414,7 +428,7 @@ public class NameValidator {
     public static boolean isLegalNamespaceName(String name, Function<String, String> customReplace,
             Set<String> takenNames) {
         return isLegal(name, customReplace, takenNames, STERILE_TABLE_AND_NAMESPACE_REGEX, false,
-                false, NameValidator::validateNamespaceName);
+                false, NameValidator::isValidNamespaceName);
     }
 
     public static boolean isLegalNamespaceName(String name) {
@@ -451,7 +465,7 @@ public class NameValidator {
 
     private static String legalizeName(String name, Function<String, String> customReplace,
             Set<String> takenNames, String error, String prefix, String regex, boolean checkReserved,
-            boolean checkFirstIsNumber, Consumer<String> validation) {
+            boolean checkFirstIsNumber, Function<String, Boolean> validation) {
         // if null, throw an exception
         if (name == null) {
             throw new LegalizeNameException("Can not legalize a null name");
@@ -485,9 +499,7 @@ public class NameValidator {
             tempName = sanitizedName + i++;
         }
 
-        try {
-            validation.accept(sanitizedName);
-        } catch (NameValidator.InvalidNameException e) {
+        if (!validation.apply(sanitizedName)) {
             throw new LegalizeNameException(error);
         }
 
@@ -496,7 +508,7 @@ public class NameValidator {
 
     private static boolean isLegal(String name, Function<String, String> customReplace,
             Set<String> takenNames, String regex, boolean checkReserved, boolean checkFirstIsNumber,
-            Consumer<String> validation) {
+            Function<String, Boolean> validation) {
         // if null, throw an exception
         if (name == null || name.isEmpty()) {
             return false;
@@ -527,13 +539,7 @@ public class NameValidator {
             return false;
         }
 
-        try {
-            validation.accept(sanitizedName);
-        } catch (NameValidator.InvalidNameException e) {
-            return false;
-        }
-
-        return true;
+        return validation.apply(sanitizedName);
     }
 
     private static boolean isReserved(String replacedName) {

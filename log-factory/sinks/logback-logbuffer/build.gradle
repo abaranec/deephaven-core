@@ -1,12 +1,11 @@
 plugins {
   id 'java-library'
-}
-
-configurations {
-  compileOnly.extendsFrom fishIo
+  id 'io.deephaven.project.register'
 }
 
 dependencies {
+  compileOnly project(':Base')
+  compileOnly project(':IO')
   // consumer still needs to provide dependency
-  Classpaths.inheritLogbackClassic(project, 'compileOnly')
+  compileOnly libs.logback.classic
 }

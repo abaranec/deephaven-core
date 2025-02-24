@@ -1,5 +1,6 @@
 plugins {
     id 'com.bmuschko.docker-remote-api'
+    id 'io.deephaven.project.register'
 }
 
 evaluationDependsOn Docker.registryProject('node')
@@ -10,10 +11,10 @@ def ui = Docker.registerDockerTask(project, 'ui') {
         from file('Dockerfile')
     }
     parentContainers = [ Docker.registryTask(project, 'node') ]
-    containerOutPath = '/usr/src/app/package/build'
-    imageName = 'deephaven/dhide:local-build'
+    containerOutPath = '/usr/src/app/'
+    imageName = Docker.localImageName('dhide')
     copyOut {
-        into dhUi.get().dir('ide')
+        into dhUi.get()
     }
 }
 

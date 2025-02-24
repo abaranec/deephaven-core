@@ -1,29 +1,31 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.by;
 
+import io.deephaven.base.verify.Assert;
 import io.deephaven.chunk.attributes.ChunkLengths;
 import io.deephaven.chunk.attributes.ChunkPositions;
 import io.deephaven.chunk.attributes.Values;
 import io.deephaven.engine.rowset.chunkattributes.RowKeys;
-import io.deephaven.util.QueryConstants;
-import io.deephaven.engine.util.NullSafeAddition;
 import io.deephaven.engine.table.ColumnSource;
 import io.deephaven.engine.table.impl.sources.LongArraySource;
 import io.deephaven.chunk.*;
-import org.apache.commons.lang3.mutable.MutableInt;
+import io.deephaven.util.mutable.MutableInt;
 
 import java.util.Collections;
 import java.util.Map;
 
+import static io.deephaven.engine.util.NullSafeAddition.plusLong;
+import static io.deephaven.util.QueryConstants.NULL_LONG;
+
 /**
- * Iterative Boolean Sum.
- *
- * Any true value makes the result true.  If there are no values, the result is null.  All false values result in false.
-*/
+ * Iterative Boolean Sum. Result is the number of {@code true} values, or {@code null} if all values are {@code null}.
+ */
 public final class BooleanChunkedSumOperator implements IterativeChunkedAggregationOperator {
+
+    private static final long INVALID_COUNT = -1;
+
     private final String name;
     private final LongArraySource resultColumn = new LongArraySource();
     private final LongArraySource falseCount = new LongArraySource();
@@ -37,16 +39,39 @@ public final class BooleanChunkedSumOperator implements IterativeChunkedAggregat
      *
      * @param source the column source to update
      * @param destPos the position within the column source
-     * @return the value, before the update update
+     * @param count the number of values to add
+     * @return the value, before the update
      */
-    private static long add(LongArraySource source, long destPos, long count) {
-        final long value = source.getUnsafe(destPos);
-        if (value == QueryConstants.NULL_LONG) {
+    private static long getAndAdd(LongArraySource source, long destPos, long count) {
+        final long oldValue = source.getUnsafe(destPos);
+        if (oldValue == NULL_LONG || oldValue == 0) {
+            Assert.gtZero(count, "count");
             source.set(destPos, count);
             return 0;
         } else {
-            source.set(destPos, value + count);
-            return value;
+            source.set(destPos, oldValue + count);
+            return oldValue;
+        }
+    }
+
+    /**
+     * Add to the value at the given position, return the new value.
+     *
+     * @param source the column source to update
+     * @param destPos the position within the column source
+     * @param count the number of values to add
+     * @return the value, after the update
+     */
+    private static long addAndGet(LongArraySource source, long destPos, long count) {
+        final long oldValue = source.getUnsafe(destPos);
+        if (oldValue == NULL_LONG || oldValue == 0) {
+            Assert.gtZero(count, "count");
+            source.set(destPos, count);
+            return count;
+        } else {
+            final long newValue = oldValue + count;
+            source.set(destPos, newValue);
+            return newValue;
         }
     }
 
@@ -59,35 +84,35 @@ public final class BooleanChunkedSumOperator implements IterativeChunkedAggregat
      */
     private static boolean hasValue(LongArraySource source, long destPos) {
         final long value = source.getUnsafe(destPos);
-        //noinspection ConditionCoveredByFurtherCondition
-        return value != QueryConstants.NULL_LONG && value > 0;
+        // noinspection ConditionCoveredByFurtherCondition
+        return value != NULL_LONG && value > 0;
     }
 
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
-    private static boolean hasTrue(LongArraySource trueCount, long destPos) {
-        return hasValue(trueCount, destPos);
+    private boolean hasTrue(long destPos) {
+        return hasValue(resultColumn, destPos);
     }
 
-    private boolean hasFalse(long destPos) {
-        return hasValue(falseCount, destPos);
-    }
-
-    private static void sumChunk(ObjectChunk<Boolean, ? extends Values> values, int chunkStart, int chunkSize, MutableInt chunkNull, MutableInt chunkTrue, MutableInt chunkFalse) {
+    private static void sumChunk(ObjectChunk<Boolean, ? extends Values> values, int chunkStart, int chunkSize,
+            MutableInt chunkTrue, MutableInt chunkFalse) {
         final int chunkEnd = chunkStart + chunkSize;
         for (int ii = chunkStart; ii < chunkEnd; ++ii) {
             final Boolean aBoolean = values.get(ii);
-            if (aBoolean == null) {
-                chunkNull.increment();
-            } else if (aBoolean) {
-                chunkTrue.increment();
-            } else {
-                chunkFalse.increment();
+            if (aBoolean != null) {
+                if (aBoolean) {
+                    chunkTrue.increment();
+                } else {
+                    chunkFalse.increment();
+                }
             }
         }
     }
 
     @Override
-    public void addChunk(BucketedContext context, Chunk<? extends Values> values, LongChunk<? extends RowKeys> inputRowKeys, IntChunk<RowKeys> destinations, IntChunk<ChunkPositions> startPositions, IntChunk<ChunkLengths> length, WritableBooleanChunk<Values> stateModified) {
+    public void addChunk(BucketedContext context, Chunk<? extends Values> values,
+            LongChunk<? extends RowKeys> inputRowKeys, IntChunk<RowKeys> destinations,
+            IntChunk<ChunkPositions> startPositions, IntChunk<ChunkLengths> length,
+            WritableBooleanChunk<Values> stateModified) {
         final ObjectChunk<Boolean, ? extends Values> asObjectChunk = values.asObjectChunk();
         for (int ii = 0; ii < startPositions.size(); ++ii) {
             final int startPosition = startPositions.get(ii);
@@ -97,7 +122,10 @@ public final class BooleanChunkedSumOperator implements IterativeChunkedAggregat
     }
 
     @Override
-    public void removeChunk(BucketedContext context, Chunk<? extends Values> values, LongChunk<? extends RowKeys> inputRowKeys, IntChunk<RowKeys> destinations, IntChunk<ChunkPositions> startPositions, IntChunk<ChunkLengths> length, WritableBooleanChunk<Values> stateModified) {
+    public void removeChunk(BucketedContext context, Chunk<? extends Values> values,
+            LongChunk<? extends RowKeys> inputRowKeys, IntChunk<RowKeys> destinations,
+            IntChunk<ChunkPositions> startPositions, IntChunk<ChunkLengths> length,
+            WritableBooleanChunk<Values> stateModified) {
         final ObjectChunk<Boolean, ? extends Values> asObjectChunk = values.asObjectChunk();
         for (int ii = 0; ii < startPositions.size(); ++ii) {
             final int startPosition = startPositions.get(ii);
@@ -107,164 +135,140 @@ public final class BooleanChunkedSumOperator implements IterativeChunkedAggregat
     }
 
     @Override
-    public void modifyChunk(BucketedContext context, Chunk<? extends Values> previousValues, Chunk<? extends Values> newValues, LongChunk<? extends RowKeys> postShiftRowKeys, IntChunk<RowKeys> destinations, IntChunk<ChunkPositions> startPositions, IntChunk<ChunkLengths> length, WritableBooleanChunk<Values> stateModified) {
+    public void modifyChunk(BucketedContext context, Chunk<? extends Values> previousValues,
+            Chunk<? extends Values> newValues, LongChunk<? extends RowKeys> postShiftRowKeys,
+            IntChunk<RowKeys> destinations, IntChunk<ChunkPositions> startPositions, IntChunk<ChunkLengths> length,
+            WritableBooleanChunk<Values> stateModified) {
         final ObjectChunk<Boolean, ? extends Values> preAsObjectChunk = previousValues.asObjectChunk();
         final ObjectChunk<Boolean, ? extends Values> postAsObjectChunk = newValues.asObjectChunk();
         for (int ii = 0; ii < startPositions.size(); ++ii) {
             final int startPosition = startPositions.get(ii);
             final long destination = destinations.get(startPosition);
-            stateModified.set(ii, modifyChunk(preAsObjectChunk, postAsObjectChunk, destination, startPosition, length.get(ii)));
+            stateModified.set(ii,
+                    modifyChunk(preAsObjectChunk, postAsObjectChunk, destination, startPosition, length.get(ii)));
         }
     }
 
     @Override
-    public boolean addChunk(SingletonContext context, int chunkSize, Chunk<? extends Values> values, LongChunk<? extends RowKeys> inputRowKeys, long destination) {
+    public boolean addChunk(SingletonContext context, int chunkSize, Chunk<? extends Values> values,
+            LongChunk<? extends RowKeys> inputRowKeys, long destination) {
         return addChunk(values.asObjectChunk(), destination, 0, values.size());
     }
 
     @Override
-    public boolean removeChunk(SingletonContext context, int chunkSize, Chunk<? extends Values> values, LongChunk<? extends RowKeys> inputRowKeys, long destination) {
+    public boolean removeChunk(SingletonContext context, int chunkSize, Chunk<? extends Values> values,
+            LongChunk<? extends RowKeys> inputRowKeys, long destination) {
         return removeChunk(values.asObjectChunk(), destination, 0, values.size());
     }
 
     @Override
-    public boolean modifyChunk(SingletonContext context, int chunkSize, Chunk<? extends Values> previousValues, Chunk<? extends Values> newValues, LongChunk<? extends RowKeys> postShiftRowKeys, long destination) {
+    public boolean modifyChunk(SingletonContext context, int chunkSize, Chunk<? extends Values> previousValues,
+            Chunk<? extends Values> newValues, LongChunk<? extends RowKeys> postShiftRowKeys, long destination) {
         return modifyChunk(previousValues.asObjectChunk(), newValues.asObjectChunk(), destination, 0, newValues.size());
     }
 
-    private boolean addChunk(ObjectChunk<Boolean, ? extends Values> values, long destination, int chunkStart, int chunkSize) {
-        final MutableInt chunkNull = new MutableInt(0);
+    private boolean addChunk(ObjectChunk<Boolean, ? extends Values> values, long destination, int chunkStart,
+            int chunkSize) {
         final MutableInt chunkTrue = new MutableInt(0);
         final MutableInt chunkFalse = new MutableInt(0);
-        sumChunk(values, chunkStart, chunkSize, chunkNull, chunkTrue, chunkFalse);
+        sumChunk(values, chunkStart, chunkSize, chunkTrue, chunkFalse);
 
         boolean modified = false;
-        if (chunkTrue.intValue() > 0) {
-            add(resultColumn, destination,  chunkTrue.intValue());
+        if (chunkTrue.get() > 0) {
+            getAndAdd(resultColumn, destination, chunkTrue.get());
             modified = true;
         }
-        if (chunkFalse.intValue() > 0) {
-            final long oldFalse = add(falseCount, destination, chunkFalse.intValue());
-            if (chunkTrue.intValue() == 0 && oldFalse == 0 && !hasTrue(resultColumn, destination)) {
+        if (chunkFalse.get() > 0) {
+            final long oldFalseCount = getAndAdd(falseCount, destination, chunkFalse.get());
+            if (oldFalseCount == 0 && chunkTrue.get() == 0 && !hasTrue(destination)) {
                 resultColumn.set(destination, 0L);
                 modified = true;
             }
         }
-        if (chunkNull.intValue() > 0 && chunkFalse.intValue() == 0 && chunkTrue.intValue() == 0) {
-            if (!hasTrue(resultColumn, destination) && !hasFalse(destination)) {
-                resultColumn.set(destination, QueryConstants.NULL_LONG);
-                modified = true;
-            }
-        }
+        // New or resurrected slots will already have null in the result, so we never need to update the result to null
+        // or report a mod if there are only nulls in the chunk.
         return modified;
     }
 
-    private boolean removeChunk(ObjectChunk<Boolean, ? extends Values> values, long destination, int chunkStart, int chunkSize) {
-        final MutableInt chunkNull = new MutableInt(0);
+    private boolean removeChunk(ObjectChunk<Boolean, ? extends Values> values, long destination, int chunkStart,
+            int chunkSize) {
         final MutableInt chunkTrue = new MutableInt(0);
         final MutableInt chunkFalse = new MutableInt(0);
-        sumChunk(values, chunkStart, chunkSize, chunkNull, chunkTrue, chunkFalse);
+        sumChunk(values, chunkStart, chunkSize, chunkTrue, chunkFalse);
 
-        boolean modified = false;
-
-        long newFalse = -1; // impossible value
-        if (chunkFalse.intValue() > 0) {
-            final long oldFalse = falseCount.getUnsafe(destination);
-            newFalse = NullSafeAddition.plusLong(oldFalse, -chunkFalse.intValue());
-            falseCount.set(destination, newFalse);
+        long newFalseCount = INVALID_COUNT;
+        if (chunkFalse.get() > 0) {
+            newFalseCount = addAndGet(falseCount, destination, -chunkFalse.get());
         }
-        if (chunkTrue.intValue() > 0) {
-            final long oldTrue = resultColumn.getUnsafe(destination);
-            final long newTrue;
-            if (oldTrue == chunkTrue.intValue()) {
-                // we are zeroing ourselves out
-                if (newFalse < 0) {
-                    newFalse = falseCount.getUnsafe(destination);
+
+        if (chunkTrue.get() > 0) {
+            final long oldTrueCount = resultColumn.getUnsafe(destination);
+            Assert.gtZero(oldTrueCount, "oldTrueCount");
+            long newTrue = oldTrueCount - chunkTrue.get();
+            if (newTrue == 0) {
+                if (newFalseCount == INVALID_COUNT) {
+                    newFalseCount = falseCount.getUnsafe(destination);
                 }
-                if (newFalse > 0) { // we've set it, or read a null above
-                    newTrue = 0;
-                } else {
-                    newTrue = QueryConstants.NULL_LONG;
+                if (newFalseCount == NULL_LONG || newFalseCount == 0) {
+                    newTrue = NULL_LONG;
                 }
-            } else {
-                newTrue = oldTrue - chunkTrue.intValue();
             }
-            modified = true;
             resultColumn.set(destination, newTrue);
-        } else if (newFalse == 0) {
-            // we may have gone to zero, in which case it must be nulled out
-            if (resultColumn.getUnsafe(destination) == 0) {
-                modified = true;
-                resultColumn.set(destination, QueryConstants.NULL_LONG);
-            }
+            return true;
         }
 
-        return modified;
+        if (newFalseCount == 0 && resultColumn.getUnsafe(destination) == 0) {
+            resultColumn.set(destination, NULL_LONG);
+            return true;
+        }
+
+        return false;
     }
 
-    private boolean modifyChunk(ObjectChunk<Boolean, ? extends Values> preValues, ObjectChunk<Boolean, ? extends Values> postValues, long destination, int chunkStart, int chunkSize) {
-        final MutableInt preChunkNull = new MutableInt(0);
+    private boolean modifyChunk(ObjectChunk<Boolean, ? extends Values> preValues,
+            ObjectChunk<Boolean, ? extends Values> postValues, long destination, int chunkStart, int chunkSize) {
         final MutableInt preChunkTrue = new MutableInt(0);
         final MutableInt preChunkFalse = new MutableInt(0);
-        sumChunk(preValues, chunkStart, chunkSize, preChunkNull, preChunkTrue, preChunkFalse);
+        sumChunk(preValues, chunkStart, chunkSize, preChunkTrue, preChunkFalse);
 
-        final MutableInt postChunkNull = new MutableInt(0);
         final MutableInt postChunkTrue = new MutableInt(0);
         final MutableInt postChunkFalse = new MutableInt(0);
-        sumChunk(postValues, chunkStart, chunkSize, postChunkNull, postChunkTrue, postChunkFalse);
+        sumChunk(postValues, chunkStart, chunkSize, postChunkTrue, postChunkFalse);
 
-        final boolean trueModified = preChunkTrue.intValue() != postChunkTrue.intValue();
-        final boolean falseModified = preChunkFalse.intValue() != postChunkFalse.intValue();
+        final boolean trueModified = preChunkTrue.get() != postChunkTrue.get();
+        final boolean falseModified = preChunkFalse.get() != postChunkFalse.get();
 
         if (!trueModified && !falseModified) {
             return false;
         }
 
-        long newFalse = -1;
-        long oldFalse = -1;
+        long newFalseCount = INVALID_COUNT;
         if (falseModified) {
-            oldFalse = falseCount.getUnsafe(destination);
-            if (oldFalse == QueryConstants.NULL_LONG) {
-                oldFalse = 0;
-            }
-            newFalse = oldFalse + postChunkFalse.intValue() - preChunkFalse.intValue();
-            falseCount.set(destination, newFalse);
+            newFalseCount = addAndGet(falseCount, destination, postChunkFalse.get() - preChunkFalse.get());
         }
 
         if (trueModified) {
-            final long oldTrue = resultColumn.getUnsafe(destination);
-            final long newTrue = NullSafeAddition.plusLong(oldTrue, postChunkTrue.intValue() - preChunkTrue.intValue());
-            resultColumn.set(destination, newTrue);
-            if (newTrue > 0) {
-                // if we're still above zero, then we are done
-                return true;
+            final long oldTrueCount = resultColumn.getUnsafe(destination);
+            long newTrueCount = plusLong(oldTrueCount, postChunkTrue.get() - preChunkTrue.get());
+            if (newTrueCount == 0) {
+                if (newFalseCount == INVALID_COUNT) {
+                    newFalseCount = falseCount.getUnsafe(destination);
+                }
+                if (newFalseCount == NULL_LONG || newFalseCount == 0) {
+                    newTrueCount = NULL_LONG;
+                }
             }
-        }
-
-        if (oldFalse > 0 && newFalse > 0) {
-            // we are still positive, so the result will not change
-            return trueModified;
-        }
-
-        // if true was modified, and we got to this point; then it must be zero
-        final boolean hasTrue = !trueModified && hasTrue(resultColumn, destination);
-        if (hasTrue) {
-            return false;
-        }
-
-        // we only hit the first two cases when we have a false change
-        if (oldFalse > 0 && newFalse == 0) {
-            // set to null, because we had a false but do not anymore
-            resultColumn.set(destination, QueryConstants.NULL_LONG);
+            resultColumn.set(destination, newTrueCount);
             return true;
         }
-        else if (oldFalse == 0 && newFalse > 0) {
-            // set to 0, because we were null; but now are true
+
+        final long existingTrueCount = resultColumn.getUnsafe(destination);
+        if (newFalseCount == 0 && existingTrueCount == 0) {
+            resultColumn.set(destination, NULL_LONG);
+            return true;
+        }
+        if (newFalseCount > 0 & existingTrueCount == NULL_LONG) {
             resultColumn.set(destination, 0L);
-            return true;
-        } else if (trueModified && !falseModified) {
-            newFalse = falseCount.getUnsafe(destination);
-            resultColumn.set(destination, newFalse > 0 ? 0 : QueryConstants.NULL_LONG);
             return true;
         }
 

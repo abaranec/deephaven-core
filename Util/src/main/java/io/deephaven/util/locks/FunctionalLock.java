@@ -1,12 +1,17 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.util.locks;
 
-import io.deephaven.util.FunctionalInterfaces.ThrowingBooleanSupplier;
+import io.deephaven.util.function.ThrowingBooleanSupplier;
+import io.deephaven.util.SafeCloseable;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.concurrent.locks.Lock;
 
-import static io.deephaven.util.FunctionalInterfaces.ThrowingRunnable;
-import static io.deephaven.util.FunctionalInterfaces.ThrowingSupplier;
+import io.deephaven.util.function.ThrowingRunnable;
+
+import io.deephaven.util.function.ThrowingSupplier;
 
 /**
  * Extension to the {@link Lock} interface to enable locking for the duration of a lambda or other
@@ -68,8 +73,8 @@ public interface FunctionalLock extends Lock {
     }
 
     /**
-     * Acquire the lock, invoke {@link ThrowingBooleanSupplier#get()} while holding the lock, and release the lock
-     * before returning the result.
+     * Acquire the lock, invoke {@link ThrowingBooleanSupplier#getAsBoolean()} while holding the lock, and release the
+     * lock before returning the result.
      *
      * @param supplier The {@link ThrowingBooleanSupplier} to get
      * @return The result of invoking {@code supplier}
@@ -79,7 +84,7 @@ public interface FunctionalLock extends Lock {
             @NotNull final ThrowingBooleanSupplier<EXCEPTION_TYPE> supplier) throws EXCEPTION_TYPE {
         lock();
         try {
-            return supplier.get();
+            return supplier.getAsBoolean();
         } finally {
             unlock();
         }
@@ -103,5 +108,33 @@ public interface FunctionalLock extends Lock {
         } finally {
             unlock();
         }
+    }
+
+    /**
+     * Acquire the lock via {@link #lock()} and return a {@link SafeCloseable} that calls {@link #unlock()} on
+     * {@link SafeCloseable#close()}.
+     *
+     * @return the safe closeable
+     */
+    default SafeCloseable lockCloseable() {
+        // Note: we are creating the closeable _first_ in the rare case that we are out of memory or there is some
+        // other exceptional circumstance that causes this object creation to fail.
+        final SafeCloseable unlock = this::unlock;
+        lock();
+        return unlock;
+    }
+
+    /**
+     * Acquire the lock via {@link #lockInterruptibly()} and return a {@link SafeCloseable} that calls {@link #unlock()}
+     * on {@link SafeCloseable#close()}.
+     *
+     * @return the safe closeable
+     */
+    default SafeCloseable lockInterruptiblyCloseable() throws InterruptedException {
+        // Note: we are creating the closeable _first_ in the rare case that we are out of memory or there is some
+        // other exceptional circumstance that causes this object creation to fail.
+        final SafeCloseable unlock = this::unlock;
+        lockInterruptibly();
+        return unlock;
     }
 }

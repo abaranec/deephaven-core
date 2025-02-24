@@ -1,26 +1,24 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.web.client.api;
 
 import com.google.gwt.i18n.client.NumberFormat;
-import io.deephaven.web.shared.data.LocalDate;
+import com.vertispan.tsdefs.annotations.TsInterface;
+import com.vertispan.tsdefs.annotations.TsName;
 import jsinterop.annotations.JsMethod;
-
-import javax.annotation.Nonnull;
 
 /**
  * Wrap LocalDate values for use in JS. Provides text formatting for display and access to the underlying value.
  */
+@TsInterface
+@TsName(namespace = "dh")
 public class LocalDateWrapper {
-    private final static NumberFormat YEAR_FORMAT = NumberFormat.getFormat("0000");
-    private final static NumberFormat MONTH_DAY_FORMAT = NumberFormat.getFormat("00");
+    private static final NumberFormat YEAR_FORMAT = NumberFormat.getFormat("0000");
+    private static final NumberFormat MONTH_DAY_FORMAT = NumberFormat.getFormat("00");
 
     private final int year;
     private final int monthValue, dayOfMonth;
-
-    public LocalDateWrapper(@Nonnull LocalDate localDate) {
-        year = localDate.getYear();
-        monthValue = localDate.getMonthValue();
-        dayOfMonth = localDate.getDayOfMonth();
-    }
 
     public LocalDateWrapper(int year, int monthValue, int dayOfMonth) {
         this.year = year;
@@ -46,15 +44,6 @@ public class LocalDateWrapper {
     @JsMethod
     public int getDayOfMonth() {
         return dayOfMonth;
-    }
-
-    @Deprecated
-    public LocalDate getWrapped() {
-        LocalDate localDate = new LocalDate();
-        localDate.setYear(year);
-        localDate.setMonthValue((byte) monthValue);
-        localDate.setDayOfMonth((byte) dayOfMonth);
-        return localDate;
     }
 
     @JsMethod

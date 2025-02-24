@@ -1,12 +1,15 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.kafka.publish;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.deephaven.base.clock.Clock;
 import io.deephaven.chunk.attributes.Values;
 import io.deephaven.engine.table.ChunkSource;
 import io.deephaven.engine.table.Table;
-import io.deephaven.time.DateTime;
 import io.deephaven.engine.util.string.StringUtils;
 import io.deephaven.engine.table.ColumnSource;
 import io.deephaven.chunk.*;
@@ -165,7 +168,9 @@ public class JsonKeyOrValueSerializer implements KeyOrValueSerializer<String> {
                         node.putNull(childNodeFieldName);
                     }
                 } else {
-                    node.put(childNodeFieldName, raw);
+                    // No signature matches ObjectNode#put(String, byte).
+                    // #set w/ ContainerNode#numberNode(byte) is the most appropriately typed call.
+                    node.set(childNodeFieldName, node.numberNode(raw));
                 }
             }
         };
@@ -181,7 +186,8 @@ public class JsonKeyOrValueSerializer implements KeyOrValueSerializer<String> {
                         node.putNull(childNodeFieldName);
                     }
                 } else {
-                    node.put(childNodeFieldName, raw);
+                    // No native support for char type; we'll treat as String.
+                    node.put(childNodeFieldName, String.valueOf(raw));
                 }
             }
         };
@@ -208,7 +214,7 @@ public class JsonKeyOrValueSerializer implements KeyOrValueSerializer<String> {
             @Override
             void outputField(final int ii, final ObjectNode node, final IntChunk<Values> inputChunk) {
                 final int raw = inputChunk.get(ii);
-                if (raw == QueryConstants.NULL_SHORT) {
+                if (raw == QueryConstants.NULL_INT) {
                     if (outputNulls) {
                         node.putNull(childNodeFieldName);
                     }
@@ -343,7 +349,7 @@ public class JsonKeyOrValueSerializer implements KeyOrValueSerializer<String> {
                 final WritableObjectChunk<ObjectNode, Values> jsonChunk,
                 final RowSequence keys,
                 final boolean isRemoval) {
-            final String nanosString = String.valueOf(DateTime.now().getNanos());
+            final String nanosString = String.valueOf(Clock.system().currentTimeNanos());
             for (int ii = 0; ii < jsonChunk.size(); ++ii) {
                 getChildNode(jsonChunk.get(ii)).put(childNodeFieldName, nanosString);
             }
@@ -468,7 +474,7 @@ public class JsonKeyOrValueSerializer implements KeyOrValueSerializer<String> {
         public void close() {
             outputChunk.close();
             jsonChunk.close();
-            SafeCloseable.closeArray(fieldContexts);
+            SafeCloseable.closeAll(fieldContexts);
         }
     }
 }

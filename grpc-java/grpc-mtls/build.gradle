@@ -1,0 +1,16 @@
+plugins {
+    id 'java-library'
+    id 'io.deephaven.project.register'
+}
+description = 'Utility project to make x509 client cert available in grpc calls on the server'
+
+dependencies {
+    implementation platform(libs.grpc.bom)
+    implementation libs.grpc.core
+}
+
+spotless {
+    java {
+        targetExclude '**/*'
+    }
+}

@@ -1,0 +1,15 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+package io.deephaven.server.table.ops;
+
+import io.deephaven.proto.backplane.grpc.SnapshotWhenTableRequest;
+import io.deephaven.proto.backplane.grpc.SnapshotWhenTableRequest.Builder;
+
+public class SnapshotWhenGrpcTest extends SnapshotWhenGrpcTestBase {
+
+    @Override
+    public Builder builder() {
+        return SnapshotWhenTableRequest.newBuilder();
+    }
+}

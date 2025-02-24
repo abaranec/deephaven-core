@@ -1,11 +1,15 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.select;
 
+import io.deephaven.engine.context.ExecutionContext;
 import io.deephaven.engine.table.Table;
-import io.deephaven.engine.table.lang.QueryLibrary;
-import io.deephaven.engine.table.lang.QueryScope;
+import io.deephaven.engine.context.QueryScope;
 import io.deephaven.engine.util.TableTools;
 import io.deephaven.engine.table.impl.util.ModelFileGenerator;
-import io.deephaven.test.junit4.EngineCleanup;
+import io.deephaven.engine.testutil.junit4.EngineCleanup;
+import io.deephaven.util.SafeCloseable;
 import org.jetbrains.annotations.NotNull;
 import org.junit.After;
 import org.junit.Before;
@@ -37,14 +41,20 @@ public class TestFormulaColumnGeneration {
     @Rule
     public final EngineCleanup base = new EngineCleanup();
 
+    private SafeCloseable executionContext;
+
     @Before
     public void setUp() {
-        QueryLibrary.setLibrary(QueryLibrary.makeNewLibrary("DEFAULT"));
+        executionContext = ExecutionContext.newBuilder()
+                .newQueryLibrary("DEFAULT")
+                .captureQueryCompiler()
+                .captureQueryScope()
+                .build().open();
     }
 
     @After
     public void tearDown() {
-        QueryLibrary.resetLibrary();
+        executionContext.close();
     }
 
     @Test
@@ -63,7 +73,7 @@ public class TestFormulaColumnGeneration {
         // final DhFormulaColumn fc = new DhFormulaColumn("Value", "k * i * ii");
         // final DhFormulaColumn fc = new DhFormulaColumn("Value", "'2019-04-11T09:30 NY'");
         final FormulaColumn fc = FormulaColumn.createFormulaColumn("Value", "I * II + q * ii + II_[i - 1]");
-        fc.initInputs(table);
+        fc.initInputs(table.getRowSet(), table.getColumnSourceMap());
         return fc;
     }
 }

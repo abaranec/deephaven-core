@@ -1,8 +1,10 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit BaseTestCharTimSortKernel and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit BaseTestCharTimSortKernel and run "./gradlew replicateSortKernelTests" to regenerate
+//
+// @formatter:off
 package io.deephaven.engine.table.impl.sort.timsort;
 
 import io.deephaven.chunk.attributes.Any;
@@ -46,9 +48,41 @@ public abstract class BaseTestDoubleTimSortKernel extends TestTimSortKernel {
     public static class DoubleSortKernelStuff extends SortKernelStuff<DoubleLongTuple> {
 
         private final WritableDoubleChunk<Any> doubleChunk;
-        private final DoubleLongTimsortKernel.DoubleLongSortKernelContext context;
+        private final DoubleTimsortKernel.DoubleSortKernelContext<Any> context;
 
         public DoubleSortKernelStuff(List<DoubleLongTuple> javaTuples) {
+            super(javaTuples.size());
+            final int size = javaTuples.size();
+            doubleChunk = WritableDoubleChunk.makeWritableChunk(size);
+            context = DoubleTimsortKernel.createContext(size);
+
+            prepareDoubleChunks(javaTuples, doubleChunk, rowKeys);
+        }
+
+        @Override
+        public void run() {
+            DoubleTimsortKernel.sort(context, doubleChunk);
+        }
+
+        @Override
+        void check(List<DoubleLongTuple> expected) {
+            verify(expected.size(), expected, doubleChunk);
+        }
+
+        @Override
+        public void close() {
+            super.close();
+            doubleChunk.close();
+            context.close();
+        }
+    }
+
+    public static class DoubleLongSortKernelStuff extends SortKernelStuff<DoubleLongTuple> {
+
+        private final WritableDoubleChunk<Any> doubleChunk;
+        private final DoubleLongTimsortKernel.DoubleLongSortKernelContext<Any, RowKeys> context;
+
+        public DoubleLongSortKernelStuff(List<DoubleLongTuple> javaTuples) {
             super(javaTuples.size());
             final int size = javaTuples.size();
             doubleChunk = WritableDoubleChunk.makeWritableChunk(size);
@@ -66,11 +100,18 @@ public abstract class BaseTestDoubleTimSortKernel extends TestTimSortKernel {
         void check(List<DoubleLongTuple> expected) {
             verify(expected.size(), expected, doubleChunk, rowKeys);
         }
+
+        @Override
+        public void close() {
+            super.close();
+            doubleChunk.close();
+            context.close();
+        }
     }
 
     public static class DoublePartitionKernelStuff extends PartitionKernelStuff<DoubleLongTuple> {
 
-        private final WritableDoubleChunk valuesChunk;
+        private final WritableDoubleChunk<Any> valuesChunk;
         private final DoublePartitionKernel.PartitionKernelContext context;
         private final RowSet rowSet;
         private final ColumnSource<Double> columnSource;
@@ -83,7 +124,7 @@ public abstract class BaseTestDoubleTimSortKernel extends TestTimSortKernel {
 
             for (int ii = 0; ii < javaTuples.size(); ++ii) {
                 final long indexKey = javaTuples.get(ii).getSecondElement();
-                if (indexKey != ii * 10) {
+                if (indexKey != ii * 10L) {
                     throw new IllegalStateException();
                 }
             }
@@ -91,13 +132,13 @@ public abstract class BaseTestDoubleTimSortKernel extends TestTimSortKernel {
             columnSource = new AbstractColumnSource.DefaultedImmutable<Double>(double.class) {
                 // region tuple column source
                 @Override
-                public Double get(long index) {
-                    return getDouble(index);
+                public Double get(long rowKey) {
+                    return getDouble(rowKey);
                 }
 
                 @Override
-                public double getDouble(long index) {
-                    return javaTuples.get(((int)index) / 10).getFirstElement();
+                public double getDouble(long rowKey) {
+                    return javaTuples.get(((int) rowKey) / 10).getFirstElement();
                 }
                 // endregion tuple column source
             };
@@ -116,11 +157,19 @@ public abstract class BaseTestDoubleTimSortKernel extends TestTimSortKernel {
         void check(List<DoubleLongTuple> expected) {
             verifyPartition(context, rowSet, expected.size(), expected, valuesChunk, rowKeys, columnSource);
         }
+
+        @Override
+        public void close() {
+            super.close();
+            valuesChunk.close();
+            context.close();
+            rowSet.close();
+        }
     }
 
     public static class DoubleMergeStuff extends MergeStuff<DoubleLongTuple> {
 
-        private final double arrayValues[];
+        private final double[] arrayValues;
 
         public DoubleMergeStuff(List<DoubleLongTuple> javaTuples) {
             super(javaTuples);
@@ -169,16 +218,16 @@ public abstract class BaseTestDoubleTimSortKernel extends TestTimSortKernel {
 
             prepareMultiDoubleChunks(javaTuples, primaryChunk, secondaryChunk, rowKeys);
 
-            secondaryColumnSource = new AbstractColumnSource.DefaultedImmutable<Long>(long.class) {
+            secondaryColumnSource = new AbstractColumnSource.DefaultedImmutable<>(long.class) {
                 @Override
-                public Long get(long index) {
-                    final long result = getLong(index);
+                public Long get(long rowKey) {
+                    final long result = getLong(rowKey);
                     return result == QueryConstants.NULL_LONG ? null : result;
                 }
 
                 @Override
-                public long getLong(long index) {
-                    final DoubleLongLongTuple doubleLongLongTuple = javaTuples.get((int) (index / 10));
+                public long getLong(long rowKey) {
+                    final DoubleLongLongTuple doubleLongLongTuple = javaTuples.get((int) (rowKey / 10));
                     return doubleLongLongTuple.getSecondElement();
                 }
             };
@@ -222,7 +271,7 @@ public abstract class BaseTestDoubleTimSortKernel extends TestTimSortKernel {
                 sortIndexContext.sort(originalPositions, indicesToFetch);
 
                 // now we have the indices that we need to fetch from the secondary column source, in sorted order
-                secondaryColumnSource.fillChunk(secondaryColumnSourceContext, WritableLongChunk.downcast(secondaryChunk), RowSequenceFactory.wrapRowKeysChunkAsRowSequence(WritableLongChunk.downcast(indicesToFetch)));
+                secondaryColumnSource.fillChunk(secondaryColumnSourceContext, secondaryChunk, RowSequenceFactory.wrapRowKeysChunkAsRowSequence(WritableLongChunk.downcast(indicesToFetch)));
 
                 // permute the results back to the order that we would like them in the subsequent sort
                 secondaryChunkPermuted.setSize(secondaryChunk.size());
@@ -238,6 +287,20 @@ public abstract class BaseTestDoubleTimSortKernel extends TestTimSortKernel {
         @Override
         void check(List<DoubleLongLongTuple> expected) {
             verify(expected.size(), expected, primaryChunk, secondaryChunk, rowKeys);
+        }
+
+        @Override
+        public void close() {
+            super.close();
+            primaryChunk.close();
+            secondaryChunk.close();
+            secondaryChunkPermuted.close();
+            sortIndexContext.close();
+            indicesToFetch.close();
+            originalPositions.close();
+            context.close();
+            secondarySortContext.close();
+            secondaryColumnSourceContext.close();
         }
     }
 
@@ -321,19 +384,22 @@ public abstract class BaseTestDoubleTimSortKernel extends TestTimSortKernel {
         return javaTuples;
     }
 
-    static private void verify(int size, List<DoubleLongTuple> javaTuples, DoubleChunk doubleChunk, LongChunk rowKeys) {
-//        System.out.println("Verify: " + javaTuples);
-//        dumpChunk(valuesChunk);
 
+    static private void verify(int size, List<DoubleLongTuple> javaTuples, DoubleChunk doubleChunk) {
+        verify(size, javaTuples, doubleChunk, null);
+    }
+
+    static private void verify(int size, List<DoubleLongTuple> javaTuples, DoubleChunk doubleChunk, LongChunk rowKeys) {
         for (int ii = 0; ii < size; ++ii) {
             final double timSorted = doubleChunk.get(ii);
             final double javaSorted = javaTuples.get(ii).getFirstElement();
-
-            final long timIndex = rowKeys.get(ii);
-            final long javaIndex = javaTuples.get(ii).getSecondElement();
-
             TestCase.assertEquals("values[" + ii + "]", javaSorted, timSorted);
-            TestCase.assertEquals("rowKeys[" + ii + "]", javaIndex, timIndex);
+
+            if (rowKeys != null) {
+                final long timIndex = rowKeys.get(ii);
+                final long javaIndex = javaTuples.get(ii).getSecondElement();
+                TestCase.assertEquals("rowKeys[" + ii + "]", javaIndex, timIndex);
+            }
         }
     }
 

@@ -1,116 +1,135 @@
 plugins {
     id 'java-library'
+    id 'io.deephaven.project.register'
+    id 'me.champeau.jmh' version '0.7.2'
 }
 
 description 'Engine Table: Implementation and closely-coupled utilities'
 
-sourceSets {
-    main {
-        resources {
-            srcDir 'groovy'
-            include 'core/*.groovy'
-        }
-        resources {
-            srcDir 'python'
-            include 'core/*.py'
-        }
-        resources {
-            srcDir 'src/main/resources'
-            include '**'
-        }
-    }
+configurations {
+    // Ensure jmh picks up the same dependencies as tests
+    jmhImplementation.extendsFrom testImplementation
+    jmhRuntimeOnly.extendsFrom testRuntimeOnly
 }
 
 dependencies {
-    api project(':Util'),
-            project(':TableLogger'),
-            project(':engine-stringset'),
-            project(':engine-base'),
-            project(':deephaven-jpy'),
-            project(':deephaven-jpy-ext')
+    api project(':Util')
+    api project(':TableLogger')
+    api project(':engine-stringset')
+    api project(':engine-base')
+    api project(':engine-context')
+    api project(':deephaven-jpy-ext')
+    api project(':hotspot')
+    api project(':IO')
+    api project(':codec-api')
 
-    implementation project(':CompilerTools'),
-            project(':DHProcess'),
-            project(':engine-function'),
-            project(':engine-tuple'),
-            'com.github.f4b6a3:uuid-creator:3.6.0',
-            "org.eclipse.jgit:org.eclipse.jgit:$Classpaths.JGIT_VERSION",
-            'com.tdunning:t-digest:3.2'
+    implementation project(':util-processenvironment')
+    implementation project(':util-thread')
+    implementation project(':DHProcess')
+    implementation project(':engine-function')
+    implementation project(':engine-tuple')
+    implementation project(':Configuration')
+    implementation project(':log-factory')
+    implementation project(':Stats')
+    implementation project(':codec-builtin')
+    implementation project(':codec-cache')
 
-    Classpaths.inheritGroovy(project, 'groovy', 'implementation')
-    Classpaths.inheritGroovy(project, 'groovy-json', 'implementation')
-    Classpaths.inheritJavaParser project
+    implementation libs.f4b6a3.uuid.creator
+    // TODO(deephaven-core#3204): t-digest 3.3 appears to have higher errors than 3.2
+    implementation libs.tdunning.t.digest
+    implementation libs.squareup.javapoet
+    implementation libs.classgraph
+    implementation libs.dsi.fastutil
 
-    compileOnly 'com.google.code.findbugs:jsr305:3.0.2'
+    implementation project(':plugin')
+    implementation libs.commons.lang3
+    implementation libs.commons.text
+    implementation libs.commons.compress
+
+    implementation libs.groovy
+    implementation libs.groovy.json
+    implementation libs.javaparser.core
+    compileOnly libs.autoservice
+    annotationProcessor libs.autoservice.compiler
+
+    compileOnly project(':util-immutables')
+    annotationProcessor libs.immutables.value
+
+    compileOnly libs.google.findbugs.jsr305
 
     runtimeOnly project(':engine-tuplesource')
 
-    testImplementation TestTools.projectDependency(project, 'Base'),
-            TestTools.projectDependency(project, 'Util'),
-            TestTools.projectDependency(project, 'engine-chunk'),
-            TestTools.projectDependency(project, 'engine-rowset'),
-            project(':BenchmarkSupport'),
-            project(':extensions-csv'),
-            project(':extensions-parquet-table'),
-            'junit:junit:4.13.2'
+    implementation libs.guava
 
-    Classpaths.inheritJUnitPlatform(project)
-    Classpaths.inheritAssertJ(project)
+    testImplementation TestTools.projectDependency(project, 'engine-chunk')
+    testImplementation TestTools.projectDependency(project, 'engine-vector')
+    testImplementation TestTools.projectDependency(project, 'Numerics')
+    testImplementation TestTools.projectDependency(project, 'engine-time')
+    testImplementation project(':base-test-utils')
+    testImplementation project(':engine-rowset-test-utils')
+    testImplementation project(':engine-test-utils')
+    testImplementation project(':Base')
+    testImplementation project(':BenchmarkSupport')
+    testImplementation project(':extensions-csv')
+    testImplementation project(':extensions-parquet-table')
+    testImplementation project(':extensions-parquet-base')
+    testImplementation project(':extensions-source-support')
+    testImplementation project(':Numerics')
+    testImplementation project(':extensions-suanshu')
 
-    testRuntimeOnly project(':log-to-slf4j'),
-            project(path: ':configs'),
-            project(path: ':test-configs')
-    Classpaths.inheritSlf4j(project, 'slf4j-simple', 'testRuntimeOnly')
+    testImplementation libs.junit4
+
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.assertj
+
+    testRuntimeOnly project(':log-to-slf4j')
+    testRuntimeOnly project(':configs')
+    testRuntimeOnly project(':test-configs')
+    testRuntimeOnly libs.slf4j.simple
 }
 
 spotless {
     java {
-        targetExclude(
-                '**/generated/**',
-                '**/*Boolean*.java',
-                '**/*Byte*.java',
-                '**/*Char*.java',
-                '**/*Short*.java',
-                '**/*Int*.java',
-                '**/*Long*.java',
-                '**/*Float*.java',
-                '**/*Double*.java',
-                '**/*Object*.java',
-                '**/*StateManager.java',
-                'src/main/java/io/deephaven/engine/table/impl/SymbolTableCombiner.java',
-                'src/main/java/io/deephaven/libs/GroovyStaticImports.java',
-                'src/test/java/**/*Sample.java'
-        )
+        // Exclude these codegen sample files from here so we don't even need a comment to disable formatting
+        targetExclude 'src/test/java/io/deephaven/engine/table/impl/select/FilterKernel*Sample.java',
+                'src/test/java/io/deephaven/engine/table/impl/select/Formula*Sample.java'
     }
 }
 
 test {
-    // alas, we have tests that cannot tolerate running in parallel.  DO NOT INCREASE THIS NUMBER WITHOUT EXTENSIVE TESTING IN JENKINS
-    maxParallelForks = Integer.parseInt(findProperty('dbTestJvms') as String ?: '1') // -PdbTestJvms=11 if you are ok pegging your local machine
     //  For now, if you apply @Category(ParallelTest.class) to tests which are not huge CPU/RAM hogs, you can get parallelism
     //  If you have CPU/RAM-heavy tasks that you don't want gumming up :engine-table:test runs, apply @Category(SerialTest.class) instead
     //  (note that the above only works for junit 4 tests; see the documentation on SerialTest class and others for porting instructions)
 
     def props = project.properties.subMap(["jpy.pythonLib", "jpy.jpyLib", "jpy.jdlLib"])
     systemProperties props
+    systemProperty 'ModelFileGenerator.testSource', layout.projectDirectory.dir('src/test/java/').toString()
 }
 
 // Adds a custom testParallel task which is allowed to run tests in parallel.
 // Add @Category(ParallelTest.class) to have your tests run in parallel
 // Note: Supports JUnit4 or greater only (you use @Test annotations to mark test methods).
 
-// The Parallel tests are now functionally equivalent to the Serial test logic
-// TODO (deephaven-core#643): Fix "leaking" parallel tests
-TestTools.addEngineTest(project, 'Parallel', false, false, true)
-// testSerial: non-parallel, not a engine test, isolated
-TestTools.addEngineTest(project, 'Serial', false, false, true)
-// testOutOfBand: non-parallel, not a engine test, not isolated
-TestTools.addEngineTest(project, 'OutOfBand', false, false, false)
+TestTools.addEngineParallelTest(project)
+TestTools.addEngineSerialTest(project)
+TestTools.addEngineOutOfBandTest(project)
 
-// The configuration of this with respect to the build environment isn't very tight.
-// Ideally, the build environment would be able to configure this as appropriate.
-tasks.testParallel.maxHeapSize = '6g'
-tasks.testSerial.maxHeapSize = '6g'
-tasks.testOutOfBand.maxHeapSize = '6g'
-tasks.test.maxHeapSize = '6g'
+// If changing, be sure to update .github/scripts/print-gradle-workers-max.sh
+def maxHeapSize = findProperty('maxHeapSize') as String ?: '6g'
 
+tasks.testParallel.maxHeapSize = maxHeapSize
+tasks.testSerial.maxHeapSize = maxHeapSize
+tasks.testOutOfBand.maxHeapSize = maxHeapSize
+tasks.test.maxHeapSize = maxHeapSize
+
+jmh {
+    jmhVersion = libs.versions.jmh.get()
+}
+
+jmhJar {
+    zip64 = true
+}
+
+// No need to assemble the jar by default on build
+// assemble.dependsOn(jmhJar)
+check.dependsOn(jmhClasses)

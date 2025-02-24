@@ -1,53 +1,24 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.iterators;
 
-import io.deephaven.engine.table.Table;
-import io.deephaven.engine.table.ColumnSource;
-import io.deephaven.engine.rowset.RowSet;
-import org.jetbrains.annotations.NotNull;
-
-import java.util.Iterator;
+import io.deephaven.engine.primitive.iterator.CloseableIterator;
+import io.deephaven.util.SafeCloseable;
 
 /**
- * Iteration support for objects (including boxed primitives) contained with a ColumnSource.
+ * Iteration support for values supplied by a column.
+ *
+ * @apiNote ColumnIterators must be explicitly {@link #close() closed} or used until exhausted in order to avoid
+ *          resource leaks.
  */
-public class ColumnIterator<TYPE> implements Iterator<TYPE> {
-
-    protected final ColumnSource<TYPE> columnSource;
-
-    protected final RowSet.Iterator indexIterator;
-
-    /**
-     * Create a new iterator.
-     *
-     * @param rowSet The {@link RowSet} to iterate over
-     * @param columnSource The {@link ColumnSource} to fetch values from
-     */
-    public ColumnIterator(@NotNull final RowSet rowSet, @NotNull final ColumnSource<TYPE> columnSource) {
-        this.columnSource = columnSource;
-        indexIterator = rowSet.iterator();
-    }
-
-    /**
-     * Create a new iterator.
-     *
-     * @param table table to create the iterator from
-     * @param columnName column name for iteration
-     */
-    public ColumnIterator(@NotNull final Table table, @NotNull final String columnName) {
-        this(table.getRowSet(), table.getColumnSource(columnName));
-    }
+public interface ColumnIterator<DATA_TYPE> extends CloseableIterator<DATA_TYPE>, SafeCloseable {
 
     @Override
-    public boolean hasNext() {
-        return indexIterator.hasNext();
-    }
+    default void close() {}
 
-    @Override
-    public TYPE next() {
-        return columnSource.get(indexIterator.nextLong());
-    }
+    /**
+     * @return The number of elements remaining in this ColumnIterator
+     */
+    long remaining();
 }

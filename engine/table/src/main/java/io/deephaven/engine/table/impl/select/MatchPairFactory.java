@@ -1,17 +1,16 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.select;
 
-import io.deephaven.engine.table.MatchPair;
-import io.deephaven.engine.util.ExpressionParser;
-import io.deephaven.engine.util.AbstractExpressionFactory;
+import io.deephaven.engine.table.impl.MatchPair;
+import io.deephaven.api.expression.ExpressionParser;
+import io.deephaven.api.expression.AbstractExpressionFactory;
 
 import java.util.Collection;
 import java.util.regex.Matcher;
 
-import static io.deephaven.engine.table.impl.select.SelectFactoryConstants.*;
+import static io.deephaven.api.expression.SelectFactoryConstants.*;
 
 /**
  * Parses strings of the form "Column" or "Column1=Column2" into a MatchPair (or array of them).

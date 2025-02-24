@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.modelfarm;
 
 import io.deephaven.base.verify.Assert;
@@ -66,7 +65,7 @@ public class ModelFarmTick<KEYTYPE, DATATYPE, ROWDATAMANAGERTYPE extends RowData
         super(nThreads, model, dataManager);
         this.maxQueueSize = maxQueueSize;
         this.queue = new ArrayDeque<>(this.maxQueueSize);
-        this.mostRecentDataGetter = getMostRecentDataFactory(GetDataLockType.UGP_LOCK_ALREADY_HELD);
+        this.mostRecentDataGetter = getMostRecentDataFactory(GetDataLockType.UPDATE_GRAPH_LOCK_ALREADY_HELD);
     }
 
     @Override

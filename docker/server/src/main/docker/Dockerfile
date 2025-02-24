@@ -10,23 +10,13 @@ COPY licenses/ /
 ARG SERVER
 COPY $SERVER/requirements.txt requirements.txt
 RUN set -eux; \
-    python3 -m pip install -q --no-index --no-cache-dir -r requirements.txt; \
+    python -m pip install -q --no-index --no-cache-dir -r requirements.txt; \
     rm requirements.txt
 
-COPY deephaven-jpy-wheel/ /deephaven-jpy-wheel
+COPY wheels/ /wheels
 RUN set -eux; \
-    python3 -m pip install -q --no-index --no-cache-dir /deephaven-jpy-wheel/*.whl; \
-    rm -r /deephaven-jpy-wheel
-
-COPY deephaven-wheel/ /deephaven-wheel
-RUN set -eux; \
-    python3 -m pip install -q --no-index --no-cache-dir /deephaven-wheel/*.whl; \
-    rm -r /deephaven-wheel
-
-COPY deephaven2-wheel/ /deephaven2-wheel
-RUN set -eux; \
-    python3 -m pip install -q --no-index --no-cache-dir /deephaven2-wheel/*.whl; \
-    rm -r /deephaven2-wheel
+    python -m pip install -q --no-index --no-cache-dir /wheels/*.whl; \
+    rm -r /wheels
 
 ARG DEEPHAVEN_VERSION
 ADD serverApplicationDist/server-${DEEPHAVEN_VERSION}.tar /opt/deephaven
@@ -34,14 +24,17 @@ ADD serverApplicationDist/server-${DEEPHAVEN_VERSION}.tar /opt/deephaven
 RUN set -eux; \
     ln -s /opt/deephaven/server-${DEEPHAVEN_VERSION} /opt/deephaven/server
 
-COPY configure/image-bootstrap.properties image-bootstrap.properties
-
 FROM $BASE
 COPY --from=install / /
 VOLUME /data
 VOLUME /cache
-HEALTHCHECK --interval=3s --retries=3 --timeout=11s CMD /bin/grpc_health_probe -addr=localhost:8080 -connect-timeout=10s || exit 1
-ENTRYPOINT [ "/opt/deephaven/server/bin/start", "image-bootstrap.properties" ]
+HEALTHCHECK --interval=3s --retries=3 --timeout=11s CMD /opt/grpc_health_probe/grpc_health_probe -addr=localhost:8080 -connect-timeout=10s || exit 1
+ENV \
+    DEEPHAVEN_CACHE_DIR="/cache" \
+    DEEPHAVEN_CONFIG_DIR="/opt/deephaven/config" \
+    DEEPHAVEN_DATA_DIR="/data" \
+    EXTRA_CLASSPATH="/apps/libs/*"
+ENTRYPOINT [ "/opt/deephaven/server/bin/start" ]
 ARG DEEPHAVEN_VERSION
 ARG SERVER
 LABEL \

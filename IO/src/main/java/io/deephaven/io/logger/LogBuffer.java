@@ -1,14 +1,12 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.io.logger;
 
 import io.deephaven.base.RingBuffer;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.concurrent.CopyOnWriteArraySet;
 
 public class LogBuffer implements LogBufferRecordListener {
 
@@ -16,7 +14,7 @@ public class LogBuffer implements LogBufferRecordListener {
 
     protected final RingBuffer<LogBufferRecord> history;
 
-    private final List<LogBufferRecordListener> listeners = new ArrayList<>();
+    private final CopyOnWriteArraySet<LogBufferRecordListener> listeners = new CopyOnWriteArraySet<>();
 
     public LogBuffer(final int historySize) {
         this.history = new RingBuffer<>(historySize);
@@ -24,6 +22,10 @@ public class LogBuffer implements LogBufferRecordListener {
 
     public LogBuffer() {
         this(DEFAULT_HISTORY_SIZE);
+    }
+
+    public int capacity() {
+        return history.capacity();
     }
 
     public synchronized void clear() {
@@ -35,6 +37,8 @@ public class LogBuffer implements LogBufferRecordListener {
     // -----------------------------------------------------------------------------------------------------------------
 
     public synchronized LogBufferRecord recordInternal(@NotNull final LogBufferRecord record) {
+        // A listener may choose to unsubscribe while consuming a record, so this needs to be a collection that supports
+        // concurrent removals.
         for (final LogBufferRecordListener listener : listeners) {
             listener.record(record);
         }
@@ -52,9 +56,7 @@ public class LogBuffer implements LogBufferRecordListener {
 
     public synchronized void subscribe(final LogBufferRecordListener listener) {
         listeners.add(listener);
-        for (final RingBuffer<LogBufferRecord>.Iterator ri = history.iterator(); ri.hasNext();) {
-            listener.record(ri.next());
-        }
+        history.forEach(listener::record);
     }
 
     public synchronized void unsubscribe(final LogBufferRecordListener listener) {

@@ -1,5 +1,9 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.updategraph;
 
+import io.deephaven.base.log.LogOutput;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayDeque;
@@ -12,6 +16,11 @@ import java.util.Queue;
 public class OneShotUpdateCombiner implements Runnable, UpdateSourceRegistrar {
 
     private final Queue<Runnable> sources = new ArrayDeque<>();
+    private final UpdateGraph updateGraph;
+
+    public OneShotUpdateCombiner(final UpdateGraph updateGraph) {
+        this.updateGraph = updateGraph;
+    }
 
     @Override
     public void run() {
@@ -42,10 +51,25 @@ public class OneShotUpdateCombiner implements Runnable, UpdateSourceRegistrar {
     }
 
     /**
-     * Passes through to the {@link UpdateGraphProcessor#DEFAULT update graph processor}.
+     * Passes through to the {@link UpdateGraph update graph} associated with the current update context.
      */
     @Override
     public void requestRefresh() {
-        UpdateGraphProcessor.DEFAULT.requestRefresh();
+        updateGraph.requestRefresh();
+    }
+
+    @Override
+    public boolean satisfied(final long step) {
+        return updateGraph.satisfied(step);
+    }
+
+    @Override
+    public UpdateGraph getUpdateGraph() {
+        return updateGraph;
+    }
+
+    @Override
+    public LogOutput append(@NotNull final LogOutput logOutput) {
+        return logOutput.append("OneShotUpdateCombiner-").append(hashCode());
     }
 }

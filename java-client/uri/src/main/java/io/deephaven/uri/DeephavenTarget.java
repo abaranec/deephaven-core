@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.uri;
 
 import io.deephaven.annotations.BuildableStyle;
@@ -125,6 +128,11 @@ public abstract class DeephavenTarget {
         }
     }
 
+    /**
+     * The target as a URI string.
+     *
+     * @return the URI string
+     */
     @Override
     public final String toString() {
         final String scheme = isSecure() ? DeephavenUri.SECURE_SCHEME : DeephavenUri.PLAINTEXT_SCHEME;

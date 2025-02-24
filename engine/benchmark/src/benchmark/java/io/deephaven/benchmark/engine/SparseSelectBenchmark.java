@@ -1,14 +1,19 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.benchmark.engine;
 
 import io.deephaven.base.verify.Assert;
+import io.deephaven.engine.context.ExecutionContext;
+import io.deephaven.engine.context.TestExecutionContext;
 import io.deephaven.engine.table.Table;
-import io.deephaven.engine.updategraph.UpdateGraphProcessor;
 import io.deephaven.engine.table.impl.SparseSelect;
 import io.deephaven.benchmarking.BenchUtil;
 import io.deephaven.benchmarking.BenchmarkTable;
 import io.deephaven.benchmarking.BenchmarkTableBuilder;
 import io.deephaven.benchmarking.BenchmarkTools;
 import io.deephaven.benchmarking.runner.TableBenchmarkState;
+import io.deephaven.engine.testutil.ControlledUpdateGraph;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.infra.BenchmarkParams;
 
@@ -40,7 +45,8 @@ public class SparseSelectBenchmark {
 
     @Setup(Level.Trial)
     public void setupEnv(BenchmarkParams params) {
-        UpdateGraphProcessor.DEFAULT.enableUnitTestMode();
+        TestExecutionContext.createForUnitTests().open();
+        ExecutionContext.getContext().getUpdateGraph().<ControlledUpdateGraph>cast().enableUnitTestMode();
 
         final int actualSize = BenchmarkTools.sizeWithSparsity(tableSize, sparsity);
 
@@ -87,7 +93,7 @@ public class SparseSelectBenchmark {
 
     @Benchmark
     public Table incrementalSparseSelect() {
-        final Table result = UpdateGraphProcessor.DEFAULT.exclusiveLock().computeLocked(
+        final Table result = ExecutionContext.getContext().getUpdateGraph().exclusiveLock().computeLocked(
                 () -> IncrementalBenchmark.incrementalBenchmark(SparseSelect::sparseSelect, inputTable, 10));
         Assert.eq(result.size(), "result.size()", inputTable.size(), "inputTable.size()");
         return state.setResult(result);
@@ -95,9 +101,8 @@ public class SparseSelectBenchmark {
 
     @Benchmark
     public Table sparseSelect() {
-        return state.setResult(
-                UpdateGraphProcessor.DEFAULT.exclusiveLock()
-                        .computeLocked(() -> SparseSelect.sparseSelect(inputTable)));
+        return state.setResult(ExecutionContext.getContext().getUpdateGraph().exclusiveLock().computeLocked(
+                () -> SparseSelect.sparseSelect(inputTable)));
     }
 
     public static void main(final String[] args) {

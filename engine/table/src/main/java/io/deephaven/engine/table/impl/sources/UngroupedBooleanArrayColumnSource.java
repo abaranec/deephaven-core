@@ -1,13 +1,13 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources;
 
 import io.deephaven.engine.table.ColumnSource;
 import io.deephaven.engine.table.impl.MutableColumnSourceGetDefaults;
 
-public class UngroupedBooleanArrayColumnSource extends UngroupedColumnSource<Boolean> implements MutableColumnSourceGetDefaults.ForBoolean {
+public class UngroupedBooleanArrayColumnSource extends UngroupedColumnSource<Boolean>
+        implements MutableColumnSourceGetDefaults.ForBoolean {
     private ColumnSource<boolean[]> innerSource;
 
     @Override
@@ -22,28 +22,28 @@ public class UngroupedBooleanArrayColumnSource extends UngroupedColumnSource<Boo
     }
 
     @Override
-    public Boolean get(long index) {
-        if (index < 0) {
+    public Boolean get(long rowKey) {
+        if (rowKey < 0) {
             return null;
         }
-        long segment = index>>base;
-        int offset = (int) (index & ((1<<base) - 1));
+        long segment = rowKey >> base;
+        int offset = (int) (rowKey & ((1 << base) - 1));
         boolean[] array = innerSource.get(segment);
-        if(offset >= array.length) {
+        if (offset >= array.length) {
             return null;
         }
         return array[offset];
     }
 
     @Override
-    public Boolean getPrev(long index) {
-        if (index < 0) {
+    public Boolean getPrev(long rowKey) {
+        if (rowKey < 0) {
             return null;
         }
-        long segment = index>> getPrevBase();
-        int offset = (int) (index & ((1<< getPrevBase()) - 1));
+        long segment = rowKey >> getPrevBase();
+        int offset = (int) (rowKey & ((1 << getPrevBase()) - 1));
         boolean[] array = innerSource.getPrev(segment);
-        if(offset >= array.length) {
+        if (offset >= array.length) {
             return null;
         }
         return array[offset];

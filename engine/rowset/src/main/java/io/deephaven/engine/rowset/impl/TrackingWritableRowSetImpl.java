@@ -1,9 +1,10 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.rowset.impl;
 
+import io.deephaven.engine.context.ExecutionContext;
+import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.engine.rowset.TrackingRowSet;
 import io.deephaven.engine.rowset.TrackingWritableRowSet;
 import io.deephaven.engine.rowset.WritableRowSet;
@@ -16,10 +17,13 @@ import java.util.function.Function;
 
 public class TrackingWritableRowSetImpl extends WritableRowSetImpl implements TrackingWritableRowSet {
 
+    private final LogicalClock clock;
+    private final WritableRowSetImpl prev;
+
     private transient OrderedLongSet prevInnerSet;
+
     /**
-     * Protects prevImpl. Only updated in checkPrev() and initializePreviousValue() (this later supposed to be used only
-     * right after the constructor, in special cases).
+     * Protects {@link #prevInnerSet}. Only updated in checkAndGetPrev() and initializePreviousValue().
      */
     private transient volatile long changeTimeStep;
 
@@ -31,21 +35,24 @@ public class TrackingWritableRowSetImpl extends WritableRowSetImpl implements Tr
 
     public TrackingWritableRowSetImpl(final OrderedLongSet innerSet) {
         super(innerSet);
-        this.prevInnerSet = OrderedLongSet.EMPTY;
+        clock = ExecutionContext.getContext().getUpdateGraph().clock();
+        prev = new UnmodifiableRowSetImpl();
+        prevInnerSet = OrderedLongSet.EMPTY;
         changeTimeStep = -1;
     }
 
     private OrderedLongSet checkAndGetPrev() {
-        if (LogicalClock.DEFAULT.currentStep() == changeTimeStep) {
+        if (clock.currentStep() == changeTimeStep) {
             return prevInnerSet;
         }
         synchronized (this) {
-            final long currentClockStep = LogicalClock.DEFAULT.currentStep();
+            final long currentClockStep = clock.currentStep();
             if (currentClockStep == changeTimeStep) {
                 return prevInnerSet;
             }
             prevInnerSet.ixRelease();
             prevInnerSet = getInnerSet().ixCowRef();
+            prev.assign(prevInnerSet.ixCowRef());
             changeTimeStep = currentClockStep;
             return prevInnerSet;
         }
@@ -69,16 +76,14 @@ public class TrackingWritableRowSetImpl extends WritableRowSetImpl implements Tr
     }
 
     @Override
-    public void preMutationHook() {
-        checkAndGetPrev();
+    public <INDEXER_TYPE extends Indexer> INDEXER_TYPE indexer() {
+        // noinspection unchecked
+        return (INDEXER_TYPE) indexer;
     }
 
     @Override
-    protected void postMutationHook() {
-        final TrackingRowSet.Indexer localIndexer = indexer;
-        if (localIndexer != null) {
-            localIndexer.rowSetChanged();
-        }
+    protected void preMutationHook() {
+        checkAndGetPrev();
     }
 
     @Override
@@ -113,6 +118,12 @@ public class TrackingWritableRowSetImpl extends WritableRowSetImpl implements Tr
     }
 
     @Override
+    public RowSet prev() {
+        checkAndGetPrev();
+        return prev;
+    }
+
+    @Override
     public long getPrev(final long rowPosition) {
         if (rowPosition < 0) {
             return -1;
@@ -139,5 +150,28 @@ public class TrackingWritableRowSetImpl extends WritableRowSetImpl implements Tr
     public void readExternal(@NotNull final ObjectInput in) throws IOException {
         super.readExternal(in);
         initializePreviousValue();
+    }
+
+    /**
+     * An unmodifiable view of a {@link WritableRowSetImpl}.
+     */
+    private static class UnmodifiableRowSetImpl extends WritableRowSetImpl {
+
+        public UnmodifiableRowSetImpl() {}
+
+        @Override
+        protected final void preMutationHook() {
+            throw new UnsupportedOperationException("Unmodifiable view must never be mutated");
+        }
+
+        @Override
+        protected final void postMutationHook() {
+            throw new UnsupportedOperationException("Unmodifiable view must never be mutated");
+        }
+
+        @Override
+        public final void close() {
+            throw new UnsupportedOperationException("Unmodifiable view must never be closed");
+        }
     }
 }

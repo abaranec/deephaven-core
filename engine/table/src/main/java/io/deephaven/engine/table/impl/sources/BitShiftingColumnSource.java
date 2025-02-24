@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources;
 
 import io.deephaven.chunk.attributes.ChunkLengths;
@@ -13,18 +16,35 @@ import io.deephaven.chunk.WritableLongChunk;
 import io.deephaven.engine.rowset.RowSequence;
 import io.deephaven.engine.rowset.RowSequenceFactory;
 import io.deephaven.engine.rowset.chunkattributes.OrderedRowKeys;
-import org.apache.commons.lang3.mutable.MutableInt;
-import org.apache.commons.lang3.mutable.MutableLong;
+import io.deephaven.util.mutable.MutableInt;
+import io.deephaven.util.mutable.MutableLong;
 import org.jetbrains.annotations.NotNull;
 
 import static io.deephaven.util.QueryConstants.*;
 
 public class BitShiftingColumnSource<T> extends AbstractColumnSource<T> implements UngroupableColumnSource {
 
+    /**
+     * Wrap the innerSource if it is not agnostic to redirection. Otherwise, return the innerSource.
+     *
+     * @param shiftState The cross join shift state to use
+     * @param innerSource The column source to redirect
+     */
+    public static <T> ColumnSource<T> maybeWrap(
+            @NotNull final CrossJoinShiftState shiftState,
+            @NotNull final ColumnSource<T> innerSource) {
+        if (innerSource instanceof RowKeyAgnosticChunkSource) {
+            return innerSource;
+        }
+        return new BitShiftingColumnSource<>(shiftState, innerSource);
+    }
+
     private final CrossJoinShiftState shiftState;
     private final ColumnSource<T> innerSource;
 
-    public BitShiftingColumnSource(final CrossJoinShiftState shiftState, @NotNull final ColumnSource<T> innerSource) {
+    protected BitShiftingColumnSource(
+            @NotNull final CrossJoinShiftState shiftState,
+            @NotNull final ColumnSource<T> innerSource) {
         super(innerSource.getType());
         this.shiftState = shiftState;
         this.innerSource = innerSource;
@@ -39,147 +59,147 @@ public class BitShiftingColumnSource<T> extends AbstractColumnSource<T> implemen
     public void startTrackingPrevValues() {}
 
     @Override
-    public T get(long index) {
-        if (index < 0) {
+    public T get(long rowKey) {
+        if (rowKey < 0) {
             return null;
         }
-        return innerSource.get(shiftState.getShifted(index));
+        return innerSource.get(shiftState.getShifted(rowKey));
     }
 
     @Override
-    public Boolean getBoolean(long index) {
-        if (index < 0) {
+    public Boolean getBoolean(long rowKey) {
+        if (rowKey < 0) {
             return null;
         }
-        return innerSource.getBoolean(shiftState.getShifted(index));
+        return innerSource.getBoolean(shiftState.getShifted(rowKey));
     }
 
     @Override
-    public byte getByte(long index) {
-        if (index < 0) {
+    public byte getByte(long rowKey) {
+        if (rowKey < 0) {
             return NULL_BYTE;
         }
-        return innerSource.getByte(shiftState.getShifted(index));
+        return innerSource.getByte(shiftState.getShifted(rowKey));
     }
 
     @Override
-    public char getChar(long index) {
-        if (index < 0) {
+    public char getChar(long rowKey) {
+        if (rowKey < 0) {
             return NULL_CHAR;
         }
-        return innerSource.getChar(shiftState.getShifted(index));
+        return innerSource.getChar(shiftState.getShifted(rowKey));
     }
 
     @Override
-    public double getDouble(long index) {
-        if (index < 0) {
+    public double getDouble(long rowKey) {
+        if (rowKey < 0) {
             return NULL_DOUBLE;
         }
-        return innerSource.getDouble(shiftState.getShifted(index));
+        return innerSource.getDouble(shiftState.getShifted(rowKey));
     }
 
     @Override
-    public float getFloat(long index) {
-        if (index < 0) {
+    public float getFloat(long rowKey) {
+        if (rowKey < 0) {
             return NULL_FLOAT;
         }
-        return innerSource.getFloat(shiftState.getShifted(index));
+        return innerSource.getFloat(shiftState.getShifted(rowKey));
     }
 
     @Override
-    public int getInt(long index) {
-        if (index < 0) {
+    public int getInt(long rowKey) {
+        if (rowKey < 0) {
             return NULL_INT;
         }
-        return innerSource.getInt(shiftState.getShifted(index));
+        return innerSource.getInt(shiftState.getShifted(rowKey));
     }
 
     @Override
-    public long getLong(long index) {
-        if (index < 0) {
+    public long getLong(long rowKey) {
+        if (rowKey < 0) {
             return NULL_LONG;
         }
-        return innerSource.getLong(shiftState.getShifted(index));
+        return innerSource.getLong(shiftState.getShifted(rowKey));
     }
 
     @Override
-    public short getShort(long index) {
-        if (index < 0) {
+    public short getShort(long rowKey) {
+        if (rowKey < 0) {
             return NULL_SHORT;
         }
-        return innerSource.getShort(shiftState.getShifted(index));
+        return innerSource.getShort(shiftState.getShifted(rowKey));
     }
 
     @Override
-    public T getPrev(long index) {
-        if (index < 0) {
+    public T getPrev(long rowKey) {
+        if (rowKey < 0) {
             return null;
         }
-        return innerSource.getPrev(shiftState.getPrevShifted(index));
+        return innerSource.getPrev(shiftState.getPrevShifted(rowKey));
     }
 
     @Override
-    public Boolean getPrevBoolean(long index) {
-        if (index < 0) {
+    public Boolean getPrevBoolean(long rowKey) {
+        if (rowKey < 0) {
             return null;
         }
-        return innerSource.getPrevBoolean(shiftState.getPrevShifted(index));
+        return innerSource.getPrevBoolean(shiftState.getPrevShifted(rowKey));
     }
 
     @Override
-    public byte getPrevByte(long index) {
-        if (index < 0) {
+    public byte getPrevByte(long rowKey) {
+        if (rowKey < 0) {
             return NULL_BYTE;
         }
-        return innerSource.getPrevByte(shiftState.getPrevShifted(index));
+        return innerSource.getPrevByte(shiftState.getPrevShifted(rowKey));
     }
 
     @Override
-    public char getPrevChar(long index) {
-        if (index < 0) {
+    public char getPrevChar(long rowKey) {
+        if (rowKey < 0) {
             return NULL_CHAR;
         }
-        return innerSource.getPrevChar(shiftState.getPrevShifted(index));
+        return innerSource.getPrevChar(shiftState.getPrevShifted(rowKey));
     }
 
     @Override
-    public double getPrevDouble(long index) {
-        if (index < 0) {
+    public double getPrevDouble(long rowKey) {
+        if (rowKey < 0) {
             return NULL_DOUBLE;
         }
-        return innerSource.getPrevDouble(shiftState.getPrevShifted(index));
+        return innerSource.getPrevDouble(shiftState.getPrevShifted(rowKey));
     }
 
     @Override
-    public float getPrevFloat(long index) {
-        if (index < 0) {
+    public float getPrevFloat(long rowKey) {
+        if (rowKey < 0) {
             return NULL_FLOAT;
         }
-        return innerSource.getPrevFloat(shiftState.getPrevShifted(index));
+        return innerSource.getPrevFloat(shiftState.getPrevShifted(rowKey));
     }
 
     @Override
-    public int getPrevInt(long index) {
-        if (index < 0) {
+    public int getPrevInt(long rowKey) {
+        if (rowKey < 0) {
             return NULL_INT;
         }
-        return innerSource.getPrevInt(shiftState.getPrevShifted(index));
+        return innerSource.getPrevInt(shiftState.getPrevShifted(rowKey));
     }
 
     @Override
-    public long getPrevLong(long index) {
-        if (index < 0) {
+    public long getPrevLong(long rowKey) {
+        if (rowKey < 0) {
             return NULL_LONG;
         }
-        return innerSource.getPrevLong(shiftState.getPrevShifted(index));
+        return innerSource.getPrevLong(shiftState.getPrevShifted(rowKey));
     }
 
     @Override
-    public short getPrevShort(long index) {
-        if (index < 0) {
+    public short getPrevShort(long rowKey) {
+        if (rowKey < 0) {
             return NULL_SHORT;
         }
-        return innerSource.getPrevShort(shiftState.getPrevShifted(index));
+        return innerSource.getPrevShort(shiftState.getPrevShifted(rowKey));
     }
 
     @Override
@@ -194,118 +214,123 @@ public class BitShiftingColumnSource<T> extends AbstractColumnSource<T> implemen
     }
 
     @Override
-    public long getUngroupedSize(long columnIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedSize(shiftState.getShifted(columnIndex));
+    public long getUngroupedSize(long groupRowKey) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedSize(shiftState.getShifted(groupRowKey));
     }
 
     @Override
-    public long getUngroupedPrevSize(long columnIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevSize(shiftState.getPrevShifted(columnIndex));
+    public long getUngroupedPrevSize(long groupRowKey) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevSize(shiftState.getPrevShifted(groupRowKey));
     }
 
     @Override
-    public T getUngrouped(long columnIndex, int arrayIndex) {
+    public T getUngrouped(long groupRowKey, int offsetInGroup) {
         // noinspection unchecked
-        return (T) ((UngroupableColumnSource) innerSource).getUngrouped(shiftState.getShifted(columnIndex), arrayIndex);
+        return (T) ((UngroupableColumnSource) innerSource).getUngrouped(shiftState.getShifted(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public T getUngroupedPrev(long columnIndex, int arrayIndex) {
+    public T getUngroupedPrev(long groupRowKey, int offsetInGroup) {
         // noinspection unchecked
-        return (T) ((UngroupableColumnSource) innerSource).getUngroupedPrev(shiftState.getPrevShifted(columnIndex),
-                arrayIndex);
+        return (T) ((UngroupableColumnSource) innerSource).getUngroupedPrev(shiftState.getPrevShifted(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public Boolean getUngroupedBoolean(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedBoolean(shiftState.getShifted(columnIndex),
-                arrayIndex);
+    public Boolean getUngroupedBoolean(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedBoolean(shiftState.getShifted(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public Boolean getUngroupedPrevBoolean(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevBoolean(shiftState.getPrevShifted(columnIndex),
-                arrayIndex);
+    public Boolean getUngroupedPrevBoolean(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevBoolean(shiftState.getPrevShifted(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public double getUngroupedDouble(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedDouble(shiftState.getShifted(columnIndex),
-                arrayIndex);
+    public double getUngroupedDouble(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedDouble(shiftState.getShifted(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public double getUngroupedPrevDouble(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevDouble(shiftState.getPrevShifted(columnIndex),
-                arrayIndex);
+    public double getUngroupedPrevDouble(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevDouble(shiftState.getPrevShifted(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public float getUngroupedFloat(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedFloat(shiftState.getShifted(columnIndex),
-                arrayIndex);
+    public float getUngroupedFloat(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedFloat(shiftState.getShifted(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public float getUngroupedPrevFloat(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevFloat(shiftState.getPrevShifted(columnIndex),
-                arrayIndex);
+    public float getUngroupedPrevFloat(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevFloat(shiftState.getPrevShifted(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public byte getUngroupedByte(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedByte(shiftState.getShifted(columnIndex), arrayIndex);
+    public byte getUngroupedByte(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedByte(shiftState.getShifted(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public byte getUngroupedPrevByte(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevByte(shiftState.getPrevShifted(columnIndex),
-                arrayIndex);
+    public byte getUngroupedPrevByte(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevByte(shiftState.getPrevShifted(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public char getUngroupedChar(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedChar(shiftState.getShifted(columnIndex), arrayIndex);
+    public char getUngroupedChar(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedChar(shiftState.getShifted(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public char getUngroupedPrevChar(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevChar(shiftState.getPrevShifted(columnIndex),
-                arrayIndex);
+    public char getUngroupedPrevChar(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevChar(shiftState.getPrevShifted(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public short getUngroupedShort(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedShort(shiftState.getShifted(columnIndex),
-                arrayIndex);
+    public short getUngroupedShort(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedShort(shiftState.getShifted(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public short getUngroupedPrevShort(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevShort(shiftState.getPrevShifted(columnIndex),
-                arrayIndex);
+    public short getUngroupedPrevShort(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevShort(shiftState.getPrevShifted(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public int getUngroupedInt(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedInt(shiftState.getShifted(columnIndex), arrayIndex);
+    public int getUngroupedInt(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedInt(shiftState.getShifted(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public int getUngroupedPrevInt(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevInt(shiftState.getPrevShifted(columnIndex),
-                arrayIndex);
+    public int getUngroupedPrevInt(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevInt(shiftState.getPrevShifted(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public long getUngroupedLong(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedLong(shiftState.getShifted(columnIndex), arrayIndex);
+    public long getUngroupedLong(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedLong(shiftState.getShifted(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
-    public long getUngroupedPrevLong(long columnIndex, int arrayIndex) {
-        return ((UngroupableColumnSource) innerSource).getUngroupedPrevLong(shiftState.getPrevShifted(columnIndex),
-                arrayIndex);
+    public long getUngroupedPrevLong(long groupRowKey, int offsetInGroup) {
+        return ((UngroupableColumnSource) innerSource).getUngroupedPrevLong(shiftState.getPrevShifted(groupRowKey),
+                offsetInGroup);
     }
 
     @Override
@@ -323,27 +348,7 @@ public class BitShiftingColumnSource<T> extends AbstractColumnSource<T> implemen
     @Override
     protected <ALTERNATE_DATA_TYPE> ColumnSource<ALTERNATE_DATA_TYPE> doReinterpret(
             @NotNull Class<ALTERNATE_DATA_TYPE> alternateDataType) {
-        // noinspection unchecked
-        return new ReinterpretToOriginal(alternateDataType);
-    }
-
-    private class ReinterpretToOriginal<ALTERNATE_DATA_TYPE> extends BitShiftingColumnSource<ALTERNATE_DATA_TYPE> {
-        private ReinterpretToOriginal(Class<ALTERNATE_DATA_TYPE> alternateDataType) {
-            super(BitShiftingColumnSource.this.shiftState,
-                    BitShiftingColumnSource.this.innerSource.reinterpret(alternateDataType));
-        }
-
-        @Override
-        public boolean allowsReinterpret(@NotNull Class alternateDataType) {
-            return alternateDataType == BitShiftingColumnSource.this.getType();
-        }
-
-        @Override
-        protected <ORIGINAL_TYPE> ColumnSource<ORIGINAL_TYPE> doReinterpret(
-                @NotNull Class<ORIGINAL_TYPE> alternateDataType) {
-            // noinspection unchecked
-            return (ColumnSource<ORIGINAL_TYPE>) BitShiftingColumnSource.this;
-        }
+        return new BitShiftingColumnSource<>(shiftState, innerSource.reinterpret(alternateDataType));
     }
 
     private static class FillContext implements ColumnSource.FillContext {
@@ -382,9 +387,6 @@ public class BitShiftingColumnSource<T> extends AbstractColumnSource<T> implemen
 
             private final WritableIntChunk<ChunkLengths> runLengths;
             private final WritableLongChunk<OrderedRowKeys> uniqueIndices;
-            private final MutableInt currentRunLength = new MutableInt();
-            private final MutableInt currentRunPosition = new MutableInt();
-            private final MutableLong currentRunInnerIndexKey = new MutableLong();
 
             private boolean keysAndLengthsReusable;
 
@@ -403,31 +405,31 @@ public class BitShiftingColumnSource<T> extends AbstractColumnSource<T> implemen
                     reset();
                 }
 
-                currentRunLength.setValue(0);
-                currentRunPosition.setValue(0);
-                currentRunInnerIndexKey.setValue(RowSequence.NULL_ROW_KEY);
+                final MutableInt currentRunLength = new MutableInt(0);
+                final MutableInt currentRunPosition = new MutableInt(0);
+                final MutableLong currentRunInnerIndexKey = new MutableLong(RowSequence.NULL_ROW_KEY);
 
-                rowSequence.forAllRowKeys((final long indexKey) -> {
-                    final long lastInnerIndexKey = currentRunInnerIndexKey.longValue();
+                rowSequence.forAllRowKeys((final long rowKey) -> {
+                    final long lastInnerIndexKey = currentRunInnerIndexKey.get();
                     final long innerIndexKey =
-                            usePrev ? shiftState.getPrevShifted(indexKey) : shiftState.getShifted(indexKey);
+                            usePrev ? shiftState.getPrevShifted(rowKey) : shiftState.getShifted(rowKey);
                     if (innerIndexKey != lastInnerIndexKey) {
                         if (lastInnerIndexKey != RowSequence.NULL_ROW_KEY) {
-                            uniqueIndices.set(currentRunPosition.intValue(), lastInnerIndexKey);
-                            runLengths.set(currentRunPosition.intValue(), currentRunLength.intValue());
+                            uniqueIndices.set(currentRunPosition.get(), lastInnerIndexKey);
+                            runLengths.set(currentRunPosition.get(), currentRunLength.get());
                             currentRunPosition.increment();
                         }
-                        currentRunLength.setValue(1);
-                        currentRunInnerIndexKey.setValue(innerIndexKey);
+                        currentRunLength.set(1);
+                        currentRunInnerIndexKey.set(innerIndexKey);
                     } else {
                         currentRunLength.increment();
                     }
                 });
 
-                uniqueIndices.set(currentRunPosition.intValue(), currentRunInnerIndexKey.longValue());
-                runLengths.set(currentRunPosition.intValue(), currentRunLength.intValue());
-                uniqueIndices.setSize(currentRunPosition.intValue() + 1);
-                runLengths.setSize(currentRunPosition.intValue() + 1);
+                uniqueIndices.set(currentRunPosition.get(), currentRunInnerIndexKey.get());
+                runLengths.set(currentRunPosition.get(), currentRunLength.get());
+                uniqueIndices.setSize(currentRunPosition.get() + 1);
+                runLengths.setSize(currentRunPosition.get() + 1);
 
                 keysAndLengthsReusable = shared;
             }
@@ -490,5 +492,10 @@ public class BitShiftingColumnSource<T> extends AbstractColumnSource<T> implemen
 
         effectiveContext.dupExpandKernel.expandDuplicates(rowSequence.intSize(), destination,
                 effectiveContext.shareable.runLengths);
+    }
+
+    @Override
+    public boolean isStateless() {
+        return innerSource.isStateless();
     }
 }

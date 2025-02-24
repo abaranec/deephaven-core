@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.web.client.api.barrage.stream;
 
 import elemental2.core.Function;
@@ -9,6 +12,7 @@ import jsinterop.annotations.JsPackage;
 import jsinterop.annotations.JsProperty;
 import jsinterop.annotations.JsType;
 import jsinterop.base.Js;
+import jsinterop.base.JsPropertyMap;
 
 /**
  * Java wrapper to deal with the distinct ResponseStream types that are emitted. Provides strongly typed methods for
@@ -20,11 +24,40 @@ import jsinterop.base.Js;
 public class ResponseStreamWrapper<T> {
     @JsType(isNative = true)
     public interface Status {
+        @JsOverlay
+        static Status of(int code, String details, BrowserHeaders metadata) {
+            return (Status) JsPropertyMap.of(
+                    "code", (double) code,
+                    "details", details,
+                    "metadata", metadata);
+        }
+
         @JsProperty
-        double getCode();
+        int getCode();
 
         @JsProperty
         String getDetails();
+
+        @JsProperty
+        BrowserHeaders getMetadata();
+
+        @JsOverlay
+        default boolean isOk() {
+            return getCode() == Code.OK;
+        }
+
+        @JsOverlay
+        default boolean isTransportError() {
+            return getCode() == Code.Internal || getCode() == Code.Unknown || getCode() == Code.Unavailable;
+        }
+    }
+    @JsType(isNative = true)
+    public interface ServiceError {
+        @JsProperty
+        int getCode();
+
+        @JsProperty
+        String getMessage();
 
         @JsProperty
         BrowserHeaders getMetadata();
@@ -58,5 +91,15 @@ public class ResponseStreamWrapper<T> {
     @JsOverlay
     public final ResponseStreamWrapper<T> onEnd(JsConsumer<Status> handler) {
         return on("end", Js.cast(handler));
+    }
+
+    @JsOverlay
+    public final ResponseStreamWrapper<T> onHeaders(JsConsumer<Object> handler) {
+        try {
+            return on("headers", Js.cast(handler));
+        } catch (Exception ignore) {
+            // most implementations don't offer this, we can ignore this error
+            return this;
+        }
     }
 }

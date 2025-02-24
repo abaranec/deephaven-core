@@ -1,8 +1,10 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit UngroupedBoxedCharObjectVectorColumnSource and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit UngroupedBoxedCharObjectVectorColumnSource and run "./gradlew replicateSourcesAndChunks" to regenerate
+//
+// @formatter:off
 package io.deephaven.engine.table.impl.sources;
 
 import io.deephaven.engine.table.ColumnSource;
@@ -25,14 +27,14 @@ public class UngroupedBoxedLongObjectVectorColumnSource extends UngroupedObjectV
     }
 
     @Override
-    public long getLong(long index) {
-        final Long result = get(index);
+    public long getLong(long rowKey) {
+        final Long result = get(rowKey);
         return result == null ? NULL_LONG : result;
     }
 
     @Override
-    public long getPrevLong(long index) {
-        final Long result = getPrev(index);
+    public long getPrevLong(long rowKey) {
+        final Long result = getPrev(rowKey);
         return result == null ? NULL_LONG : result;
     }
 }

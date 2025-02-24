@@ -1,22 +1,17 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources.regioned;
 
 import io.deephaven.base.testing.BaseCachedJMockTestCase;
 import io.deephaven.base.verify.RequirementFailure;
 import io.deephaven.chunk.attributes.Values;
-import io.deephaven.engine.table.impl.locations.GroupingProvider;
-import io.deephaven.engine.rowset.RowSet;
 import junit.framework.TestCase;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
 import java.lang.reflect.Array;
-import java.util.Collections;
-import java.util.Map;
 
 import static io.deephaven.engine.table.impl.sources.regioned.RegionedColumnSource.getFirstRowKey;
 import static io.deephaven.engine.table.impl.sources.regioned.RegionedColumnSource.getLastRowKey;
@@ -26,7 +21,7 @@ import static io.deephaven.util.QueryConstants.*;
  * Base class for testing {@link RegionedColumnSourceArray} implementations.
  */
 @SuppressWarnings({"AnonymousInnerClassMayBeStatic", "JUnit4AnnotatedMethodInJUnit3TestCase"})
-public abstract class TstRegionedColumnSourcePrimitive<DATA_TYPE, ATTR extends Values, REGION_TYPE extends ColumnRegion<ATTR>>
+public abstract class TstRegionedColumnSourcePrimitive<DATA_TYPE, ATTR extends Values, REGION_TYPE extends ColumnRegion<ATTR>, CS_REGION_TYPE extends ColumnRegion<ATTR>>
         extends BaseCachedJMockTestCase {
 
     static final byte[] TEST_BYTES =
@@ -47,7 +42,7 @@ public abstract class TstRegionedColumnSourcePrimitive<DATA_TYPE, ATTR extends V
             Double.MAX_VALUE, 100.123, 126000, -56869.2, -1.0};
 
     REGION_TYPE[] cr;
-    RegionedColumnSourceBase<DATA_TYPE, ATTR, REGION_TYPE> SUT;
+    RegionedColumnSourceBase<DATA_TYPE, ATTR, CS_REGION_TYPE> SUT;
 
     private final Class<?> regionTypeClass;
 
@@ -89,6 +84,11 @@ public abstract class TstRegionedColumnSourcePrimitive<DATA_TYPE, ATTR extends V
         }
     }
 
+    REGION_TYPE doLookupRegion(long elementRowKey) {
+        // noinspection unchecked
+        return (REGION_TYPE) SUT.lookupRegion(elementRowKey);
+    }
+
     @Test
     public void testAddRegions() {
         // Test validity checks.
@@ -100,74 +100,33 @@ public abstract class TstRegionedColumnSourcePrimitive<DATA_TYPE, ATTR extends V
 
         // Add the 0th region.
         SUT.addRegionForUnitTests(cr[0]);
-        TestCase.assertEquals(cr[0], SUT.lookupRegion(getFirstRowKey(0)));
-        TestCase.assertEquals(cr[0], SUT.lookupRegion(getLastRowKey(0)));
+        TestCase.assertEquals(cr[0], doLookupRegion(getFirstRowKey(0)));
+        TestCase.assertEquals(cr[0], doLookupRegion(getLastRowKey(0)));
 
         // Add the 1st region.
         SUT.addRegionForUnitTests(cr[1]);
-        TestCase.assertEquals(cr[1], SUT.lookupRegion(getFirstRowKey(1)));
-        TestCase.assertEquals(cr[1], SUT.lookupRegion(getLastRowKey(1)));
+        TestCase.assertEquals(cr[1], doLookupRegion(getFirstRowKey(1)));
+        TestCase.assertEquals(cr[1], doLookupRegion(getLastRowKey(1)));
 
         // Prove that the 2nd region is missing.
         try {
-            TestCase.assertNull(SUT.lookupRegion(getFirstRowKey(2)));
+            TestCase.assertNull(doLookupRegion(getFirstRowKey(2)));
         } catch (ArrayIndexOutOfBoundsException expected) {
         }
         try {
-            TestCase.assertNull(SUT.lookupRegion(getLastRowKey(2)));
+            TestCase.assertNull(doLookupRegion(getLastRowKey(2)));
         } catch (ArrayIndexOutOfBoundsException expected) {
         }
 
         // Prove that 9th region is missing.
         try {
-            TestCase.assertNull(SUT.lookupRegion(getFirstRowKey(9)));
+            TestCase.assertNull(doLookupRegion(getFirstRowKey(9)));
         } catch (ArrayIndexOutOfBoundsException expected) {
         }
         try {
-            TestCase.assertNull(SUT.lookupRegion(getLastRowKey(9)));
+            TestCase.assertNull(doLookupRegion(getLastRowKey(9)));
         } catch (ArrayIndexOutOfBoundsException expected) {
         }
-    }
-
-    @Test
-    public void testDeferredGrouping() {
-        TestCase.assertNull(SUT.getGroupToRange());
-
-        final Map<DATA_TYPE, RowSet> dummyGrouping = Collections.emptyMap();
-        SUT.setGroupToRange(dummyGrouping);
-        TestCase.assertEquals(dummyGrouping, SUT.getGroupToRange());
-        SUT.setGroupToRange(null);
-        TestCase.assertNull(SUT.getGroupToRange());
-
-        // noinspection unchecked
-        final GroupingProvider<DATA_TYPE> groupingProvider = mock(GroupingProvider.class);
-
-        SUT.setGroupingProvider(groupingProvider);
-        checking(new Expectations() {
-            {
-                oneOf(groupingProvider).getGroupToRange();
-                will(returnValue(null));
-            }
-        });
-        TestCase.assertNull(SUT.getGroupToRange());
-        assertIsSatisfied();
-        TestCase.assertNull(SUT.getGroupToRange());
-        assertIsSatisfied();
-
-        SUT.setGroupingProvider(groupingProvider);
-        checking(new Expectations() {
-            {
-                oneOf(groupingProvider).getGroupToRange();
-                will(returnValue(dummyGrouping));
-            }
-        });
-        TestCase.assertEquals(dummyGrouping, SUT.getGroupToRange());
-        assertIsSatisfied();
-        TestCase.assertEquals(dummyGrouping, SUT.getGroupToRange());
-        assertIsSatisfied();
-        SUT.setGroupToRange(null);
-        TestCase.assertNull(SUT.getGroupToRange());
-        assertIsSatisfied();
     }
 
     @Test

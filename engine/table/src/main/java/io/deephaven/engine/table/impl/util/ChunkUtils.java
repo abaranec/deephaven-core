@@ -1,12 +1,12 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.util;
 
 import io.deephaven.base.verify.Assert;
 import io.deephaven.chunk.*;
 import io.deephaven.chunk.attributes.Any;
+import io.deephaven.chunk.attributes.ChunkPositions;
 import io.deephaven.chunk.attributes.Values;
 import io.deephaven.engine.rowset.RowSequence;
 import io.deephaven.engine.table.ChunkSink;
@@ -15,6 +15,7 @@ import io.deephaven.engine.table.SharedContext;
 import io.deephaven.engine.table.WritableColumnSource;
 import io.deephaven.util.QueryConstants;
 import io.deephaven.util.SafeCloseableArray;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.Objects;
 
@@ -470,7 +471,7 @@ public class ChunkUtils {
     }
 
     public static <T extends Values> void fillWithNullValue(ChunkSink<T> dest, RowSequence allKeys) {
-        final int minSize = Math.min(allKeys.intSize(), COPY_DATA_CHUNK_SIZE);
+        final int minSize = (int) Math.min(allKeys.size(), COPY_DATA_CHUNK_SIZE);
         if (minSize == 0) {
             return;
         }
@@ -479,9 +480,8 @@ public class ChunkUtils {
                 final RowSequence.Iterator iter = allKeys.getRowSequenceIterator()) {
             chunk.fillWithNullValue(0, minSize);
             while (iter.hasMore()) {
-                try (final RowSequence nextKeys = iter.getNextRowSequenceWithLength(COPY_DATA_CHUNK_SIZE)) {
-                    dest.fillFromChunk(destContext, chunk, nextKeys);
-                }
+                final RowSequence nextKeys = iter.getNextRowSequenceWithLength(COPY_DATA_CHUNK_SIZE);
+                dest.fillFromChunk(destContext, chunk, nextKeys);
             }
         }
     }
@@ -500,24 +500,46 @@ public class ChunkUtils {
     }
 
     /**
-     * Fill inOrderChunk with consecutive integers from 0..size() - 1.
+     * Fill {@code inOrderChunk} with consecutive integers from 0..size() - 1.
      *
      * @param inOrderChunk the chunk to fill
      */
-    public static <T extends Any> void fillInOrder(WritableIntChunk<T> inOrderChunk) {
-        for (int ii = 0; ii < inOrderChunk.size(); ++ii) {
+    public static <T extends Any> void fillInOrder(@NotNull final WritableIntChunk<T> inOrderChunk) {
+        final int size = inOrderChunk.size();
+        for (int ii = 0; ii < size; ++ii) {
             inOrderChunk.set(ii, ii);
         }
     }
 
     /**
-     * Fill inOrderChunk with consecutive integers from 0..size() - 1.
+     * Fill {@code inOrderChunk} with consecutive integers from 0..size() - 1.
      *
      * @param inOrderChunk the chunk to fill
      */
-    public static <T extends Any> void fillInOrder(WritableLongChunk<T> inOrderChunk) {
-        for (int ii = 0; ii < inOrderChunk.size(); ++ii) {
+    public static <T extends Any> void fillInOrder(@NotNull final WritableLongChunk<T> inOrderChunk) {
+        final int size = inOrderChunk.size();
+        for (int ii = 0; ii < size; ++ii) {
             inOrderChunk.set(ii, ii);
         }
+    }
+
+    /**
+     * Fill {@code inOrderChunk} with the positions of {@code validity} that hold {@code true}, and set its size to the
+     * number of positions filled.
+     *
+     * @param inOrderChunk the chunk to fill
+     * @param validity the valid positions to fill from
+     */
+    public static void fillWithValidPositions(
+            @NotNull final WritableIntChunk<? super ChunkPositions> inOrderChunk,
+            @NotNull final BooleanChunk<? extends Any> validity) {
+        final int validitySize = validity.size();
+        int outputIndex = 0;
+        for (int vi = 0; vi < validitySize; ++vi) {
+            if (validity.get(vi)) {
+                inOrderChunk.set(outputIndex++, vi);
+            }
+        }
+        inOrderChunk.setSize(outputIndex);
     }
 }

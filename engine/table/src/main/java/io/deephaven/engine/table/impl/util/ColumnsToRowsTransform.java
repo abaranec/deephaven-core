@@ -1,12 +1,10 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.util;
 
 import io.deephaven.chunk.attributes.ChunkPositions;
 import io.deephaven.chunk.attributes.Values;
-import io.deephaven.datastructures.util.CollectionUtil;
 import io.deephaven.engine.rowset.RowSetFactory;
 import io.deephaven.engine.table.*;
 import io.deephaven.engine.rowset.*;
@@ -18,7 +16,7 @@ import io.deephaven.engine.table.impl.AbstractColumnSource;
 import io.deephaven.engine.table.impl.sources.BitShiftingColumnSource;
 import io.deephaven.chunk.*;
 import io.deephaven.engine.rowset.chunkattributes.OrderedRowKeys;
-import org.apache.commons.lang3.mutable.MutableInt;
+import io.deephaven.util.mutable.MutableInt;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
@@ -150,7 +148,7 @@ public class ColumnsToRowsTransform {
         final List<String> expandSet = new ArrayList<>();
 
         final int bits = 64 - Long.numberOfLeadingZeros(fanout - 1);
-        final CrossJoinShiftState crossJoinShiftState = bits > 0 ? new CrossJoinShiftState(bits) : null;
+        final CrossJoinShiftState crossJoinShiftState = bits > 0 ? new CrossJoinShiftState(bits, false) : null;
         final Class<?>[] valueTypes = new Class[transposeColumns.length];
         final String[] typeSourceName = new String[transposeColumns.length];
         final ColumnSource<?>[][] sourcesToTranspose = new ColumnSource[transposeColumns.length][labels.length];
@@ -180,7 +178,7 @@ public class ColumnsToRowsTransform {
             }
             expandSet.add(name);
             if (crossJoinShiftState != null) {
-                resultMap.put(name, new BitShiftingColumnSource<>(crossJoinShiftState, cs));
+                resultMap.put(name, BitShiftingColumnSource.maybeWrap(crossJoinShiftState, cs));
             } else {
                 resultMap.put(name, cs);
             }
@@ -208,7 +206,7 @@ public class ColumnsToRowsTransform {
             final String[] sourceColumns = new String[sourceColumnCount];
             final MutableInt columnIndex = new MutableInt();
             final ModifiedColumnSet modifyAll = querySource
-                    .newModifiedColumnSet(expandSet.toArray(CollectionUtil.ZERO_LENGTH_STRING_ARRAY));
+                    .newModifiedColumnSet(expandSet.toArray(String[]::new));
             final ModifiedColumnSet[] modifyOneRow = new ModifiedColumnSet[labels.length];
             // noinspection unchecked
             final List<String>[] sourcesForRow = new ArrayList[labels.length];
@@ -218,28 +216,28 @@ public class ColumnsToRowsTransform {
             }
 
             querySource.getColumnSourceMap().forEach((name, cs) -> {
-                sourceColumns[columnIndex.intValue()] = name;
+                sourceColumns[columnIndex.get()] = name;
                 if (allTransposeSet.contains(name)) {
                     for (int cc = 0; cc < transposeSet.size(); ++cc) {
                         if (transposeSet.get(cc).contains(name)) {
-                            resultColumnSets[columnIndex.intValue()] = result.newModifiedColumnSet(valueColumns[cc]);
+                            resultColumnSets[columnIndex.get()] = result.newModifiedColumnSet(valueColumns[cc]);
                             sourcesForRow[transposeIndex[cc]++].add(name);
                         }
                     }
                 } else {
-                    resultColumnSets[columnIndex.intValue()] = result.newModifiedColumnSet(name);
+                    resultColumnSets[columnIndex.get()] = result.newModifiedColumnSet(name);
                 }
                 columnIndex.increment();
             });
 
             for (int cc = 0; cc < labels.length; ++cc) {
                 modifyOneRow[cc] = querySource
-                        .newModifiedColumnSet(sourcesForRow[cc].toArray(CollectionUtil.ZERO_LENGTH_STRING_ARRAY));
+                        .newModifiedColumnSet(sourcesForRow[cc].toArray(String[]::new));
             }
 
             final ModifiedColumnSet.Transformer transformer =
                     querySource.newModifiedColumnSetTransformer(sourceColumns, resultColumnSets);
-            querySource.listenForUpdates(new BaseTable.ListenerImpl("columnsToRows(" + labelColumn + ", "
+            querySource.addUpdateListener(new BaseTable.ListenerImpl("columnsToRows(" + labelColumn + ", "
                     + Arrays.toString(valueColumns) + ", " + Arrays.deepToString(transposeColumns) + ")", querySource,
                     result) {
                 @Override
@@ -340,13 +338,8 @@ public class ColumnsToRowsTransform {
         }
 
         @Override
-        public String get(final long index) {
-            return getLabel(index);
-        }
-
-        @Override
-        public String getPrev(final long elementIndex) {
-            return getLabel(elementIndex);
+        public String get(final long rowKey) {
+            return getLabel(rowKey);
         }
 
         private String getLabel(final long index) {
@@ -361,7 +354,7 @@ public class ColumnsToRowsTransform {
             final WritableObjectChunk<String, ?> objectChunk = destination.asWritableObjectChunk();
             destination.setSize(rowSequence.intSize());
             rowSequence.forAllRowKeys(idx -> {
-                objectChunk.set(outputPosition.intValue(), getLabel(idx));
+                objectChunk.set(outputPosition.get(), getLabel(idx));
                 outputPosition.increment();
             });
         }
@@ -390,130 +383,130 @@ public class ColumnsToRowsTransform {
         }
 
         @Override
-        public T get(final long index) {
-            final int sourceColumn = (int) (index & mask);
-            final long sourceIndex = index >> bits;
+        public T get(final long rowKey) {
+            final int sourceColumn = (int) (rowKey & mask);
+            final long sourceIndex = rowKey >> bits;
             // noinspection unchecked
             return (T) transposeColumns[sourceColumn].get(sourceIndex);
         }
 
         @Override
-        public Boolean getBoolean(final long index) {
-            final int sourceColumn = (int) (index & mask);
-            final long sourceIndex = index >> bits;
+        public Boolean getBoolean(final long rowKey) {
+            final int sourceColumn = (int) (rowKey & mask);
+            final long sourceIndex = rowKey >> bits;
             return transposeColumns[sourceColumn].getBoolean(sourceIndex);
         }
 
         @Override
-        public byte getByte(final long index) {
-            final int sourceColumn = (int) (index & mask);
-            final long sourceIndex = index >> bits;
+        public byte getByte(final long rowKey) {
+            final int sourceColumn = (int) (rowKey & mask);
+            final long sourceIndex = rowKey >> bits;
             return transposeColumns[sourceColumn].getByte(sourceIndex);
         }
 
         @Override
-        public char getChar(final long index) {
-            final int sourceColumn = (int) (index & mask);
-            final long sourceIndex = index >> bits;
+        public char getChar(final long rowKey) {
+            final int sourceColumn = (int) (rowKey & mask);
+            final long sourceIndex = rowKey >> bits;
             return transposeColumns[sourceColumn].getChar(sourceIndex);
         }
 
         @Override
-        public double getDouble(final long index) {
-            final int sourceColumn = (int) (index & mask);
-            final long sourceIndex = index >> bits;
+        public double getDouble(final long rowKey) {
+            final int sourceColumn = (int) (rowKey & mask);
+            final long sourceIndex = rowKey >> bits;
             return transposeColumns[sourceColumn].getDouble(sourceIndex);
         }
 
         @Override
-        public float getFloat(final long index) {
-            final int sourceColumn = (int) (index & mask);
-            final long sourceIndex = index >> bits;
+        public float getFloat(final long rowKey) {
+            final int sourceColumn = (int) (rowKey & mask);
+            final long sourceIndex = rowKey >> bits;
             return transposeColumns[sourceColumn].getFloat(sourceIndex);
         }
 
         @Override
-        public int getInt(final long index) {
-            final int sourceColumn = (int) (index & mask);
-            final long sourceIndex = index >> bits;
+        public int getInt(final long rowKey) {
+            final int sourceColumn = (int) (rowKey & mask);
+            final long sourceIndex = rowKey >> bits;
             return transposeColumns[sourceColumn].getInt(sourceIndex);
         }
 
         @Override
-        public long getLong(final long index) {
-            final int sourceColumn = (int) (index & mask);
-            final long sourceIndex = index >> bits;
+        public long getLong(final long rowKey) {
+            final int sourceColumn = (int) (rowKey & mask);
+            final long sourceIndex = rowKey >> bits;
             return transposeColumns[sourceColumn].getLong(sourceIndex);
         }
 
         @Override
-        public short getShort(final long index) {
-            final int sourceColumn = (int) (index & mask);
-            final long sourceIndex = index >> bits;
+        public short getShort(final long rowKey) {
+            final int sourceColumn = (int) (rowKey & mask);
+            final long sourceIndex = rowKey >> bits;
             return transposeColumns[sourceColumn].getShort(sourceIndex);
         }
 
         @Override
-        public T getPrev(final long index) {
-            final int sourceColumn = (int) (index & mask);
-            final long sourceIndex = index >> bits;
+        public T getPrev(final long rowKey) {
+            final int sourceColumn = (int) (rowKey & mask);
+            final long sourceIndex = rowKey >> bits;
             // noinspection unchecked
             return (T) transposeColumns[sourceColumn].getPrev(sourceIndex);
         }
 
         @Override
-        public Boolean getPrevBoolean(final long index) {
-            final int sourceColumn = (int) (index & mask);
-            final long sourceIndex = index >> bits;
+        public Boolean getPrevBoolean(final long rowKey) {
+            final int sourceColumn = (int) (rowKey & mask);
+            final long sourceIndex = rowKey >> bits;
             return transposeColumns[sourceColumn].getPrevBoolean(sourceIndex);
         }
 
         @Override
-        public byte getPrevByte(final long index) {
-            final int sourceColumn = (int) (index & mask);
-            final long sourceIndex = index >> bits;
+        public byte getPrevByte(final long rowKey) {
+            final int sourceColumn = (int) (rowKey & mask);
+            final long sourceIndex = rowKey >> bits;
             return transposeColumns[sourceColumn].getPrevByte(sourceIndex);
         }
 
         @Override
-        public char getPrevChar(final long index) {
-            final int sourceColumn = (int) (index & mask);
-            final long sourceIndex = index >> bits;
+        public char getPrevChar(final long rowKey) {
+            final int sourceColumn = (int) (rowKey & mask);
+            final long sourceIndex = rowKey >> bits;
             return transposeColumns[sourceColumn].getPrevChar(sourceIndex);
         }
 
         @Override
-        public double getPrevDouble(final long index) {
-            final int sourceColumn = (int) (index & mask);
-            final long sourceIndex = index >> bits;
+        public double getPrevDouble(final long rowKey) {
+            final int sourceColumn = (int) (rowKey & mask);
+            final long sourceIndex = rowKey >> bits;
             return transposeColumns[sourceColumn].getPrevDouble(sourceIndex);
         }
 
         @Override
-        public float getPrevFloat(final long index) {
-            final int sourceColumn = (int) (index & mask);
-            final long sourceIndex = index >> bits;
+        public float getPrevFloat(final long rowKey) {
+            final int sourceColumn = (int) (rowKey & mask);
+            final long sourceIndex = rowKey >> bits;
             return transposeColumns[sourceColumn].getPrevFloat(sourceIndex);
         }
 
         @Override
-        public int getPrevInt(final long index) {
-            final int sourceColumn = (int) (index & mask);
-            final long sourceIndex = index >> bits;
+        public int getPrevInt(final long rowKey) {
+            final int sourceColumn = (int) (rowKey & mask);
+            final long sourceIndex = rowKey >> bits;
             return transposeColumns[sourceColumn].getPrevInt(sourceIndex);
         }
 
         @Override
-        public long getPrevLong(final long index) {
-            final int sourceColumn = (int) (index & mask);
-            final long sourceIndex = index >> bits;
+        public long getPrevLong(final long rowKey) {
+            final int sourceColumn = (int) (rowKey & mask);
+            final long sourceIndex = rowKey >> bits;
             return transposeColumns[sourceColumn].getPrevLong(sourceIndex);
         }
 
         @Override
-        public short getPrevShort(final long index) {
-            final int sourceColumn = (int) (index & mask);
-            final long sourceIndex = index >> bits;
+        public short getPrevShort(final long rowKey) {
+            final int sourceColumn = (int) (rowKey & mask);
+            final long sourceIndex = rowKey >> bits;
             return transposeColumns[sourceColumn].getPrevShort(sourceIndex);
         }
 
@@ -565,7 +558,7 @@ public class ColumnsToRowsTransform {
             // noinspection unchecked
             final TransposeFillContext transposeFillContext = (TransposeFillContext) context;
             updateContext(transposeFillContext, rowSequence);
-            doFillAndPermute(destination, transposeFillContext, false, rowSequence.size());
+            doFillAndPermute(destination, transposeFillContext, false, rowSequence.intSize());
         }
 
         @Override
@@ -575,7 +568,7 @@ public class ColumnsToRowsTransform {
             // noinspection unchecked
             final TransposeFillContext transposeFillContext = (TransposeFillContext) context;
             updateContext(transposeFillContext, rowSequence);
-            doFillAndPermute(destination, transposeFillContext, true, rowSequence.size());
+            doFillAndPermute(destination, transposeFillContext, true, rowSequence.intSize());
         }
 
         private void updateContext(@NotNull final TransposeFillContext context,
@@ -588,14 +581,14 @@ public class ColumnsToRowsTransform {
             rowSequence.forAllRowKeys(idx -> {
                 final int sourceColumn = (int) (idx & mask);
                 final long sourceIndex = idx >> bits;
-                context.outputPositions[sourceColumn].add(outputPosition.intValue());
+                context.outputPositions[sourceColumn].add(outputPosition.get());
                 outputPosition.increment();
                 context.innerKeys[sourceColumn].add(sourceIndex);
             });
         }
 
         private void doFillAndPermute(@NotNull final WritableChunk<? super Values> destination,
-                final TransposeFillContext transposeFillContext, final boolean usePrev, final long originalSize) {
+                final TransposeFillContext transposeFillContext, final boolean usePrev, final int originalSize) {
             for (int ii = 0; ii < transposeColumns.length; ++ii) {
                 if (transposeFillContext.innerKeys[ii].size() == 0) {
                     continue;
@@ -614,10 +607,16 @@ public class ColumnsToRowsTransform {
                 if (isComplete) {
                     return;
                 }
+                destination.setSize(originalSize);
                 // noinspection unchecked,rawtypes
                 transposeFillContext.permuteKernel.permute((WritableChunk) transposeFillContext.tempValues,
                         transposeFillContext.outputPositions[ii], destination);
             }
+        }
+
+        @Override
+        public boolean isStateless() {
+            return Arrays.stream(transposeColumns).allMatch(ColumnSource::isStateless);
         }
     }
 }

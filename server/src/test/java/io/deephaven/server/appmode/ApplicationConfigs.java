@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.server.appmode;
 
 import io.deephaven.appmode.*;
@@ -47,7 +50,7 @@ public class ApplicationConfigs {
     }
 
     static Path testAppDir() {
-        return Paths.get(System.getProperty("devroot")).resolve("server/src/test/app.d");
+        return Paths.get(System.getProperty("ApplicationConfigs.testAppDir"));
     }
 
     public static class App00 implements Application.Factory {
@@ -56,7 +59,7 @@ public class ApplicationConfigs {
         public final Application create() {
             Field<Table> hello = StandardField.of("hello", TableTools.emptyTable(42).view("I=i"),
                     "A table with one column 'I' and 42 rows, 0-41.");
-            Field<Table> world = StandardField.of("world", TableTools.timeTable("00:00:01"));
+            Field<Table> world = StandardField.of("world", TableTools.timeTable("PT00:00:01"));
             return Application.builder()
                     .id(App00.class.getName())
                     .name("My Class Application")
@@ -71,7 +74,7 @@ public class ApplicationConfigs {
         public ApplicationState create(ApplicationState.Listener listener) {
             final CountDownLatch latch = new CountDownLatch(1);
             final ApplicationState state = new ApplicationState(listener, "", "My Dynamic Application");
-            state.setField("initial_field", TableTools.timeTable("00:00:01"));
+            state.setField("initial_field", TableTools.timeTable("PT00:00:01"));
             final Thread thread = new Thread(() -> {
                 for (int i = 0;; ++i) {
                     state.setField(String.format("field_%d", i), TableTools.emptyTable(i).view("I=i").tail(1));

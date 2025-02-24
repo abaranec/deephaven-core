@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.select;
 
 import io.deephaven.engine.rowset.WritableRowSet;
@@ -10,17 +9,18 @@ import io.deephaven.engine.rowset.RowSetBuilderSequential;
 import io.deephaven.engine.rowset.RowSetFactory;
 import io.deephaven.engine.table.Table;
 import io.deephaven.engine.table.TableDefinition;
-import io.deephaven.time.DateTime;
 import io.deephaven.time.DateTimeUtils;
 import io.deephaven.engine.updategraph.DynamicNode;
 import io.deephaven.engine.table.ColumnSource;
+import org.jetbrains.annotations.NotNull;
 
+import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 
 /**
  * Utilities for downsampling non-ticking time series data within a query. The input table must be sorted by the
- * {@link DateTime} column to be used for binning rows.
+ * {@link Instant} column to be used for binning rows.
  * <p>
  * </p>
  * <p>
@@ -49,8 +49,8 @@ public class DownsampledWhereFilter extends WhereFilterImpl {
 
     /**
      * Creates a {@link DownsampledWhereFilter} which can be used in a .where clause to downsample time series rows.
-     * 
-     * @param column {@link DateTime} column to use for filtering.
+     *
+     * @param column {@link Instant} column to use for filtering.
      * @param binSize Size in nanoseconds for the time bins. Constants like {@link DateTimeUtils#MINUTE} are typically
      *        used.
      * @param order {@link SampleOrder} to set desired behavior.
@@ -63,8 +63,8 @@ public class DownsampledWhereFilter extends WhereFilterImpl {
 
     /**
      * Creates a {@link DownsampledWhereFilter} which can be used in a .where clause to downsample time series rows.
-     * 
-     * @param column {@link DateTime} column to use for filtering.
+     *
+     * @param column {@link Instant} column to use for filtering.
      * @param binSize Size in nanoseconds for the time bins. Constants like {@link DateTimeUtils#MINUTE} are typically
      *        used.
      */
@@ -85,17 +85,22 @@ public class DownsampledWhereFilter extends WhereFilterImpl {
     }
 
     @Override
-    public void init(TableDefinition tableDefinition) {}
+    public void init(@NotNull final TableDefinition tableDefinition) {}
 
+    @NotNull
     @Override
-    public WritableRowSet filter(RowSet selection, RowSet fullSet, Table table, boolean usePrev) {
+    public WritableRowSet filter(
+            @NotNull final RowSet selection,
+            @NotNull final RowSet fullSet,
+            @NotNull final Table table,
+            final boolean usePrev) {
         if (DynamicNode.isDynamicAndIsRefreshing(table)) {
             throw new UnsupportedOperationException("Can not do a DownsampledWhereFilter on a refreshing table!");
         }
 
         // NB: because our source is not refreshing, we don't care about the previous values
 
-        ColumnSource<DateTime> timestampColumn = table.getColumnSource(column);
+        ColumnSource<Instant> timestampColumn = table.getColumnSource(column);
 
         RowSetBuilderSequential builder = RowSetFactory.builderSequential();
 
@@ -104,14 +109,14 @@ public class DownsampledWhereFilter extends WhereFilterImpl {
         boolean hasNext = it.hasNext();
 
         long lastKey = -1;
-        DateTime lastBin = null;
+        Instant lastBin = null;
 
         while (hasNext) {
             long next = it.nextLong();
             hasNext = it.hasNext();
 
-            DateTime timestamp = timestampColumn.get(next);
-            DateTime bin = (order == SampleOrder.UPPERLAST) ? DateTimeUtils.upperBin(timestamp, binSize)
+            Instant timestamp = timestampColumn.get(next);
+            Instant bin = (order == SampleOrder.UPPERLAST) ? DateTimeUtils.upperBin(timestamp, binSize)
                     : DateTimeUtils.lowerBin(timestamp, binSize);
             if (!hasNext) {
                 if (order == SampleOrder.UPPERLAST) {
@@ -151,5 +156,10 @@ public class DownsampledWhereFilter extends WhereFilterImpl {
     @Override
     public DownsampledWhereFilter copy() {
         return new DownsampledWhereFilter(column, binSize, order);
+    }
+
+    @Override
+    public boolean permitParallelization() {
+        return false;
     }
 }

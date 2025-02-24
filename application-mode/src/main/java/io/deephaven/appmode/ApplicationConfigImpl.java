@@ -1,4 +1,10 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.appmode;
+
+import io.deephaven.configuration.ConfigDir;
+import io.deephaven.configuration.Configuration;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -8,14 +14,22 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.stream.Stream;
 
 public class ApplicationConfigImpl {
 
     public static final String APPLICATION_DIR_PROP = "deephaven.application.dir";
+    public static final String DEFAULT_APP_DIRNAME = "app.d";
 
-    public static final String APPLICATION_DIR = System.getProperty(APPLICATION_DIR_PROP, null);
+    public static Optional<Path> applicationDir() {
+        final String explicitDir = Configuration.getInstance().getStringWithDefault(APPLICATION_DIR_PROP, null);
+        if (explicitDir != null) {
+            return Optional.of(Path.of(explicitDir));
+        }
+        return ConfigDir.get().map(ApplicationConfigImpl::defaultAppDir).filter(Files::isDirectory);
+    }
 
     public static List<ApplicationConfig> find(Path dir) throws IOException, ClassNotFoundException {
         try (Stream<Path> stream =
@@ -27,6 +41,10 @@ public class ApplicationConfigImpl {
             }
             return configs;
         }
+    }
+
+    private static Path defaultAppDir(Path configDir) {
+        return configDir.resolve(DEFAULT_APP_DIRNAME);
     }
 
     private static boolean isAppFile(Path path) {

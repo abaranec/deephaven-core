@@ -1,6 +1,8 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.select.analyzers;
 
-import io.deephaven.chunk.attributes.Values;
 import io.deephaven.engine.table.ModifiedColumnSet;
 import io.deephaven.engine.table.impl.select.SelectColumn;
 import io.deephaven.engine.table.ColumnSource;
@@ -8,20 +10,22 @@ import io.deephaven.engine.table.ColumnSource;
 import java.util.Map;
 
 public abstract class SelectOrViewColumnLayer extends DependencyLayerBase {
-    private final ColumnSource<Values> optionalUnderlying;
+    private final ColumnSource<?> optionalUnderlying;
 
-    SelectOrViewColumnLayer(SelectAndViewAnalyzer inner, String name, SelectColumn sc,
-            ColumnSource<Values> ws, ColumnSource<Values> optionalUnderlying,
-            String[] deps, ModifiedColumnSet mcsBuilder) {
-        super(inner, name, sc, ws, deps, mcsBuilder);
+    SelectOrViewColumnLayer(
+            final SelectAndViewAnalyzer.AnalyzerContext context,
+            final SelectColumn sc,
+            final ColumnSource<?> ws,
+            final ColumnSource<?> optionalUnderlying,
+            final String[] deps,
+            final ModifiedColumnSet mcsBuilder) {
+        super(context, sc, ws, deps, mcsBuilder);
         this.optionalUnderlying = optionalUnderlying;
     }
 
     @Override
-    final Map<String, ColumnSource<?>> getColumnSourcesRecurse(GetMode mode) {
-        final Map<String, ColumnSource<?>> result = inner.getColumnSourcesRecurse(mode);
+    void populateColumnSources(final Map<String, ColumnSource<?>> result) {
         result.put(name, columnSource);
-        return result;
     }
 
     @Override
@@ -30,6 +34,5 @@ public abstract class SelectOrViewColumnLayer extends DependencyLayerBase {
         if (optionalUnderlying != null) {
             optionalUnderlying.startTrackingPrevValues();
         }
-        inner.startTrackingPrev();
     }
 }

@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.replicators;
 
 import io.deephaven.replication.ReplicationUtils;
@@ -15,33 +18,35 @@ import static io.deephaven.replication.ReplicatePrimitiveCode.charToAllButBoolea
 import static io.deephaven.replication.ReplicatePrimitiveCode.charToObject;
 
 public class ReplicateSortKernelTests {
+    private static final String TASK = "replicateSortKernelTests";
+
     public static void main(String[] args) throws IOException {
         ReplicateSortKernel.main(args);
 
-        charToAllButBoolean(
+        charToAllButBoolean(TASK,
                 "engine/table/src/test/java/io/deephaven/engine/table/impl/sort/timsort/TestCharTimSortKernel.java");
-        charToAllButBoolean(
+        charToAllButBoolean(TASK,
                 "engine/table/src/test/java/io/deephaven/engine/table/impl/sort/timsort/BaseTestCharTimSortKernel.java");
-        charToAllButBoolean(
+        charToAllButBoolean(TASK,
                 "engine/benchmark/src/benchmark/java/io/deephaven/benchmark/engine/sort/timsort/CharSortKernelBenchmark.java");
-        charToAllButBoolean(
+        charToAllButBoolean(TASK,
                 "engine/benchmark/src/benchmark/java/io/deephaven/benchmark/engine/partition/CharPartitionKernelBenchmark.java");
-        charToAllButBoolean(
+        charToAllButBoolean(TASK,
                 "engine/table/src/test/java/io/deephaven/engine/table/impl/sort/permute/TestCharPermuteKernel.java");
 
-        charToAllButBoolean(
+        charToAllButBoolean(TASK,
                 "engine/table/src/test/java/io/deephaven/engine/table/impl/sort/megamerge/TestCharLongMegaMerge.java");
 
         final String baseTestPath =
-                charToObject(
+                charToObject(TASK,
                         "engine/table/src/test/java/io/deephaven/engine/table/impl/sort/timsort/BaseTestCharTimSortKernel.java");
         fixupObject(baseTestPath);
-        charToObject(
+        charToObject(TASK,
                 "engine/table/src/test/java/io/deephaven/engine/table/impl/sort/timsort/TestCharTimSortKernel.java");
-        charToObject(
+        charToObject(TASK,
                 "engine/benchmark/src/benchmark/java/io/deephaven/benchmark/engine/sort/timsort/CharSortKernelBenchmark.java");
 
-        final String objectMegaMergePath = charToObject(
+        final String objectMegaMergePath = charToObject(TASK,
                 "engine/table/src/test/java/io/deephaven/engine/table/impl/sort/megamerge/TestCharLongMegaMerge.java");
         fixupObjectMegaMerge(objectMegaMergePath);
     }
@@ -49,10 +54,6 @@ public class ReplicateSortKernelTests {
     private static void fixupObject(String objectPath) throws IOException {
         final File objectFile = new File(objectPath);
         List<String> lines = FileUtils.readLines(objectFile, Charset.defaultCharset());
-
-        final int packageIndex = lines.indexOf("package io.deephaven.engine.table.impl.sort;");
-
-        lines.add(packageIndex + 2, "import java.util.Objects;");
 
         lines = lines.stream().map(x -> x.replaceAll("ObjectChunk<Any>", "ObjectChunk<Object, Any>"))
                 .collect(Collectors.toList());
@@ -103,8 +104,8 @@ public class ReplicateSortKernelTests {
     private static List<String> fixupTupleColumnSource(List<String> lines) {
         return ReplicationUtils.replaceRegion(lines, "tuple column source", Arrays.asList(
                 "                @Override",
-                "                public Object get(long rowSet) {",
-                "                    return javaTuples.get(((int)rowSet) / 10).getFirstElement();",
+                "                public Object get(long rowKey) {",
+                "                    return javaTuples.get(((int)rowKey) / 10).getFirstElement();",
                 "                }"));
     }
 

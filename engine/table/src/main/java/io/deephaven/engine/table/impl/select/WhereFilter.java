@@ -1,26 +1,28 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.select;
 
-import io.deephaven.api.ColumnName;
-import io.deephaven.api.RawString;
-import io.deephaven.api.Strings;
-import io.deephaven.api.filter.*;
-import io.deephaven.api.value.Value;
+import io.deephaven.api.expression.Expression;
+import io.deephaven.api.filter.Filter;
+import io.deephaven.engine.context.QueryCompiler;
+import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.engine.rowset.WritableRowSet;
+import io.deephaven.engine.table.DataIndex;
 import io.deephaven.engine.table.Table;
 import io.deephaven.engine.table.TableDefinition;
+import io.deephaven.engine.table.impl.BaseTable;
+import io.deephaven.engine.table.impl.QueryCompilerRequestProcessor;
 import io.deephaven.engine.table.impl.QueryTable;
 import io.deephaven.engine.table.impl.remote.ConstructSnapshot;
-import io.deephaven.engine.table.impl.select.MatchFilter.MatchType;
-import io.deephaven.engine.rowset.RowSet;
+import io.deephaven.util.SafeCloseable;
+import io.deephaven.util.annotations.FinalDefault;
+import io.deephaven.util.annotations.InternalUseOnly;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
-import java.util.Objects;
 
 /**
  * Interface for individual filters within a where clause.
@@ -28,21 +30,20 @@ import java.util.Objects;
 public interface WhereFilter extends Filter {
 
     static WhereFilter of(Filter filter) {
-        return (filter instanceof WhereFilter)
-                ? (WhereFilter) filter
-                : filter.walk(new Adapter(false)).getOut();
-    }
-
-    static WhereFilter ofInverted(Filter filter) {
-        return filter.walk(new Adapter(true)).getOut();
+        return (filter instanceof WhereFilter) ? (WhereFilter) filter : WhereFilterAdapter.of(filter);
     }
 
     static WhereFilter[] from(Collection<? extends Filter> filters) {
         return filters.stream().map(WhereFilter::of).toArray(WhereFilter[]::new);
     }
 
-    static WhereFilter[] fromInverted(Collection<? extends Filter> filters) {
-        return filters.stream().map(WhereFilter::ofInverted).toArray(WhereFilter[]::new);
+    static WhereFilter[] copyFrom(WhereFilter[] filters) {
+        return Arrays.stream(filters).map(WhereFilter::copy).toArray(WhereFilter[]::new);
+    }
+
+    @InternalUseOnly
+    static WhereFilter[] fromInternal(Filter filter) {
+        return from(FilterToListImpl.of(filter));
     }
 
     /**
@@ -57,16 +58,22 @@ public interface WhereFilter extends Filter {
         void requestRecompute();
 
         /**
-         * Notify the something about the filters has changed such that all unmatched rows of the source table should be
-         * re-evaluated.
+         * Notify that something about the filters has changed such that all unmatched rows of the source table should
+         * be re-evaluated.
          */
         void requestRecomputeUnmatched();
 
         /**
-         * Notify the something about the filters has changed such that all matched rows of the source table should be
+         * Notify that something about the filters has changed such that all matched rows of the source table should be
          * re-evaluated.
          */
         void requestRecomputeMatched();
+
+        /**
+         * Notify that something about the filters has changed such that the following rows of the source table should
+         * be re-evaluated. The rowSet ownership is not taken by requestRecompute.
+         */
+        void requestRecompute(RowSet rowSet);
 
         /**
          * Get the table underlying this listener.
@@ -82,10 +89,12 @@ public interface WhereFilter extends Filter {
         void setIsRefreshing(boolean refreshing);
     }
 
-    WhereFilter[] ZERO_LENGTH_SELECT_FILTER_ARRAY = new WhereFilter[0];
+    WhereFilter[] ZERO_LENGTH_WHERE_FILTER_ARRAY = new WhereFilter[0];
 
     /**
      * Get the columns required by this select filter.
+     * <p>
+     * This filter must already be initialized before calling this method.
      *
      * @return the columns used as input by this select filter.
      */
@@ -93,17 +102,60 @@ public interface WhereFilter extends Filter {
 
     /**
      * Get the array columns required by this select filter.
+     * <p>
+     * This filter must already be initialized before calling this method.
      *
      * @return the columns used as array input by this select filter.
      */
     List<String> getColumnArrays();
 
     /**
-     * Initialize this select filter given the table definition
-     * 
+     * Initialize this filter given the table definition. If this filter has already been initialized, this should be a
+     * no-op, or optionally validate that the table definition is compatible with previous initialization.
+     *
      * @param tableDefinition the definition of the table that will be filtered
+     * @apiNote Any {@link io.deephaven.engine.context.QueryLibrary}, {@link io.deephaven.engine.context.QueryScope}, or
+     *          {@link QueryCompiler} usage needs to be resolved within init. Implementations must be idempotent.
      */
-    void init(TableDefinition tableDefinition);
+    void init(@NotNull TableDefinition tableDefinition);
+
+    /**
+     * Initialize this select filter given the table definition
+     *
+     * @param tableDefinition the definition of the table that will be filtered
+     * @param compilationProcessor the processor to use for compilation
+     * @apiNote Any {@link io.deephaven.engine.context.QueryLibrary}, {@link io.deephaven.engine.context.QueryScope}, or
+     *          {@link QueryCompiler} usage needs to be resolved within init. Implementations must be idempotent.
+     */
+    @SuppressWarnings("unused")
+    default void init(
+            @NotNull final TableDefinition tableDefinition,
+            @NotNull final QueryCompilerRequestProcessor compilationProcessor) {
+        init(tableDefinition);
+    }
+
+    /**
+     * Perform any operation-level initialization necessary using the {@link Table} that will be filtered with this
+     * WhereFilter, e.g. gathering {@link DataIndex data indexes}. This method will always be called exactly once,
+     * before gathering any dependencies or filtering data.
+     *
+     * @param sourceTable The {@link Table} that will be filtered with this WhereFilter
+     * @return A {@link SafeCloseable} that will be {@link SafeCloseable#close() closed} when the operation is complete,
+     *         whether successful or not
+     */
+    default SafeCloseable beginOperation(@NotNull final Table sourceTable) {
+        return () -> {
+        };
+    }
+
+    /**
+     * Validate that this {@code WhereFilter} is safe to use in the context of the provided sourceTable.
+     *
+     * @param sourceTable the source table
+     */
+    default void validateSafeForRefresh(final BaseTable<?> sourceTable) {
+        // nothing to validate by default
+    }
 
     /**
      * Filter selection to only matching rows.
@@ -116,11 +168,79 @@ public interface WhereFilter extends Filter {
      * @param table the table to filter
      * @param usePrev true if previous values should be used. Implementing previous value filtering is optional, and a
      *        {@link PreviousFilteringNotSupported} exception may be thrown. If a PreviousFiltering exception is thrown,
-     *        then the caller must acquire the UpdateGraphProcessor lock.
+     *        then the caller must acquire the PeriodicUpdateGraph lock.
      *
      * @return The subset of selection accepted by this filter; ownership passes to the caller
      */
-    WritableRowSet filter(RowSet selection, RowSet fullSet, Table table, boolean usePrev);
+    @NotNull
+    WritableRowSet filter(
+            @NotNull RowSet selection,
+            @NotNull RowSet fullSet,
+            @NotNull Table table,
+            boolean usePrev);
+
+    /**
+     * Filter selection to only non-matching rows.
+     *
+     * <p>
+     * Defaults to
+     *
+     * <pre>
+     * {@code
+     * try (final WritableRowSet regular = filter(selection, fullSet, table, usePrev)) {
+     *     return selection.minus(regular);
+     * }
+     * }
+     * </pre>
+     *
+     * <p>
+     * Implementations are encouraged to override this when they can provide more efficient implementations.
+     *
+     * @param selection the indices that should be filtered. The selection must be a subset of fullSet, and may include
+     *        rows that the engine determines need not be evaluated to produce the result. Implementations <em>may
+     *        not</em> mutate or {@link RowSet#close() close} {@code selection}.
+     * @param fullSet the complete RowSet of the table to filter. The fullSet is used for calculating variables like "i"
+     *        or "ii". Implementations <em>may not</em> mutate or {@link RowSet#close() close} {@code fullSet}.
+     * @param table the table to filter
+     * @param usePrev true if previous values should be used. Implementing previous value filtering is optional, and a
+     *        {@link PreviousFilteringNotSupported} exception may be thrown. If a PreviousFiltering exception is thrown,
+     *        then the caller must acquire the PeriodicUpdateGraph lock.
+     *
+     * @return The subset of selection not accepted by this filter; ownership passes to the caller
+     */
+    @NotNull
+    default WritableRowSet filterInverse(
+            @NotNull RowSet selection,
+            @NotNull RowSet fullSet,
+            @NotNull Table table,
+            boolean usePrev) {
+        try (final WritableRowSet regular = filter(selection, fullSet, table, usePrev)) {
+            return selection.minus(regular);
+        }
+    }
+
+    /**
+     * Delegates to {@link #filter(RowSet, RowSet, Table, boolean)} when {@code invert == false} and
+     * {@link #filterInverse(RowSet, RowSet, Table, boolean)} when {@code invert == true}.
+     *
+     * @param selection the indices that should be filtered. The selection must be a subset of fullSet, and may include
+     *        rows that the engine determines need not be evaluated to produce the result. Implementations <em>may
+     *        not</em> mutate or {@link RowSet#close() close} {@code selection}.
+     * @param fullSet the complete RowSet of the table to filter. The fullSet is used for calculating variables like "i"
+     *        or "ii". Implementations <em>may not</em> mutate or {@link RowSet#close() close} {@code fullSet}.
+     * @param table the table to filter
+     * @param usePrev true if previous values should be used. Implementing previous value filtering is optional, and a
+     *        {@link PreviousFilteringNotSupported} exception may be thrown. If a PreviousFiltering exception is thrown,
+     *        then the caller must acquire the PeriodicUpdateGraph lock.
+     * @param invert if the filter should be inverted
+     * @return The subset of selection; ownership passes to the caller
+     */
+    @FinalDefault
+    default WritableRowSet filter(RowSet selection, RowSet fullSet, Table table, boolean usePrev, boolean invert) {
+        return invert
+                ? filterInverse(selection, fullSet, table, usePrev)
+                : filter(selection, fullSet, table, usePrev);
+    }
 
     /**
      * @return true if this is a filter that does not require any code execution, but rather is handled entirely within
@@ -138,17 +258,25 @@ public interface WhereFilter extends Filter {
     }
 
     /**
-     * Set the ShiftObliviousListener that should be notified if results based on this filter must be recomputed.
+     * @return if this filter can be applied in parallel
+     */
+    default boolean permitParallelization() {
+        return true;
+    }
+
+    /**
+     * Set the {@link RecomputeListener} that should be notified if results based on this WhereFilter must be
+     * recomputed.
      *
-     * @param result the listener to notify.
+     * @param result The {@link RecomputeListener} to notify
      */
     void setRecomputeListener(RecomputeListener result);
 
     /**
      * The database system may automatically generate a filter, for example, when applying an ACL to a table. There are
      * certain operations which may bypass these filters.
-     *
-     * This function returns whether or not this filter is automated.
+     * <p>
+     * This function returns whether this filter is automated.
      *
      * @return true if this filter was automatically applied by the database system. False otherwise.
      */
@@ -157,7 +285,7 @@ public interface WhereFilter extends Filter {
     /**
      * The database system may automatically generate a filter, for example, when applying an ACL to a table. There are
      * certain operations which may bypass these filters.
-     *
+     * <p>
      * This function indicates that this filter is automated.
      *
      * @param value true if this filter was automatically applied by the database system. False otherwise.
@@ -170,6 +298,13 @@ public interface WhereFilter extends Filter {
      * @return if this filter can be memoized
      */
     default boolean canMemoize() {
+        return false;
+    }
+
+    /**
+     * Returns true if this filter uses row virtual offset columns of {@code i}, {@code ii} or {@code k}.
+     */
+    default boolean hasVirtualRowVariables() {
         return false;
     }
 
@@ -194,161 +329,20 @@ public interface WhereFilter extends Filter {
         }
     }
 
-    class Adapter implements Filter.Visitor {
-        private final boolean inverted;
-        private WhereFilter out;
-
-        private Adapter(boolean inverted) {
-            this.inverted = inverted;
-        }
-
-        public WhereFilter getOut() {
-            return Objects.requireNonNull(out);
-        }
-
-        @Override
-        public void visit(FilterCondition condition) {
-            out = FilterConditionAdapter.of(inverted ? condition.invert() : condition);
-        }
-
-        @Override
-        public void visit(FilterNot not) {
-            out = not.filter().walk(new Adapter(!inverted)).getOut();
-        }
-
-        @Override
-        public void visit(FilterIsNull isNull) {
-            if (inverted) {
-                out = isNotNull(isNull.column());
-            } else {
-                out = isNull(isNull.column());
-            }
-        }
-
-        @Override
-        public void visit(FilterIsNotNull isNotNull) {
-            if (inverted) {
-                out = isNull(isNotNull.column());
-            } else {
-                out = isNotNull(isNotNull.column());
-            }
-        }
-
-        @Override
-        public void visit(FilterOr ors) {
-            if (inverted) {
-                // !A && !B && ... && !Z
-                out = ConjunctiveFilter.makeConjunctiveFilter(fromInverted(ors.filters()));
-            } else {
-                // A || B || ... || Z
-                out = DisjunctiveFilter.makeDisjunctiveFilter(from(ors.filters()));
-            }
-        }
-
-        @Override
-        public void visit(FilterAnd ands) {
-            if (inverted) {
-                // !A || !B || ... || !Z
-                out = DisjunctiveFilter.makeDisjunctiveFilter(fromInverted(ands.filters()));
-            } else {
-                // A && B && ... && Z
-                out = ConjunctiveFilter.makeConjunctiveFilter(from(ands.filters()));
-            }
-        }
-
-        @Override
-        public void visit(RawString rawString) {
-            if (inverted) {
-                out = WhereFilterFactory.getExpression(String.format("!(%s)", rawString.value()));
-            } else {
-                out = WhereFilterFactory.getExpression(rawString.value());
-            }
-        }
-
-        private static MatchFilter isNull(ColumnName columnName) {
-            return new MatchFilter(columnName.name(), new Object[] {null});
-        }
-
-        private static MatchFilter isNotNull(ColumnName columnName) {
-            return new MatchFilter(MatchType.Inverted, columnName.name(), new Object[] {null});
-        }
-
-        private static class FilterConditionAdapter implements Value.Visitor {
-
-            public static WhereFilter of(FilterCondition condition) {
-                FilterCondition preferred = condition.maybeTranspose();
-                return preferred.lhs().walk(new FilterConditionAdapter(condition, preferred)).getOut();
-            }
-
-            private final FilterCondition original;
-            private final FilterCondition preferred;
-
-            private WhereFilter out;
-
-            private FilterConditionAdapter(FilterCondition original, FilterCondition preferred) {
-                this.original = Objects.requireNonNull(original);
-                this.preferred = Objects.requireNonNull(preferred);
-            }
-
-            public WhereFilter getOut() {
-                return Objects.requireNonNull(out);
-            }
-
-            @Override
-            public void visit(ColumnName lhs) {
-                preferred.rhs().walk(new Value.Visitor() {
-                    @Override
-                    public void visit(ColumnName rhs) {
-                        out = WhereFilterFactory.getExpression(Strings.of(original));
-                    }
-
-                    @Override
-                    public void visit(long rhs) {
-                        switch (preferred.operator()) {
-                            case LESS_THAN:
-                                out = new LongRangeFilter(lhs.name(), Long.MIN_VALUE, rhs, true, false);
-                                break;
-                            case LESS_THAN_OR_EQUAL:
-                                out = new LongRangeFilter(lhs.name(), Long.MIN_VALUE, rhs, true, true);
-                                break;
-                            case GREATER_THAN:
-                                out = new LongRangeFilter(lhs.name(), rhs, Long.MAX_VALUE, false, true);
-                                break;
-                            case GREATER_THAN_OR_EQUAL:
-                                out = new LongRangeFilter(lhs.name(), rhs, Long.MAX_VALUE, true, true);
-                                break;
-                            case EQUALS:
-                                out = new MatchFilter(lhs.name(), rhs);
-                                break;
-                            case NOT_EQUALS:
-                                out = new MatchFilter(MatchType.Inverted, lhs.name(), rhs);
-                                break;
-                            default:
-                                throw new IllegalStateException("Unexpected operator " + original.operator());
-                        }
-                    }
-                });
-            }
-
-            // Note for all remaining cases: since we are walking the preferred object, we know we don't have to handle
-            // the case where rhs is column name.
-
-            @Override
-            public void visit(long lhs) {
-                out = WhereFilterFactory.getExpression(Strings.of(original));
-            }
-        }
-    }
-
     // region Filter impl
 
     @Override
-    default FilterNot not() {
-        throw new UnsupportedOperationException("WhereFilters do not implement not");
+    default Filter invert() {
+        throw new UnsupportedOperationException("WhereFilters do not implement invert");
     }
 
     @Override
-    default <V extends Visitor> V walk(V visitor) {
+    default <T> T walk(Expression.Visitor<T> visitor) {
+        return visitor.visit(this);
+    }
+
+    @Override
+    default <T> T walk(Filter.Visitor<T> visitor) {
         throw new UnsupportedOperationException("WhereFilters do not implement walk");
     }
 

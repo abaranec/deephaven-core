@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.client.impl;
 
 import io.deephaven.annotations.BuildableStyle;
@@ -15,13 +18,13 @@ import java.util.function.Consumer;
 /**
  * The exports request structure. Is a list of {@link ExportRequest export requests}.
  *
- * @see Session#export(ExportsRequest)
+ * @see ExportService#exportRequest(ExportsRequest)
  */
 @Immutable
 @BuildableStyle
-public abstract class ExportsRequest implements Iterable<ExportRequest> {
+abstract class ExportsRequest implements Iterable<ExportRequest> {
 
-    public interface Builder {
+    interface Builder {
 
         Builder addRequests(ExportRequest element);
 

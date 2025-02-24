@@ -1,27 +1,26 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.plot.datasets.xy;
 
-import io.deephaven.base.testing.BaseArrayTestCase;
+import io.deephaven.engine.table.Table;
+import io.deephaven.engine.testutil.testcase.RefreshingTableTestCase;
+import io.deephaven.engine.util.TableTools;
+import io.deephaven.gui.color.Color;
 import io.deephaven.plot.BaseFigureImpl;
 import io.deephaven.plot.ChartImpl;
-import io.deephaven.plot.errors.PlotIllegalArgumentException;
-import io.deephaven.plot.util.PlotUtils;
-import io.deephaven.plot.util.tables.TableBackedTableMapHandle;
-import io.deephaven.gui.color.Color;
 import io.deephaven.plot.datasets.data.IndexableNumericData;
 import io.deephaven.plot.datasets.data.IndexableNumericDataArrayDouble;
+import io.deephaven.plot.errors.PlotIllegalArgumentException;
+import io.deephaven.plot.util.PlotUtils;
 import io.deephaven.plot.util.tables.SwappableTable;
+import io.deephaven.plot.util.tables.TableBackedPartitionedTableHandle;
 import io.deephaven.plot.util.tables.TableHandle;
-import io.deephaven.engine.table.Table;
-import io.deephaven.engine.util.TableTools;
 import junit.framework.TestCase;
 
 import java.util.ArrayList;
 
-public class TestXYDataSeriesArray extends BaseArrayTestCase {
+public class TestXYDataSeriesArray extends RefreshingTableTestCase {
 
     public void testXYDataSeriesArray() {
         ChartImpl chart = new BaseFigureImpl().newChart();
@@ -91,12 +90,10 @@ public class TestXYDataSeriesArray extends BaseArrayTestCase {
         x1.addTableHandle(new TableHandle(TableTools.emptyTable(2).updateView("A=i", "B=i"), "A", "B"));
         x1.addTableHandle(new TableHandle(TableTools.emptyTable(2).updateView("C=i"), "C"));
         final SwappableTable swappableTable =
-                new SwappableTable(new TableBackedTableMapHandle(TableTools.emptyTable(2).updateView("A=i", "B=i"),
-                        new ArrayList<>(), new String[0], null)) {
+                new SwappableTable(new TableBackedPartitionedTableHandle(
+                        TableTools.emptyTable(2).updateView("A=i", "B=i"), new ArrayList<>(), new String[0], null)) {
                     @Override
-                    public void addColumn(String column) {
-
-                    }
+                    public void addColumn(String column) {}
                 };
         x1.addSwappableTable(swappableTable);
 

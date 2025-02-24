@@ -1,6 +1,10 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.replicators;
 
 import io.deephaven.base.ClassUtil;
+import io.deephaven.replication.ReplicationUtils;
 import io.deephaven.util.text.Indenter;
 import io.deephaven.util.type.TypeUtils;
 import org.jetbrains.annotations.NotNull;
@@ -30,7 +34,6 @@ public class TupleSourceCodeGenerator {
 
     private static final String[] DEFAULT_IMPORTS = new String[] {
             "org.jetbrains.annotations.NotNull",
-            "io.deephaven.datastructures.util.SmartKey",
             "io.deephaven.engine.table.TupleSource",
             "io.deephaven.engine.table.impl.tuplesource.AbstractTupleSource",
             "io.deephaven.engine.table.ColumnSource",
@@ -50,18 +53,18 @@ public class TupleSourceCodeGenerator {
     enum ColumnSourceType {
 
         // @formatter:off
-              BYTE(                 "Byte", "byte",                              null,         null, false,                                 CS + ".getByte("    + RK + ")" ,                                 CS + ".getPrevByte("    + RK + ")" , "TypeUtils.box("              + VAL + ')', "TypeUtils.unbox("               + VAL + ')', "(Byte)"      + VAL, "io.deephaven.util.type.TypeUtils"                                                                               ),
-             SHORT(                "Short", "short",                             null,         null, false,                                 CS + ".getShort("   + RK + ")" ,                                 CS + ".getPrevShort("   + RK + ")" , "TypeUtils.box("              + VAL + ')', "TypeUtils.unbox("               + VAL + ')', "(Short)"     + VAL, "io.deephaven.util.type.TypeUtils"                                                                               ),
-               INT(              "Integer", "int",                               null,         null, false,                                 CS + ".getInt("     + RK + ")" ,                                 CS + ".getPrevInt("     + RK + ")" , "TypeUtils.box("              + VAL + ')', "TypeUtils.unbox("               + VAL + ')', "(Integer)"   + VAL, "io.deephaven.util.type.TypeUtils"                                                                               ),
-              LONG(                 "Long", "long",                              null,         null, false,                                 CS + ".getLong("    + RK + ")" ,                                 CS + ".getPrevLong("    + RK + ")" , "TypeUtils.box("              + VAL + ')', "TypeUtils.unbox("               + VAL + ')', "(Long)"      + VAL, "io.deephaven.util.type.TypeUtils"                                                                               ),
-             FLOAT(                "Float", "float",                              null,         null, false,                                 CS + ".getFloat("   + RK + ")" ,                                 CS + ".getPrevFloat("   + RK + ")" , "TypeUtils.box("              + VAL + ')', "TypeUtils.unbox("               + VAL + ')', "(Float)"     + VAL, "io.deephaven.util.type.TypeUtils"                                                                               ),
-            DOUBLE(               "Double", "double",                            null,         null, false,                                 CS + ".getDouble("  + RK + ")" ,                                 CS + ".getPrevDouble("  + RK + ")" , "TypeUtils.box("              + VAL + ')', "TypeUtils.unbox("               + VAL + ')', "(Double)"    + VAL, "io.deephaven.util.type.TypeUtils"                                                                               ),
-              CHAR(            "Character", "char",                              null,         null, false,                                 CS + ".getChar("    + RK + ")" ,                                 CS + ".getPrevChar("    + RK + ")" , "TypeUtils.box("              + VAL + ')', "TypeUtils.unbox("               + VAL + ')', "(Character)" + VAL, "io.deephaven.util.type.TypeUtils"                                                                               ),
-            OBJECT(               "Object", "java.lang.Object",                  null,         null, false,                                 CS + ".get("        + RK + ")" ,                                 CS + ".getPrev("        + RK + ")" ,                                 VAL      ,                                    VAL      ,                 VAL                                                                                                                   ),
-         R_BOOLEAN( "ReinterpretedBoolean", "byte",                              null,         null,  true,                                 CS + ".getByte("    + RK + ")" ,                                 CS + ".getPrevByte("    + RK + ")" , "BooleanUtils.byteAsBoolean(" + VAL + ')', "BooleanUtils.booleanAsByte("    + VAL + ')', "(Boolean)"   + VAL, "io.deephaven.util.type.TypeUtils", "io.deephaven.util.BooleanUtils"                                             ),
-           BOOLEAN(              "Boolean", "java.lang.Boolean",                 "byte",  R_BOOLEAN, false, "BooleanUtils.booleanAsByte(" + CS + ".getBoolean(" + RK + "))", "BooleanUtils.booleanAsByte(" + CS + ".getPrevBoolean(" + RK + "))", "BooleanUtils.byteAsBoolean(" + VAL + ')', "BooleanUtils.booleanAsByte("    + VAL + ')', "(Boolean)"   + VAL, "io.deephaven.util.BooleanUtils"                                                                                 ),
-        R_DATETIME("ReinterpretedDateTime", "long",                              null,         null,  true,                                 CS + ".getLong("    + RK + ")" ,                                 CS + ".getPrevLong("    + RK + ")" , "DateTimeUtils.nanosToTime("  + VAL + ')', "DateTimeUtils.nanos("           + VAL + ')', "(DateTime)"  + VAL, "io.deephaven.util.type.TypeUtils", "io.deephaven.time.DateTime", "io.deephaven.time.DateTimeUtils"),
-          DATETIME(             "DateTime", "io.deephaven.time.DateTime", "long", R_DATETIME, false,        "DateTimeUtils.nanos(" + CS + ".get("        + RK + "))",        "DateTimeUtils.nanos(" + CS + ".getPrev("        + RK + "))", "DateTimeUtils.nanosToTime("  + VAL + ')', "DateTimeUtils.nanos("           + VAL + ')', "(DateTime)"  + VAL, "io.deephaven.time.DateTime","io.deephaven.time.DateTimeUtils"                                     ),
+              BYTE(                 "Byte", "byte",                              null,         null, false,                                 CS + ".getByte("    + RK + ")" ,                                 CS + ".getPrevByte("    + RK + ")" , "TypeUtils.box("                     + VAL + ')', "TypeUtils.unbox("               + VAL + ')', "(Byte)"      + VAL, "io.deephaven.util.type.TypeUtils"                                                        ),
+             SHORT(                "Short", "short",                             null,         null, false,                                 CS + ".getShort("   + RK + ")" ,                                 CS + ".getPrevShort("   + RK + ")" , "TypeUtils.box("                     + VAL + ')', "TypeUtils.unbox("               + VAL + ')', "(Short)"     + VAL, "io.deephaven.util.type.TypeUtils"                                                        ),
+               INT(              "Integer", "int",                               null,         null, false,                                 CS + ".getInt("     + RK + ")" ,                                 CS + ".getPrevInt("     + RK + ")" , "TypeUtils.box("                     + VAL + ')', "TypeUtils.unbox("               + VAL + ')', "(Integer)"   + VAL, "io.deephaven.util.type.TypeUtils"                                                        ),
+              LONG(                 "Long", "long",                              null,         null, false,                                 CS + ".getLong("    + RK + ")" ,                                 CS + ".getPrevLong("    + RK + ")" , "TypeUtils.box("                     + VAL + ')', "TypeUtils.unbox("               + VAL + ')', "(Long)"      + VAL, "io.deephaven.util.type.TypeUtils"                                                        ),
+             FLOAT(                "Float", "float",                             null,         null, false,                                 CS + ".getFloat("   + RK + ")" ,                                 CS + ".getPrevFloat("   + RK + ")" , "TypeUtils.box("                     + VAL + ')', "TypeUtils.unbox("               + VAL + ')', "(Float)"     + VAL, "io.deephaven.util.type.TypeUtils"                                                        ),
+            DOUBLE(               "Double", "double",                            null,         null, false,                                 CS + ".getDouble("  + RK + ")" ,                                 CS + ".getPrevDouble("  + RK + ")" , "TypeUtils.box("                     + VAL + ')', "TypeUtils.unbox("               + VAL + ')', "(Double)"    + VAL, "io.deephaven.util.type.TypeUtils"                                                        ),
+              CHAR(            "Character", "char",                              null,         null, false,                                 CS + ".getChar("    + RK + ")" ,                                 CS + ".getPrevChar("    + RK + ")" , "TypeUtils.box("                     + VAL + ')', "TypeUtils.unbox("               + VAL + ')', "(Character)" + VAL, "io.deephaven.util.type.TypeUtils"                                                        ),
+            OBJECT(               "Object", "java.lang.Object",                  null,         null, false,                                 CS + ".get("        + RK + ")" ,                                 CS + ".getPrev("        + RK + ")" ,                                        VAL      ,                                    VAL      ,                 VAL                                                                                            ),
+         R_BOOLEAN( "ReinterpretedBoolean", "byte",                              null,         null,  true,                                 CS + ".getByte("    + RK + ")" ,                                 CS + ".getPrevByte("    + RK + ")" , "BooleanUtils.byteAsBoolean("        + VAL + ')', "BooleanUtils.booleanAsByte("    + VAL + ')', "(Boolean)"   + VAL, "io.deephaven.util.type.TypeUtils", "io.deephaven.util.BooleanUtils"                      ),
+           BOOLEAN(              "Boolean", "java.lang.Boolean",                 "byte",  R_BOOLEAN, false, "BooleanUtils.booleanAsByte(" + CS + ".getBoolean(" + RK + "))", "BooleanUtils.booleanAsByte(" + CS + ".getPrevBoolean(" + RK + "))", "BooleanUtils.byteAsBoolean("        + VAL + ')', "BooleanUtils.booleanAsByte("    + VAL + ')', "(Boolean)"   + VAL, "io.deephaven.util.BooleanUtils"                                                          ),
+        R_INSTANT("ReinterpretedInstant", "long",                                null,         null,  true,                                 CS + ".getLong("    + RK + ")" ,                                 CS + ".getPrevLong("    + RK + ")" , "DateTimeUtils.epochNanosToInstant(" + VAL + ')', "DateTimeUtils.epochNanos("      + VAL + ')', "(Instant)"   + VAL, "io.deephaven.util.type.TypeUtils", "io.deephaven.time.DateTimeUtils", "java.time.Instant"),
+          INSTANT(             "Instant", "java.time.Instant",                   "long",  R_INSTANT, false,   "DateTimeUtils.epochNanos(" + CS + ".get("        + RK + "))",   "DateTimeUtils.epochNanos(" + CS + ".getPrev("        + RK + "))", "DateTimeUtils.epochNanosToInstant(" + VAL + ')', "DateTimeUtils.epochNanos("      + VAL + ')', "(Instant)"   + VAL, "io.deephaven.time.DateTimeUtils", "java.time.Instant"                                    ),
         ;
         // @formatter:on
 
@@ -142,9 +145,9 @@ public class TupleSourceCodeGenerator {
 
         String getValuesChunkTypeString() {
             if (isPrimitive) {
-                return chunkClassName + "<Values>";
+                return chunkClassName + "<? extends Values>";
             }
-            return chunkClassName + '<' + getElementClassSimpleName() + ", Values>";
+            return chunkClassName + '<' + getElementClassSimpleName() + ", ? extends Values>";
         }
 
         ColumnSourceType getReinterpretAsType() {
@@ -243,6 +246,9 @@ public class TupleSourceCodeGenerator {
         final String[] extraImports = new String[] {TupleCodeGenerator.getTupleImport(tupleClassName),
                 TWO_COLUMN_FACTORY_NAME};
 
+        code.append(ReplicationUtils.fileHeaderString("replicateTupleSources",
+                TupleSourceCodeGenerator.class.getSimpleName()));
+
         code.append("package ").append(OUTPUT_PACKAGE).append(';').append(NEW_LINE);
 
         code.append(NEW_LINE);
@@ -262,8 +268,6 @@ public class TupleSourceCodeGenerator {
         code.append("/**").append(NEW_LINE);
         code.append(" * <p>{@link TupleSource} that produces key column values from {@link ColumnSource} types ")
                 .append(sourceClass1Name).append(" and ").append(sourceClass2Name).append('.').append(NEW_LINE);
-        code.append(" * <p>Generated by ").append(TupleSourceCodeGenerator.class.getName()).append(".")
-                .append(NEW_LINE);
         code.append(" */").append(NEW_LINE);
         code.append("@SuppressWarnings({\"unused\", \"WeakerAccess\"})").append(NEW_LINE);
         code.append("public class ").append(className).append(" extends AbstractTupleSource<").append(tupleClassName)
@@ -365,6 +369,15 @@ public class TupleSourceCodeGenerator {
 
         code.append(NEW_LINE);
 
+        code.append(indenter).append("@Override").append(NEW_LINE);
+        code.append(indenter).append("public final int tupleLength() {").append(NEW_LINE);
+        indenter.increaseLevel();
+        code.append(indenter).append("return 2;").append(NEW_LINE);
+        indenter.decreaseLevel();
+        code.append(indenter).append('}').append(NEW_LINE);
+
+        code.append(NEW_LINE);
+
         code.append(indenter).append("@SuppressWarnings(\"unchecked\")").append(NEW_LINE);
         code.append(indenter).append("@Override").append(NEW_LINE);
         code.append(indenter).append("public final <ELEMENT_TYPE> void exportElement(@NotNull final ")
@@ -395,21 +408,6 @@ public class TupleSourceCodeGenerator {
         code.append(NEW_LINE);
 
         code.append(indenter).append("@Override").append(NEW_LINE);
-        code.append(indenter).append("public final Object exportToExternalKey(@NotNull final ").append(tupleClassName)
-                .append(" tuple) {").append(NEW_LINE);
-        indenter.increaseLevel();
-        code.append(indenter).append("return new SmartKey(").append(NEW_LINE);
-        indenter.increaseLevel(2);
-        code.append(indenter).append(type1.getBoxingText("tuple.getFirstElement()")).append(',').append(NEW_LINE);
-        code.append(indenter).append(type2.getBoxingText("tuple.getSecondElement()")).append(NEW_LINE);
-        indenter.decreaseLevel(2);
-        code.append(indenter).append(");").append(NEW_LINE);
-        indenter.decreaseLevel();
-        code.append(indenter).append('}').append(NEW_LINE);
-
-        code.append(NEW_LINE);
-
-        code.append(indenter).append("@Override").append(NEW_LINE);
         code.append(indenter).append("public final Object exportElement(@NotNull final ").append(tupleClassName)
                 .append(" tuple, int elementIndex) {").append(NEW_LINE);
         indenter.increaseLevel();
@@ -424,6 +422,34 @@ public class TupleSourceCodeGenerator {
         code.append(indenter).append(
                 "throw new IllegalArgumentException(\"Bad elementIndex for 2 element tuple: \" + elementIndex);")
                 .append(NEW_LINE);
+        indenter.decreaseLevel();
+        code.append(indenter).append('}').append(NEW_LINE);
+
+        code.append(NEW_LINE);
+
+        code.append(indenter).append("@Override").append(NEW_LINE);
+        code.append(indenter).append("public final void exportAllTo(final Object @NotNull [] dest, @NotNull final ")
+                .append(tupleClassName)
+                .append(" tuple) {").append(NEW_LINE);
+        indenter.increaseLevel();
+        code.append(indenter).append("dest[0] = ").append(type1.getBoxingText("tuple.getFirstElement()")).append(";")
+                .append(NEW_LINE);
+        code.append(indenter).append("dest[1] = ").append(type2.getBoxingText("tuple.getSecondElement()")).append(";")
+                .append(NEW_LINE);
+        indenter.decreaseLevel();
+        code.append(indenter).append('}').append(NEW_LINE);
+
+        code.append(NEW_LINE);
+
+        code.append(indenter).append("@Override").append(NEW_LINE);
+        code.append(indenter).append("public final void exportAllTo(final Object @NotNull [] dest, @NotNull final ")
+                .append(tupleClassName)
+                .append(" tuple, final int @NotNull [] map) {").append(NEW_LINE);
+        indenter.increaseLevel();
+        code.append(indenter).append("dest[map[0]] = ").append(type1.getBoxingText("tuple.getFirstElement()"))
+                .append(";").append(NEW_LINE);
+        code.append(indenter).append("dest[map[1]] = ").append(type2.getBoxingText("tuple.getSecondElement()"))
+                .append(";").append(NEW_LINE);
         indenter.decreaseLevel();
         code.append(indenter).append('}').append(NEW_LINE);
 
@@ -447,7 +473,7 @@ public class TupleSourceCodeGenerator {
         code.append(NEW_LINE);
 
         code.append(indenter).append(
-                "protected void convertChunks(@NotNull WritableChunk<? super Values> destination, int chunkSize, Chunk<Values> [] chunks) {")
+                "protected void convertChunks(@NotNull WritableChunk<? super Values> destination, int chunkSize, Chunk<? extends Values> [] chunks) {")
                 .append(NEW_LINE);
         code.append(indenter.increaseLevel()).append("WritableObjectChunk<").append(tupleClassName)
                 .append(", ? super Values> destinationObjectChunk = destination.asWritableObjectChunk();")
@@ -463,6 +489,64 @@ public class TupleSourceCodeGenerator {
         code.append(indenter.decreaseLevel()).append("}").append(NEW_LINE);
         code.append(indenter).append("destination.setSize(chunkSize);").append(NEW_LINE);
         code.append(indenter.decreaseLevel()).append("}").append(NEW_LINE);
+        code.append(NEW_LINE);
+
+        code.append(indenter).append("@Override").append(NEW_LINE);
+        code.append(indenter)
+                .append("public final void exportAllReinterpretedTo(final Object @NotNull [] dest, @NotNull final ")
+                .append(tupleClassName)
+                .append(" tuple) {").append(NEW_LINE);
+        indenter.increaseLevel();
+        if (type1.isReinterpreted()) {
+            code.append(indenter).append("dest[0] = ")
+                    .append(forPrimitive(type1.elementClassName).getBoxingText("tuple.getFirstElement()")).append(";")
+                    .append(NEW_LINE);
+        } else {
+            code.append(indenter).append("dest[0] = ").append(type1.getBoxingText("tuple.getFirstElement()"))
+                    .append(";")
+                    .append(NEW_LINE);
+        }
+        if (type2.isReinterpreted()) {
+            code.append(indenter).append("dest[1] = ")
+                    .append(forPrimitive(type2.elementClassName).getBoxingText("tuple.getSecondElement()")).append(";")
+                    .append(NEW_LINE);
+        } else {
+            code.append(indenter).append("dest[1] = ").append(type2.getBoxingText("tuple.getSecondElement()"))
+                    .append(";")
+                    .append(NEW_LINE);
+        }
+        indenter.decreaseLevel();
+        code.append(indenter).append('}').append(NEW_LINE);
+
+        code.append(NEW_LINE);
+
+        code.append(indenter).append("@Override").append(NEW_LINE);
+        code.append(indenter)
+                .append("public final void exportAllReinterpretedTo(final Object @NotNull [] dest, @NotNull final ")
+                .append(tupleClassName)
+                .append(" tuple, final int @NotNull [] map) {").append(NEW_LINE);
+        indenter.increaseLevel();
+        if (type1.isReinterpreted()) {
+            code.append(indenter).append("dest[map[0]] = ")
+                    .append(forPrimitive(type1.elementClassName).getBoxingText("tuple.getFirstElement()")).append(";")
+                    .append(NEW_LINE);
+        } else {
+            code.append(indenter).append("dest[map[0]] = ").append(type1.getBoxingText("tuple.getFirstElement()"))
+                    .append(";")
+                    .append(NEW_LINE);
+        }
+        if (type2.isReinterpreted()) {
+            code.append(indenter).append("dest[map[1]] = ")
+                    .append(forPrimitive(type2.elementClassName).getBoxingText("tuple.getSecondElement()")).append(";")
+                    .append(NEW_LINE);
+        } else {
+            code.append(indenter).append("dest[map[1]] = ").append(type2.getBoxingText("tuple.getSecondElement()"))
+                    .append(";")
+                    .append(NEW_LINE);
+        }
+        indenter.decreaseLevel();
+        code.append(indenter).append('}').append(NEW_LINE);
+
         code.append(NEW_LINE);
 
         code.append(indenter).append("/** {@link ").append(TWO_COLUMN_FACTORY_SIMPLE_NAME)
@@ -524,6 +608,9 @@ public class TupleSourceCodeGenerator {
         final String[] extraImports = new String[] {TupleCodeGenerator.getTupleImport(tupleClassName),
                 "io.deephaven.engine.table.impl.tuplesource.ThreeColumnTupleSourceFactory"};
 
+        code.append(ReplicationUtils.fileHeaderString("replicateTupleSources",
+                TupleSourceCodeGenerator.class.getSimpleName()));
+
         code.append("package ").append(OUTPUT_PACKAGE).append(';').append(NEW_LINE);
 
         code.append(NEW_LINE);
@@ -544,8 +631,6 @@ public class TupleSourceCodeGenerator {
         code.append(" * <p>{@link TupleSource} that produces key column values from {@link ColumnSource} types ")
                 .append(sourceClass1Name).append(", ").append(sourceClass2Name).append(", and ")
                 .append(sourceClass3Name).append('.').append(NEW_LINE);
-        code.append(" * <p>Generated by ").append(TupleSourceCodeGenerator.class.getName()).append(".")
-                .append(NEW_LINE);
         code.append(" */").append(NEW_LINE);
         code.append("@SuppressWarnings({\"unused\", \"WeakerAccess\"})").append(NEW_LINE);
         code.append("public class ").append(className).append(" extends AbstractTupleSource<").append(tupleClassName)
@@ -658,6 +743,15 @@ public class TupleSourceCodeGenerator {
 
         code.append(NEW_LINE);
 
+        code.append(indenter).append("@Override").append(NEW_LINE);
+        code.append(indenter).append("public final int tupleLength() {").append(NEW_LINE);
+        indenter.increaseLevel();
+        code.append(indenter).append("return 3;").append(NEW_LINE);
+        indenter.decreaseLevel();
+        code.append(indenter).append('}').append(NEW_LINE);
+
+        code.append(NEW_LINE);
+
         code.append(indenter).append("@SuppressWarnings(\"unchecked\")").append(NEW_LINE);
         code.append(indenter).append("@Override").append(NEW_LINE);
         code.append(indenter).append("public final <ELEMENT_TYPE> void exportElement(@NotNull final ")
@@ -695,22 +789,6 @@ public class TupleSourceCodeGenerator {
         code.append(NEW_LINE);
 
         code.append(indenter).append("@Override").append(NEW_LINE);
-        code.append(indenter).append("public final Object exportToExternalKey(@NotNull final ").append(tupleClassName)
-                .append(" tuple) {").append(NEW_LINE);
-        indenter.increaseLevel();
-        code.append(indenter).append("return new SmartKey(").append(NEW_LINE);
-        indenter.increaseLevel(2);
-        code.append(indenter).append(type1.getBoxingText("tuple.getFirstElement()")).append(',').append(NEW_LINE);
-        code.append(indenter).append(type2.getBoxingText("tuple.getSecondElement()")).append(',').append(NEW_LINE);
-        code.append(indenter).append(type3.getBoxingText("tuple.getThirdElement()")).append(NEW_LINE);
-        indenter.decreaseLevel(2);
-        code.append(indenter).append(");").append(NEW_LINE);
-        indenter.decreaseLevel();
-        code.append(indenter).append('}').append(NEW_LINE);
-
-        code.append(NEW_LINE);
-
-        code.append(indenter).append("@Override").append(NEW_LINE);
         code.append(indenter).append("public final Object exportElement(@NotNull final ").append(tupleClassName)
                 .append(" tuple, int elementIndex) {").append(NEW_LINE);
         indenter.increaseLevel();
@@ -735,6 +813,38 @@ public class TupleSourceCodeGenerator {
         code.append(NEW_LINE);
 
         code.append(indenter).append("@Override").append(NEW_LINE);
+        code.append(indenter).append("public final void exportAllTo(final Object @NotNull [] dest, @NotNull final ")
+                .append(tupleClassName)
+                .append(" tuple) {").append(NEW_LINE);
+        indenter.increaseLevel();
+        code.append(indenter).append("dest[0] = ").append(type1.getBoxingText("tuple.getFirstElement()")).append(";")
+                .append(NEW_LINE);
+        code.append(indenter).append("dest[1] = ").append(type2.getBoxingText("tuple.getSecondElement()")).append(";")
+                .append(NEW_LINE);
+        code.append(indenter).append("dest[2] = ").append(type3.getBoxingText("tuple.getThirdElement()")).append(";")
+                .append(NEW_LINE);
+        indenter.decreaseLevel();
+        code.append(indenter).append('}').append(NEW_LINE);
+
+        code.append(NEW_LINE);
+
+        code.append(indenter).append("@Override").append(NEW_LINE);
+        code.append(indenter).append("public final void exportAllTo(final Object @NotNull [] dest, @NotNull final ")
+                .append(tupleClassName)
+                .append(" tuple, final int @NotNull [] map) {").append(NEW_LINE);
+        indenter.increaseLevel();
+        code.append(indenter).append("dest[map[0]] = ").append(type1.getBoxingText("tuple.getFirstElement()"))
+                .append(";").append(NEW_LINE);
+        code.append(indenter).append("dest[map[1]] = ").append(type2.getBoxingText("tuple.getSecondElement()"))
+                .append(";").append(NEW_LINE);
+        code.append(indenter).append("dest[map[2]] = ").append(type3.getBoxingText("tuple.getThirdElement()"))
+                .append(";").append(NEW_LINE);
+        indenter.decreaseLevel();
+        code.append(indenter).append('}').append(NEW_LINE);
+
+        code.append(NEW_LINE);
+
+        code.append(indenter).append("@Override").append(NEW_LINE);
         code.append(indenter).append("public final Object exportElementReinterpreted(@NotNull final ")
                 .append(tupleClassName).append(" tuple, int elementIndex) {").append(NEW_LINE);
         indenter.increaseLevel();
@@ -753,11 +863,87 @@ public class TupleSourceCodeGenerator {
         indenter.decreaseLevel();
         code.append(indenter).append('}').append(NEW_LINE);
 
+        code.append(indenter).append("@Override").append(NEW_LINE);
+        code.append(indenter)
+                .append("public final void exportAllReinterpretedTo(final Object @NotNull [] dest, @NotNull final ")
+                .append(tupleClassName)
+                .append(" tuple) {").append(NEW_LINE);
+        indenter.increaseLevel();
+        if (type1.isReinterpreted()) {
+            code.append(indenter).append("dest[0] = ")
+                    .append(forPrimitive(type1.elementClassName).getBoxingText("tuple.getFirstElement()")).append(";")
+                    .append(NEW_LINE);
+        } else {
+            code.append(indenter).append("dest[0] = ").append(type1.getBoxingText("tuple.getFirstElement()"))
+                    .append(";")
+                    .append(NEW_LINE);
+        }
+        if (type2.isReinterpreted()) {
+            code.append(indenter).append("dest[1] = ")
+                    .append(forPrimitive(type2.elementClassName).getBoxingText("tuple.getSecondElement()")).append(";")
+                    .append(NEW_LINE);
+        } else {
+            code.append(indenter).append("dest[1] = ").append(type2.getBoxingText("tuple.getSecondElement()"))
+                    .append(";")
+                    .append(NEW_LINE);
+        }
+        if (type3.isReinterpreted()) {
+            code.append(indenter).append("dest[2] = ")
+                    .append(forPrimitive(type3.elementClassName).getBoxingText("tuple.getThirdElement()")).append(";")
+                    .append(NEW_LINE);
+        } else {
+            code.append(indenter).append("dest[2] = ").append(type3.getBoxingText("tuple.getThirdElement()"))
+                    .append(";")
+                    .append(NEW_LINE);
+        }
+        indenter.decreaseLevel();
+        code.append(indenter).append('}').append(NEW_LINE);
+
+        code.append(NEW_LINE);
+
+        code.append(indenter).append("@Override").append(NEW_LINE);
+        code.append(indenter)
+                .append("public final void exportAllReinterpretedTo(final Object @NotNull [] dest, @NotNull final ")
+                .append(tupleClassName)
+                .append(" tuple, final int @NotNull [] map) {").append(NEW_LINE);
+        indenter.increaseLevel();
+        if (type1.isReinterpreted()) {
+            code.append(indenter).append("dest[map[0]] = ")
+                    .append(forPrimitive(type1.elementClassName).getBoxingText("tuple.getFirstElement()")).append(";")
+                    .append(NEW_LINE);
+        } else {
+            code.append(indenter).append("dest[map[0]] = ").append(type1.getBoxingText("tuple.getFirstElement()"))
+                    .append(";")
+                    .append(NEW_LINE);
+        }
+        if (type2.isReinterpreted()) {
+            code.append(indenter).append("dest[map[1]] = ")
+                    .append(forPrimitive(type2.elementClassName).getBoxingText("tuple.getSecondElement()")).append(";")
+                    .append(NEW_LINE);
+        } else {
+            code.append(indenter).append("dest[map[1]] = ").append(type2.getBoxingText("tuple.getSecondElement()"))
+                    .append(";")
+                    .append(NEW_LINE);
+        }
+        if (type3.isReinterpreted()) {
+            code.append(indenter).append("dest[map[2]] = ")
+                    .append(forPrimitive(type3.elementClassName).getBoxingText("tuple.getThirdElement()")).append(";")
+                    .append(NEW_LINE);
+        } else {
+            code.append(indenter).append("dest[map[2]] = ").append(type3.getBoxingText("tuple.getThirdElement()"))
+                    .append(";")
+                    .append(NEW_LINE);
+        }
+        indenter.decreaseLevel();
+        code.append(indenter).append('}').append(NEW_LINE);
+
+        code.append(NEW_LINE);
+
         code.append(NEW_LINE);
 
         code.append(indenter).append("@Override").append((NEW_LINE));
         code.append(indenter).append(
-                "protected void convertChunks(@NotNull WritableChunk<? super Values> destination, int chunkSize, Chunk<Values> [] chunks) {")
+                "protected void convertChunks(@NotNull WritableChunk<? super Values> destination, int chunkSize, Chunk<? extends Values> [] chunks) {")
                 .append(NEW_LINE);
         code.append(indenter.increaseLevel()).append("WritableObjectChunk<").append(tupleClassName)
                 .append(", ? super Values> destinationObjectChunk = destination.asWritableObjectChunk();")

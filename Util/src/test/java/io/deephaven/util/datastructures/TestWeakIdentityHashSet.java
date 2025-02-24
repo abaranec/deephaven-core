@@ -1,11 +1,14 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.util.datastructures;
 
+import io.deephaven.util.mutable.MutableInt;
 import junit.framework.TestCase;
-import org.apache.commons.lang3.mutable.MutableInt;
 import org.junit.Test;
 
+import java.util.Arrays;
 import java.util.stream.IntStream;
-import java.util.stream.Stream;
 
 /**
  * Unit tests for {@link WeakIdentityHashSet}.
@@ -16,24 +19,24 @@ public class TestWeakIdentityHashSet {
     public void testAdd() {
         String[] values = IntStream.range(0, 1000).mapToObj(Integer::toString).toArray(String[]::new);
         final WeakIdentityHashSet<String> set = new WeakIdentityHashSet<>();
-        Stream.of(values).forEach(v -> TestCase.assertTrue(set.add(v)));
-        Stream.of(values).forEach(v -> TestCase.assertFalse(set.add(v)));
+        Arrays.stream(values).forEach(v -> TestCase.assertTrue(set.add(v)));
+        Arrays.stream(values).forEach(v -> TestCase.assertFalse(set.add(v)));
         values = null;
         System.gc();
         values = IntStream.range(0, 1000).mapToObj(Integer::toString).toArray(String[]::new);
-        Stream.of(values).forEach(v -> TestCase.assertTrue(set.add(v)));
-        Stream.of(values).forEach(v -> TestCase.assertFalse(set.add(v)));
+        Arrays.stream(values).forEach(v -> TestCase.assertTrue(set.add(v)));
+        Arrays.stream(values).forEach(v -> TestCase.assertFalse(set.add(v)));
     }
 
     @Test
     public void testClear() {
         final String[] values = IntStream.range(1000, 2000).mapToObj(Integer::toString).toArray(String[]::new);
         final WeakIdentityHashSet<String> set = new WeakIdentityHashSet<>();
-        Stream.of(values).forEach(v -> TestCase.assertTrue(set.add(v)));
-        Stream.of(values).forEach(v -> TestCase.assertFalse(set.add(v)));
+        Arrays.stream(values).forEach(v -> TestCase.assertTrue(set.add(v)));
+        Arrays.stream(values).forEach(v -> TestCase.assertFalse(set.add(v)));
         set.clear();
-        Stream.of(values).forEach(v -> TestCase.assertTrue(set.add(v)));
-        Stream.of(values).forEach(v -> TestCase.assertFalse(set.add(v)));
+        Arrays.stream(values).forEach(v -> TestCase.assertTrue(set.add(v)));
+        Arrays.stream(values).forEach(v -> TestCase.assertFalse(set.add(v)));
     }
 
     @Test
@@ -47,35 +50,35 @@ public class TestWeakIdentityHashSet {
             TestCase.assertNotNull(s);
             counter.increment();
         });
-        TestCase.assertEquals(0, counter.intValue());
+        TestCase.assertEquals(0, counter.get());
 
-        Stream.of(values).forEach(v -> TestCase.assertTrue(set.add(v)));
-        Stream.of(values).forEach(v -> TestCase.assertFalse(set.add(v)));
+        Arrays.stream(values).forEach(v -> TestCase.assertTrue(set.add(v)));
+        Arrays.stream(values).forEach(v -> TestCase.assertFalse(set.add(v)));
 
-        counter.setValue(0);
+        counter.set(0);
         set.forEach(s -> {
             TestCase.assertNotNull(s);
             counter.increment();
         });
-        TestCase.assertEquals(values.length, counter.intValue());
+        TestCase.assertEquals(values.length, counter.get());
 
         set.clear();
 
-        counter.setValue(0);
+        counter.set(0);
         set.forEach(s -> {
             TestCase.assertNotNull(s);
             counter.increment();
         });
-        TestCase.assertEquals(0, counter.intValue());
+        TestCase.assertEquals(0, counter.get());
 
-        Stream.of(values).forEach(v -> TestCase.assertTrue(set.add(v)));
-        Stream.of(values).forEach(v -> TestCase.assertFalse(set.add(v)));
+        Arrays.stream(values).forEach(v -> TestCase.assertTrue(set.add(v)));
+        Arrays.stream(values).forEach(v -> TestCase.assertFalse(set.add(v)));
 
-        counter.setValue(0);
+        counter.set(0);
         set.forEach(s -> {
             TestCase.assertNotNull(s);
             counter.increment();
         });
-        TestCase.assertEquals(values.length, counter.intValue());
+        TestCase.assertEquals(values.length, counter.get());
     }
 }

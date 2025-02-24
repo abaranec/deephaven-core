@@ -1,19 +1,19 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.parquet.table;
 
-import io.deephaven.chunk.attributes.Values;
-import io.deephaven.engine.table.impl.CodecLookup;
+import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.engine.table.ColumnDefinition;
-import io.deephaven.stringset.StringSet;
-import io.deephaven.time.DateTime;
 import io.deephaven.engine.table.ColumnSource;
-import io.deephaven.engine.table.ChunkSource;
-import io.deephaven.chunk.ObjectChunk;
-import io.deephaven.engine.rowset.TrackingRowSet;
-import io.deephaven.engine.rowset.RowSequence;
+import io.deephaven.engine.table.impl.CodecLookup;
+import io.deephaven.engine.table.impl.dataindex.RowSetCodec;
+import io.deephaven.stringset.StringSet;
 import io.deephaven.util.codec.ExternalizableCodec;
 import io.deephaven.util.codec.SerializableCodec;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.parquet.schema.GroupType;
 import org.apache.parquet.schema.LogicalTypeAnnotation;
 import org.apache.parquet.schema.PrimitiveType;
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName;
@@ -24,15 +24,22 @@ import org.jetbrains.annotations.NotNull;
 
 import java.io.Externalizable;
 import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.function.Supplier;
+
+import static io.deephaven.engine.util.BigDecimalUtils.PrecisionAndScale;
+import static io.deephaven.engine.util.BigDecimalUtils.computePrecisionAndScale;
 
 /**
  * Contains the necessary information to convert a Deephaven table into a Parquet table. Both the schema translation,
  * and the data translation.
  */
-class TypeInfos {
-
+public class TypeInfos {
     private static final TypeInfo[] TYPE_INFOS = new TypeInfo[] {
             IntType.INSTANCE,
             LongType.INSTANCE,
@@ -43,15 +50,25 @@ class TypeInfos {
             CharType.INSTANCE,
             ByteType.INSTANCE,
             StringType.INSTANCE,
-            DateTimeType.INSTANCE
+            InstantType.INSTANCE,
+            BigIntegerType.INSTANCE,
+            LocalDateType.INSTANCE,
+            LocalTimeType.INSTANCE,
+            LocalDateTimeType.INSTANCE,
     };
 
     private static final Map<Class<?>, TypeInfo> BY_CLASS;
 
+    /**
+     * A list's element must be named this, see
+     * <a href="https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#lists">lists</a>
+     */
+    private static final String ELEMENT_NAME = "element";
+
     static {
-        Map<Class<?>, TypeInfo> fa = new HashMap<>();
-        for (TypeInfo typeInfo : TYPE_INFOS) {
-            for (Class<?> type : typeInfo.getTypes()) {
+        final Map<Class<?>, TypeInfo> fa = new HashMap<>();
+        for (final TypeInfo typeInfo : TYPE_INFOS) {
+            for (final Class<?> type : typeInfo.getTypes()) {
                 fa.put(type, typeInfo);
             }
         }
@@ -93,73 +110,57 @@ class TypeInfos {
         if (!CodecLookup.codecRequired(columnDefinition)) {
             return null;
         }
+
         // Impute an appropriate codec for the data type
         final Class<?> dataType = columnDefinition.getDataType();
+        // TODO (https://github.com/deephaven/deephaven-core/issues/5262): Eliminate reliance on RowSetCodec
+        if (dataType.equals(RowSet.class)) {
+            return new ImmutablePair<>(RowSetCodec.class.getName(), null);
+        }
         if (Externalizable.class.isAssignableFrom(dataType)) {
             return new ImmutablePair<>(ExternalizableCodec.class.getName(), dataType.getName());
         }
         return new ImmutablePair<>(SerializableCodec.class.getName(), null);
     }
 
-    static class PrecisionAndScale {
-        public final int precision;
-        public final int scale;
-
-        public PrecisionAndScale(final int precision, final int scale) {
-            this.precision = precision;
-            this.scale = scale;
-        }
-    }
-
-    private static PrecisionAndScale computePrecisionAndScale(final TrackingRowSet rowSet,
-            final ColumnSource<BigDecimal> source) {
-        final int sz = 4096;
-        // we first compute max(precision - scale) and max(scale), which corresponds to
-        // max(digits left of the decimal point), max(digits right of the decimal point).
-        // Then we convert to (precision, scale) before returning.
-        int maxPrecisionMinusScale = 0;
-        int maxScale = 0;
-        try (final ChunkSource.GetContext context = source.makeGetContext(sz);
-                final RowSequence.Iterator it = rowSet.getRowSequenceIterator()) {
-            final RowSequence rowSeq = it.getNextRowSequenceWithLength(sz);
-            final ObjectChunk<BigDecimal, ? extends Values> chunk = source.getChunk(context, rowSeq).asObjectChunk();
-            for (int i = 0; i < chunk.size(); ++i) {
-                final BigDecimal x = chunk.get(i);
-                final int precision = x.precision();
-                final int scale = x.scale();
-                final int precisionMinusScale = precision - scale;
-                if (precisionMinusScale > maxPrecisionMinusScale) {
-                    maxPrecisionMinusScale = precisionMinusScale;
-                }
-                if (scale > maxScale) {
-                    maxScale = scale;
-                }
-            }
-        }
-        return new PrecisionAndScale(maxPrecisionMinusScale + maxScale, maxScale);
-    }
-
-    static PrecisionAndScale getPrecisionAndScale(
-            final Map<String, Map<ParquetTableWriter.CacheTags, Object>> computedCache,
-            final String columnName,
-            final TrackingRowSet rowSet,
-            Supplier<ColumnSource<BigDecimal>> columnSourceSupplier) {
+    /**
+     * Get the precision and scale for a given big decimal column. If already cached, fetch it directly, else compute it
+     * by scanning the entire column and store the values in the cache.
+     */
+    public static PrecisionAndScale getPrecisionAndScale(
+            @NotNull final Map<String, Map<ParquetCacheTags, Object>> computedCache,
+            @NotNull final String columnName,
+            @NotNull final RowSet rowSet,
+            @NotNull final Supplier<ColumnSource<?>> columnSourceSupplier) {
         return (PrecisionAndScale) computedCache
                 .computeIfAbsent(columnName, unusedColumnName -> new HashMap<>())
-                .computeIfAbsent(ParquetTableWriter.CacheTags.DECIMAL_ARGS,
-                        unusedCacheTag -> computePrecisionAndScale(rowSet, columnSourceSupplier.get()));
+                .computeIfAbsent(ParquetCacheTags.DECIMAL_ARGS,
+                        uct -> parquetCompatible(computePrecisionAndScale(rowSet, columnSourceSupplier.get())));
+    }
+
+    private static PrecisionAndScale parquetCompatible(PrecisionAndScale pas) {
+        // Parquet / SQL has a more limited range for DECIMAL(precision, scale).
+        // https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#decimal
+        // Scale must be zero or a positive integer less than the precision.
+        // Precision is required and must be a non-zero positive integer.
+        // Ultimately, this just means that the on-disk format is not as small and tight as it otherwise could be.
+        // https://github.com/deephaven/deephaven-core/issues/3650
+        if (pas.scale > pas.precision) {
+            return new PrecisionAndScale(pas.scale, pas.scale);
+        }
+        return pas;
     }
 
     static TypeInfo bigDecimalTypeInfo(
-            final Map<String, Map<ParquetTableWriter.CacheTags, Object>> computedCache,
+            final Map<String, Map<ParquetCacheTags, Object>> computedCache,
             @NotNull final ColumnDefinition<?> column,
-            final TrackingRowSet rowSet,
+            final RowSet rowSet,
             final Map<String, ? extends ColumnSource<?>> columnSourceMap) {
         final String columnName = column.getName();
         // noinspection unchecked
         final PrecisionAndScale precisionAndScale = getPrecisionAndScale(
-                computedCache, columnName, rowSet, () -> (ColumnSource<BigDecimal>) columnSourceMap.get(columnName));
-        final Set<Class<?>> clazzes = Collections.singleton(BigDecimal.class);
+                computedCache, columnName, rowSet, () -> columnSourceMap.get(columnName));
+        final Set<Class<?>> clazzes = Set.of(BigDecimal.class);
         return new TypeInfo() {
             @Override
             public Set<Class<?>> getTypes() {
@@ -167,10 +168,8 @@ class TypeInfos {
             }
 
             @Override
-            public PrimitiveBuilder<PrimitiveType> getBuilder(boolean required, boolean repeating, Class dataType) {
-                if (!isValidFor(dataType)) {
-                    throw new IllegalArgumentException("Invalid data type " + dataType);
-                }
+            public PrimitiveBuilder<PrimitiveType> getBuilderImpl(boolean required, boolean repeating,
+                    Class<?> dataType) {
                 return type(PrimitiveTypeName.BINARY, required, repeating)
                         .as(LogicalTypeAnnotation.decimalType(precisionAndScale.scale, precisionAndScale.precision));
             }
@@ -178,13 +177,12 @@ class TypeInfos {
     }
 
     static TypeInfo getTypeInfo(
-            final Map<String, Map<ParquetTableWriter.CacheTags, Object>> computedCache,
+            final Map<String, Map<ParquetCacheTags, Object>> computedCache,
             @NotNull final ColumnDefinition<?> column,
-            final TrackingRowSet rowSet,
+            final RowSet rowSet,
             final Map<String, ? extends ColumnSource<?>> columnSourceMap,
             @NotNull final ParquetInstructions instructions) {
-        final Class<?> dataType = column.getDataType();
-        if (BigDecimal.class.equals(dataType)) {
+        if (column.getDataType() == BigDecimal.class || column.getComponentType() == BigDecimal.class) {
             return bigDecimalTypeInfo(computedCache, column, rowSet, columnSourceMap);
         }
         return lookupTypeInfo(column, instructions);
@@ -201,8 +199,7 @@ class TypeInfos {
     private enum IntType implements TypeInfo {
         INSTANCE;
 
-        private static final Set<Class<?>> clazzes = Collections
-                .unmodifiableSet(new HashSet<>(Arrays.asList(int.class, Integer.class)));
+        private static final Set<Class<?>> clazzes = Set.of(int.class, Integer.class);
 
         @Override
         public Set<Class<?>> getTypes() {
@@ -210,10 +207,7 @@ class TypeInfos {
         }
 
         @Override
-        public PrimitiveBuilder<PrimitiveType> getBuilder(boolean required, boolean repeating, Class dataType) {
-            if (!isValidFor(dataType)) {
-                throw new IllegalArgumentException("Invalid data type " + dataType);
-            }
+        public PrimitiveBuilder<PrimitiveType> getBuilderImpl(boolean required, boolean repeating, Class<?> dataType) {
             return type(PrimitiveTypeName.INT32, required, repeating).as(LogicalTypeAnnotation.intType(32, true));
         }
     }
@@ -221,8 +215,7 @@ class TypeInfos {
     private enum LongType implements TypeInfo {
         INSTANCE;
 
-        private static final Set<Class<?>> clazzes = Collections
-                .unmodifiableSet(new HashSet<>(Arrays.asList(long.class, Long.class)));
+        private static final Set<Class<?>> clazzes = Set.of(long.class, Long.class);
 
         @Override
         public Set<Class<?>> getTypes() {
@@ -230,10 +223,7 @@ class TypeInfos {
         }
 
         @Override
-        public PrimitiveBuilder<PrimitiveType> getBuilder(boolean required, boolean repeating, Class dataType) {
-            if (!isValidFor(dataType)) {
-                throw new IllegalArgumentException("Invalid data type " + dataType);
-            }
+        public PrimitiveBuilder<PrimitiveType> getBuilderImpl(boolean required, boolean repeating, Class<?> dataType) {
             return type(PrimitiveTypeName.INT64, required, repeating);
         }
     }
@@ -241,8 +231,7 @@ class TypeInfos {
     private enum ShortType implements TypeInfo {
         INSTANCE;
 
-        private static final Set<Class<?>> clazzes = Collections
-                .unmodifiableSet(new HashSet<>(Arrays.asList(short.class, Short.class)));
+        private static final Set<Class<?>> clazzes = Set.of(short.class, Short.class);
 
         @Override
         public Set<Class<?>> getTypes() {
@@ -250,10 +239,7 @@ class TypeInfos {
         }
 
         @Override
-        public PrimitiveBuilder<PrimitiveType> getBuilder(boolean required, boolean repeating, Class dataType) {
-            if (!isValidFor(dataType)) {
-                throw new IllegalArgumentException("Invalid data type " + dataType);
-            }
+        public PrimitiveBuilder<PrimitiveType> getBuilderImpl(boolean required, boolean repeating, Class<?> dataType) {
             return type(PrimitiveTypeName.INT32, required, repeating).as(LogicalTypeAnnotation.intType(16, true));
         }
     }
@@ -261,8 +247,7 @@ class TypeInfos {
     private enum BooleanType implements TypeInfo {
         INSTANCE;
 
-        private static final Set<Class<?>> clazzes = Collections
-                .unmodifiableSet(new HashSet<>(Arrays.asList(boolean.class, Boolean.class)));
+        private static final Set<Class<?>> clazzes = Set.of(boolean.class, Boolean.class);
 
         @Override
         public Set<Class<?>> getTypes() {
@@ -270,10 +255,7 @@ class TypeInfos {
         }
 
         @Override
-        public PrimitiveBuilder<PrimitiveType> getBuilder(boolean required, boolean repeating, Class dataType) {
-            if (!isValidFor(dataType)) {
-                throw new IllegalArgumentException("Invalid data type " + dataType);
-            }
+        public PrimitiveBuilder<PrimitiveType> getBuilderImpl(boolean required, boolean repeating, Class<?> dataType) {
             return type(PrimitiveTypeName.BOOLEAN, required, repeating);
         }
     }
@@ -281,8 +263,7 @@ class TypeInfos {
     private enum FloatType implements TypeInfo {
         INSTANCE;
 
-        private static final Set<Class<?>> clazzes = Collections
-                .unmodifiableSet(new HashSet<>(Arrays.asList(float.class, Float.class)));
+        private static final Set<Class<?>> clazzes = Set.of(float.class, Float.class);
 
         @Override
         public Set<Class<?>> getTypes() {
@@ -290,10 +271,7 @@ class TypeInfos {
         }
 
         @Override
-        public PrimitiveBuilder<PrimitiveType> getBuilder(boolean required, boolean repeating, Class dataType) {
-            if (!isValidFor(dataType)) {
-                throw new IllegalArgumentException("Invalid data type " + dataType);
-            }
+        public PrimitiveBuilder<PrimitiveType> getBuilderImpl(boolean required, boolean repeating, Class<?> dataType) {
             return type(PrimitiveTypeName.FLOAT, required, repeating);
         }
     }
@@ -301,8 +279,7 @@ class TypeInfos {
     private enum DoubleType implements TypeInfo {
         INSTANCE;
 
-        private static final Set<Class<?>> clazzes = Collections
-                .unmodifiableSet(new HashSet<>(Arrays.asList(double.class, Double.class)));
+        private static final Set<Class<?>> clazzes = Set.of(double.class, Double.class);
 
         @Override
         public Set<Class<?>> getTypes() {
@@ -310,10 +287,7 @@ class TypeInfos {
         }
 
         @Override
-        public PrimitiveBuilder<PrimitiveType> getBuilder(boolean required, boolean repeating, Class dataType) {
-            if (!isValidFor(dataType)) {
-                throw new IllegalArgumentException("Invalid data type " + dataType);
-            }
+        public PrimitiveBuilder<PrimitiveType> getBuilderImpl(boolean required, boolean repeating, Class<?> dataType) {
             return type(PrimitiveTypeName.DOUBLE, required, repeating);
         }
     }
@@ -321,8 +295,7 @@ class TypeInfos {
     private enum CharType implements TypeInfo {
         INSTANCE;
 
-        private static final Set<Class<?>> clazzes = Collections
-                .unmodifiableSet(new HashSet<>(Arrays.asList(char.class, Character.class)));
+        private static final Set<Class<?>> clazzes = Set.of(char.class, Character.class);
 
         @Override
         public Set<Class<?>> getTypes() {
@@ -330,10 +303,7 @@ class TypeInfos {
         }
 
         @Override
-        public PrimitiveBuilder<PrimitiveType> getBuilder(boolean required, boolean repeating, Class dataType) {
-            if (!isValidFor(dataType)) {
-                throw new IllegalArgumentException("Invalid data type " + dataType);
-            }
+        public PrimitiveBuilder<PrimitiveType> getBuilderImpl(boolean required, boolean repeating, Class<?> dataType) {
             return type(PrimitiveTypeName.INT32, required, repeating).as(LogicalTypeAnnotation.intType(16, false));
         }
     }
@@ -341,8 +311,7 @@ class TypeInfos {
     private enum ByteType implements TypeInfo {
         INSTANCE;
 
-        private static final Set<Class<?>> clazzes = Collections
-                .unmodifiableSet(new HashSet<>(Arrays.asList(byte.class, Byte.class)));
+        private static final Set<Class<?>> clazzes = Set.of(byte.class, Byte.class);
 
         @Override
         public Set<Class<?>> getTypes() {
@@ -350,10 +319,7 @@ class TypeInfos {
         }
 
         @Override
-        public PrimitiveBuilder<PrimitiveType> getBuilder(boolean required, boolean repeating, Class dataType) {
-            if (!isValidFor(dataType)) {
-                throw new IllegalArgumentException("Invalid data type " + dataType);
-            }
+        public PrimitiveBuilder<PrimitiveType> getBuilderImpl(boolean required, boolean repeating, Class<?> dataType) {
             return type(PrimitiveTypeName.INT32, required, repeating).as(LogicalTypeAnnotation.intType(8, true));
         }
     }
@@ -361,7 +327,7 @@ class TypeInfos {
     private enum StringType implements TypeInfo {
         INSTANCE;
 
-        private static final Set<Class<?>> clazzes = Collections.singleton(String.class);
+        private static final Set<Class<?>> clazzes = Set.of(String.class);
 
         @Override
         public Set<Class<?>> getTypes() {
@@ -369,22 +335,16 @@ class TypeInfos {
         }
 
         @Override
-        public PrimitiveBuilder<PrimitiveType> getBuilder(boolean required, boolean repeating, Class dataType) {
-            if (!isValidFor(dataType)) {
-                throw new IllegalArgumentException("Invalid data type " + dataType);
-            }
+        public PrimitiveBuilder<PrimitiveType> getBuilderImpl(boolean required, boolean repeating, Class<?> dataType) {
             return type(PrimitiveTypeName.BINARY, required, repeating)
                     .as(LogicalTypeAnnotation.stringType());
         }
     }
 
-    /**
-     * TODO: newer versions of parquet seem to support NANOS, but this version seems to only support MICROS
-     */
-    private enum DateTimeType implements TypeInfo {
+    private enum InstantType implements TypeInfo {
         INSTANCE;
 
-        private static final Set<Class<?>> clazzes = Collections.singleton(DateTime.class);
+        private static final Set<Class<?>> clazzes = Set.of(Instant.class);
 
         @Override
         public Set<Class<?>> getTypes() {
@@ -392,12 +352,88 @@ class TypeInfos {
         }
 
         @Override
-        public PrimitiveBuilder<PrimitiveType> getBuilder(boolean required, boolean repeating, Class dataType) {
-            if (!isValidFor(dataType)) {
-                throw new IllegalArgumentException("Invalid data type " + dataType);
-            }
+        public PrimitiveBuilder<PrimitiveType> getBuilderImpl(boolean required, boolean repeating, Class<?> dataType) {
+            // Write instants as Parquet TIMESTAMP(isAdjustedToUTC = true, unit = NANOS)
             return type(PrimitiveTypeName.INT64, required, repeating)
                     .as(LogicalTypeAnnotation.timestampType(true, LogicalTypeAnnotation.TimeUnit.NANOS));
+        }
+    }
+
+    private enum LocalDateTimeType implements TypeInfo {
+        INSTANCE;
+
+        private static final Set<Class<?>> clazzes = Set.of(LocalDateTime.class);
+
+        @Override
+        public Set<Class<?>> getTypes() {
+            return clazzes;
+        }
+
+        @Override
+        public PrimitiveBuilder<PrimitiveType> getBuilderImpl(boolean required, boolean repeating, Class<?> dataType) {
+            // Write LocalDateTime as Parquet TIMESTAMP(isAdjustedToUTC = false, unit = NANOS)
+            return type(PrimitiveTypeName.INT64, required, repeating)
+                    .as(LogicalTypeAnnotation.timestampType(false, LogicalTypeAnnotation.TimeUnit.NANOS));
+        }
+    }
+
+    private enum LocalDateType implements TypeInfo {
+        INSTANCE;
+
+        private static final Set<Class<?>> clazzes = Set.of(LocalDate.class);
+
+        @Override
+        public Set<Class<?>> getTypes() {
+            return clazzes;
+        }
+
+        @Override
+        public PrimitiveBuilder<PrimitiveType> getBuilderImpl(boolean required, boolean repeating, Class<?> dataType) {
+            return type(PrimitiveTypeName.INT32, required, repeating)
+                    .as(LogicalTypeAnnotation.dateType());
+        }
+    }
+
+    private enum LocalTimeType implements TypeInfo {
+        INSTANCE;
+
+        private static final Set<Class<?>> clazzes = Set.of(LocalTime.class);
+
+        @Override
+        public Set<Class<?>> getTypes() {
+            return clazzes;
+        }
+
+        @Override
+        public PrimitiveBuilder<PrimitiveType> getBuilderImpl(boolean required, boolean repeating, Class<?> dataType) {
+            // Always write in (isAdjustedToUTC = true, unit = NANOS) format
+            return type(PrimitiveTypeName.INT64, required, repeating)
+                    .as(LogicalTypeAnnotation.timeType(true, LogicalTypeAnnotation.TimeUnit.NANOS));
+        }
+    }
+
+
+    /**
+     * We will encode BigIntegers as Decimal types. Parquet has no special type for BigIntegers, but we can maintain
+     * external compatibility by encoding them as fixed length decimals of scale 1. Internally, we'll record that we
+     * wrote this as a decimal, so we can properly decode it back to BigInteger.
+     *
+     * @see ParquetSchemaReader
+     */
+    private enum BigIntegerType implements TypeInfo {
+        INSTANCE;
+
+        private static final Set<Class<?>> clazzes = Set.of(BigInteger.class);
+
+        @Override
+        public Set<Class<?>> getTypes() {
+            return clazzes;
+        }
+
+        @Override
+        public PrimitiveBuilder<PrimitiveType> getBuilderImpl(boolean required, boolean repeating, Class<?> dataType) {
+            return type(PrimitiveTypeName.BINARY, required, repeating)
+                    .as(LogicalTypeAnnotation.decimalType(0, 1));
         }
     }
 
@@ -405,8 +441,20 @@ class TypeInfos {
 
         Set<Class<?>> getTypes();
 
+        @SuppressWarnings("BooleanMethodIsAlwaysInverted")
         default boolean isValidFor(Class<?> clazz) {
             return getTypes().contains(clazz);
+        }
+
+        default PrimitiveBuilder<PrimitiveType> getBuilderImpl(boolean required, boolean repeating, Class<?> dataType) {
+            throw new UnsupportedOperationException("Implement this method if using the default getBuilder()");
+        }
+
+        default PrimitiveBuilder<PrimitiveType> getBuilder(boolean required, boolean repeating, Class<?> dataType) {
+            if (!isValidFor(dataType)) {
+                throw new IllegalArgumentException("Invalid data type " + dataType);
+            }
+            return getBuilderImpl(required, repeating, dataType);
         }
 
         default Type createSchemaType(
@@ -414,6 +462,8 @@ class TypeInfos {
                 @NotNull final ParquetInstructions instructions) {
             final Class<?> dataType = columnDefinition.getDataType();
             final Class<?> componentType = columnDefinition.getComponentType();
+            final String parquetColumnName =
+                    instructions.getParquetColumnNameFromColumnNameOrDefault(columnDefinition.getName());
 
             final PrimitiveBuilder<PrimitiveType> builder;
             final boolean isRepeating;
@@ -432,15 +482,20 @@ class TypeInfos {
                 isRepeating = false;
             }
             if (!isRepeating) {
-                return builder.named(columnDefinition.getName());
+                instructions.getFieldId(columnDefinition.getName()).ifPresent(builder::id);
+                return builder.named(parquetColumnName);
             }
-            return Types.buildGroup(Type.Repetition.OPTIONAL).addField(
-                    Types.buildGroup(Type.Repetition.REPEATED).addField(
-                            builder.named("item")).named(columnDefinition.getName()))
-                    .as(LogicalTypeAnnotation.listType()).named(columnDefinition.getName());
+            // Note: the Parquet type builder would take care of the element name for us if we were constructing it
+            // ahead of time via ListBuilder.optionalElement
+            // (org.apache.parquet.schema.Types.BaseListBuilder.ElementBuilder.named) when we named the outer list; but
+            // since we are constructing types recursively (without regard to the outer type), we are responsible for
+            // setting the element name correctly at this point in time.
+            final Types.ListBuilder<GroupType> listBuilder = Types.optionalList();
+            instructions.getFieldId(columnDefinition.getName()).ifPresent(listBuilder::id);
+            return listBuilder
+                    .element(builder.named(ELEMENT_NAME))
+                    .named(parquetColumnName);
         }
-
-        PrimitiveBuilder<PrimitiveType> getBuilder(boolean required, boolean repeating, Class dataType);
     }
 
     private static class CodecType<T> implements TypeInfo {
@@ -453,8 +508,7 @@ class TypeInfos {
         }
 
         @Override
-        public PrimitiveBuilder<PrimitiveType> getBuilder(boolean required, boolean repeating, Class dataType) {
-
+        public PrimitiveBuilder<PrimitiveType> getBuilder(boolean required, boolean repeating, Class<?> dataType) {
             return type(PrimitiveTypeName.BINARY, required, repeating);
         }
     }

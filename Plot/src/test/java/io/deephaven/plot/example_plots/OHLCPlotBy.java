@@ -1,14 +1,13 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.plot.example_plots;
 
 import io.deephaven.plot.Figure;
 import io.deephaven.plot.FigureFactory;
 import io.deephaven.plot.axistransformations.AxisTransformLambda;
 import io.deephaven.engine.table.Table;
-import io.deephaven.engine.table.lang.QueryScope;
+import io.deephaven.engine.context.QueryScope;
 import io.deephaven.engine.util.TableTools;
 
 
@@ -29,7 +28,7 @@ public class OHLCPlotBy {
                 TableTools.doubleCol("Close", close));
 
         QueryScope.addParam("time", time);
-        t = t.updateView("Time = new DateTime(time + (MINUTE * i))");
+        t = t.updateView("Time = DateTimeUtils.epochNanosToInstant(time + (MINUTE * i))");
 
         Figure fig = FigureFactory.figure();
         Figure cht = fig.newChart(0)

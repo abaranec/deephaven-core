@@ -1,13 +1,12 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.util;
 
-import io.deephaven.base.Function;
-import io.deephaven.base.Procedure;
 import io.deephaven.base.log.LogOutput;
 import io.deephaven.io.logger.Logger;
+import io.deephaven.util.function.ThrowingRunnable;
+import io.deephaven.util.function.ThrowingSupplier;
 import org.jdom2.Attribute;
 import org.jdom2.Element;
 import org.jetbrains.annotations.NotNull;
@@ -18,14 +17,8 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URL;
 import java.net.URLClassLoader;
-import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
-import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
-import java.security.PrivilegedActionException;
-import java.security.PrivilegedExceptionAction;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -43,9 +36,9 @@ public class Utils {
      *
      * @param r the stuff to run
      */
-    public static void unCheck(final Procedure.ThrowingNullary<IOException> r) {
+    public static void unCheck(final ThrowingRunnable<IOException> r) {
         try {
-            r.call();
+            r.run();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -57,9 +50,9 @@ public class Utils {
      * @param r the stuff to run
      * @return the result of the stuff
      */
-    public static <T> T unCheck(final Function.ThrowingNullary<T, IOException> r) {
+    public static <T> T unCheck(final ThrowingSupplier<T, IOException> r) {
         try {
-            return r.call();
+            return r.get();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -81,11 +74,13 @@ public class Utils {
      * @param thing the thing to run despite interruptions.
      * @param name what to call the thing - for logging
      */
-    public static void runWithoutInterruption(Logger log, Procedure.ThrowingNullary<InterruptedException> thing,
+    public static void runWithoutInterruption(
+            Logger log,
+            ThrowingRunnable<InterruptedException> thing,
             String name) {
         do {
             try {
-                thing.call();
+                thing.run();
                 return;
             } catch (InterruptedException ignore) {
                 log.warn().append("Caught InterruptedException while running ").append(name).endl();
@@ -136,7 +131,7 @@ public class Utils {
 
     /**
      * Wrap the specified element in a new one with the specified name
-     * 
+     *
      * @param wrapperName The name of the wrapper element to create
      * @param wrapee The element being wrapped.
      *
@@ -236,10 +231,7 @@ public class Utils {
             }
             cl = cl.getParent();
         }
-        // We should be able to create this class loader even if this is invoked from external code that lacks that
-        // permission.
-        return AccessController.doPrivileged(
-                (PrivilegedAction<URLClassLoader>) () -> new URLClassLoader(all.toArray(new URL[0]), null));
+        return new URLClassLoader(all.toArray(new URL[0]), null);
     }
 
     /**
@@ -248,7 +240,7 @@ public class Utils {
      * method is not required to be idempotent. In other words, <b>calling this close method more than once may have
      * some visible side effect,</b> unlike Closeable.close which is required to have no effect if called more than
      * once. However, implementers of this interface are strongly encouraged to make their close methods idempotent.</i>
-     * 
+     *
      * @param autoCloseable The resource to close.
      */
     public static void ensureClosed(@NotNull final AutoCloseable autoCloseable) {
@@ -383,17 +375,10 @@ public class Utils {
     /**
      * require (o instanceof type)
      */
-    public static <T> T castTo(Object o, String name, Class<T> type, int numCallsBelowRequirer) {
-        io.deephaven.base.verify.Require.instanceOf(o, name, type, numCallsBelowRequirer);
+    public static <T> T castTo(Object o, String name, Class<T> type) {
+        io.deephaven.base.verify.Require.requirement(type.isInstance(o), name);
         // noinspection unchecked
         return (T) o;
-    }
-
-    /**
-     * require (o instanceof type)
-     */
-    public static <T> T castTo(Object o, String name, Class<T> type) {
-        return castTo(o, name, type, 1);
     }
 
     /**
@@ -443,107 +428,4 @@ public class Utils {
 
         throw new RuntimeException("Unsupported Java version: " + versionString);
     }
-
-
-    // region privileged actions
-
-    /**
-     * Perform a file existence check in a privileged context.
-     *
-     * @param file The File to check
-     * @return same as File.exists
-     */
-    public static boolean fileExistsPrivileged(final File file) {
-        return AccessController.doPrivileged((PrivilegedAction<Boolean>) file::exists);
-    }
-
-    /**
-     * Perform an IsDirectory check in a privileged context.
-     *
-     * @param file the File to check
-     * @return same as File.isDirectory
-     */
-    public static boolean fileIsDirectoryPrivileged(final File file) {
-        return AccessController.doPrivileged((PrivilegedAction<Boolean>) file::isDirectory);
-    }
-
-    /**
-     * Perform an IsDirectory check in a privileged context.
-     *
-     * @param path the File to check
-     * @return same as File.isDirectory
-     */
-    public static boolean fileIsDirectoryPrivileged(final Path path, final LinkOption... options) {
-        return AccessController.doPrivileged((PrivilegedAction<Boolean>) () -> Files.isDirectory(path, options));
-    }
-
-    public static DirectoryStream<Path> fileGetDirectoryStream(Path dir,
-            DirectoryStream.Filter<? super Path> filter) throws IOException {
-        try {
-            return AccessController.doPrivileged(
-                    (PrivilegedExceptionAction<DirectoryStream<Path>>) () -> Files.newDirectoryStream(dir, filter));
-        } catch (final PrivilegedActionException pae) {
-            if (pae.getException() instanceof IOException) {
-                throw (IOException) pae.getException();
-            } else {
-                throw new RuntimeException(pae.getException());
-            }
-        }
-    }
-
-
-    /**
-     * Get an absolute File in a privileged context.
-     *
-     * @param file the File to check
-     * @return same as File.getAbsoluteFile
-     */
-    public static File fileGetAbsoluteFilePrivileged(final File file) {
-        return AccessController.doPrivileged((PrivilegedAction<File>) file::getAbsoluteFile);
-    }
-
-    /**
-     * Get an absolute path in a privileged context.
-     *
-     * @param file the File to check
-     * @return same as File.getAbsolutePath
-     */
-    public static String fileGetAbsolutePathPrivileged(final File file) {
-        return AccessController.doPrivileged((PrivilegedAction<String>) file::getAbsolutePath);
-    }
-
-    /**
-     * Create the directory specified by this File, excluding parent directories, in a privileged context.
-     *
-     * @param file The directory to create
-     * @return same as File.mkdir
-     */
-    @SuppressWarnings("UnusedReturnValue")
-    public static boolean fileMkdirPrivileged(final File file) {
-        return AccessController.doPrivileged((PrivilegedAction<Boolean>) file::mkdir);
-    }
-
-    /**
-     * Rename a file in a privileged context.
-     *
-     * @param file the File to rename
-     * @param dest the new name
-     * @return same as File.renameTo
-     */
-    public static boolean fileRenameToPrivileged(final File file, final File dest) {
-        return AccessController.doPrivileged((PrivilegedAction<Boolean>) () -> file.renameTo(dest));
-    }
-
-    /**
-     * Delete a file in a privileged context
-     *
-     * @param file The File to delete
-     * @return same as File.delete
-     */
-    @SuppressWarnings("BooleanMethodIsAlwaysInverted")
-    public static boolean fileDeletePrivileged(final File file) {
-        return AccessController.doPrivileged((PrivilegedAction<Boolean>) file::delete);
-    }
-
-    // endregion privileged actions
 }

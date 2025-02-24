@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources;
 
 import io.deephaven.engine.table.ColumnSource;
@@ -23,12 +22,12 @@ public class UngroupedArrayColumnSource<T> extends UngroupedColumnSource<T>
     }
 
     @Override
-    public T get(long index) {
-        if (index < 0) {
+    public T get(long rowKey) {
+        if (rowKey < 0) {
             return null;
         }
-        long segment = index >> base;
-        long offset = index & ((1 << base) - 1);
+        long segment = rowKey >> base;
+        long offset = rowKey & ((1 << base) - 1);
         // noinspection unchecked
         T[] array = (T[]) innerSource.get(segment);
         if (offset >= array.length) {
@@ -39,12 +38,12 @@ public class UngroupedArrayColumnSource<T> extends UngroupedColumnSource<T>
 
 
     @Override
-    public T getPrev(long index) {
-        if (index < 0) {
+    public T getPrev(long rowKey) {
+        if (rowKey < 0) {
             return null;
         }
-        long segment = index >> getPrevBase();
-        long offset = index & ((1 << getPrevBase()) - 1);
+        long segment = rowKey >> getPrevBase();
+        long offset = rowKey & ((1 << getPrevBase()) - 1);
         // noinspection unchecked
         T[] array = (T[]) innerSource.getPrev(segment);
         if (offset >= array.length) {

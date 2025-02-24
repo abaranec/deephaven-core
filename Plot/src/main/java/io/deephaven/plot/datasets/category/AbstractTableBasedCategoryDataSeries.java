@@ -1,16 +1,15 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.plot.datasets.category;
 
+import io.deephaven.engine.context.ExecutionContext;
 import io.deephaven.plot.AxesImpl;
 import io.deephaven.plot.datasets.ColumnNameConstants;
 import io.deephaven.plot.util.ArgumentValidations;
 import io.deephaven.plot.util.functions.FigureImplFunction;
 import io.deephaven.engine.table.Table;
-import io.deephaven.engine.table.lang.QueryLibrary;
-import io.deephaven.engine.table.lang.QueryScope;
+import io.deephaven.engine.context.QueryScope;
 import io.deephaven.gui.color.Paint;
 
 import java.util.function.Function;
@@ -31,30 +30,30 @@ public abstract class AbstractTableBasedCategoryDataSeries extends AbstractCateg
     }
 
     @Override
-    public CategoryDataSeries pointShape(final Function<Comparable, String> shapes) {
+    public CategoryDataSeries pointShape(final Function<Comparable, String> pointShapes) {
         final String colName = ColumnNameConstants.POINT_SHAPE + this.hashCode();
         chart().figure().registerTableFunction(getTable(),
-                t -> constructTableFromFunctionOnCategoryCol(t, shapes, String.class, colName));
+                t -> constructTableFromFunctionOnCategoryCol(t, pointShapes, String.class, colName));
         chart().figure().registerFigureFunction(
                 new FigureImplFunction(f -> f.pointShape(getTable(), getCategoryCol(), colName), this));
         return this;
     }
 
     @Override
-    public <NUMBER extends Number> CategoryDataSeries pointSize(final Function<Comparable, NUMBER> factors) {
+    public <NUMBER extends Number> CategoryDataSeries pointSize(final Function<Comparable, NUMBER> pointSizes) {
         final String colName = ColumnNameConstants.POINT_SIZE + this.hashCode();
         chart().figure().registerTableFunction(getTable(),
-                t -> constructTableFromFunctionOnCategoryCol(t, factors, Number.class, colName));
+                t -> constructTableFromFunctionOnCategoryCol(t, pointSizes, Number.class, colName));
         chart().figure().registerFigureFunction(
                 new FigureImplFunction(f -> f.pointSize(getTable(), getCategoryCol(), colName), this));
         return this;
     }
 
     @Override
-    public <COLOR extends Paint> CategoryDataSeries pointColor(final Function<Comparable, COLOR> colors) {
+    public <COLOR extends Paint> CategoryDataSeries pointColor(final Function<Comparable, COLOR> pointColor) {
         final String colName = ColumnNameConstants.POINT_COLOR + this.hashCode();
         chart().figure().registerTableFunction(getTable(),
-                t -> constructTableFromFunctionOnCategoryCol(t, colors, Paint.class, colName));
+                t -> constructTableFromFunctionOnCategoryCol(t, pointColor, Paint.class, colName));
         chart().figure().registerFigureFunction(
                 new FigureImplFunction(f -> f.pointColor(getTable(), getCategoryCol(), colName), this));
         return this;
@@ -71,20 +70,10 @@ public abstract class AbstractTableBasedCategoryDataSeries extends AbstractCateg
     }
 
     @Override
-    public <T extends Paint> CategoryDataSeries pointColorByY(Function<Double, T> colors) {
-        final String colName = ColumnNameConstants.POINT_COLOR + this.hashCode();
-        chart().figure().registerTableFunction(getTable(),
-                t -> constructTableFromFunctionOnNumericalCol(t, colors, Paint.class, colName));
-        chart().figure().registerFigureFunction(
-                new FigureImplFunction(f -> f.pointColor(getTable(), getCategoryCol(), colName), this));
-        return this;
-    }
-
-    @Override
-    public <LABEL> CategoryDataSeries pointLabel(final Function<Comparable, LABEL> labels) {
+    public <LABEL> CategoryDataSeries pointLabel(final Function<Comparable, LABEL> pointLabels) {
         final String colName = ColumnNameConstants.POINT_LABEL + this.hashCode();
         chart().figure().registerTableFunction(getTable(),
-                t -> constructTableFromFunctionOnCategoryCol(t, labels, Object.class, colName));
+                t -> constructTableFromFunctionOnCategoryCol(t, pointLabels, Object.class, colName));
         chart().figure().registerFigureFunction(
                 new FigureImplFunction(f -> f.pointLabel(getTable(), getCategoryCol(), colName), this));
         return this;
@@ -105,7 +94,7 @@ public abstract class AbstractTableBasedCategoryDataSeries extends AbstractCateg
         ArgumentValidations.assertNotNull(function, "function", getPlotInfo());
         final String queryFunction = columnName + "Function";
         QueryScope.addParam(queryFunction, function);
-        QueryLibrary.importClass(resultClass);
+        ExecutionContext.getContext().getQueryLibrary().importClass(resultClass);
         return t.update(
                 columnName + " = (" + resultClass.getSimpleName() + ") " + queryFunction + ".apply(" + onColumn + ")");
     }

@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.rowset.impl.rsp;
 
 import io.deephaven.engine.rowset.chunkattributes.OrderedRowKeys;
@@ -44,6 +47,10 @@ public class RspBitmap extends RspArray<RspBitmap> implements OrderedLongSet {
             final int startIdx, final long startOffset,
             final int endIdx, final long endOffset) {
         super(src, startIdx, startOffset, endIdx, endOffset);
+    }
+
+    public RspBitmap(final RspArray src, final int startIdx, final int endIdx) {
+        super(src, startIdx, endIdx);
     }
 
     public static RspBitmap makeEmpty() {
@@ -946,21 +953,20 @@ public class RspBitmap extends RspArray<RspBitmap> implements OrderedLongSet {
     }
 
     public void appendShiftedUnsafeNoWriteCheck(final long shiftAmount, final RspArray other, final boolean acquire) {
-        if ((shiftAmount & BLOCK_LAST) == 0) {
-            if (tryAppendShiftedUnsafeNoWriteCheck(shiftAmount, other, acquire)) {
-                return;
-            }
-        } else if (lastValue() < other.firstValue() + shiftAmount) {
-            other.forEachLongRange((final long start, final long end) -> {
-                appendRangeUnsafeNoWriteCheck(start + shiftAmount, end + shiftAmount);
-                return true;
-            });
+        if ((shiftAmount & BLOCK_LAST) == 0 &&
+                tryAppendShiftedUnsafeNoWriteCheck(shiftAmount, other, acquire)) {
             return;
         }
-        throw new IllegalArgumentException(
-                "Cannot append rowSet with shiftAmount=" + shiftAmount + ", firstRowKey=" + other.firstValue() +
-                        " when our lastValue=" + lastValue());
+        if (lastValue() >= other.firstValue() + shiftAmount) {
+            throw new IllegalArgumentException(
+                    "Cannot append rowSet with shiftAmount=" + shiftAmount + ", firstRowKey=" + other.firstValue() +
+                            " when our lastValue=" + lastValue());
 
+        }
+        other.forEachLongRange((final long start, final long end) -> {
+            appendRangeUnsafeNoWriteCheck(start + shiftAmount, end + shiftAmount);
+            return true;
+        });
     }
 
     /**
@@ -1021,7 +1027,53 @@ public class RspBitmap extends RspArray<RspBitmap> implements OrderedLongSet {
      * @return r1 and not r2 as a new RspArray.
      */
     public static RspBitmap andNotImpl(final RspBitmap r1, final RspBitmap r2) {
-        final RspBitmap r = r1.deepCopy();
+        final int minLen = Math.min(r1.size, r2.size);
+        // Detect if there is an "obvious" common prefix.
+        int startIndex;
+        for (startIndex = 0; startIndex < minLen; ++startIndex) {
+            final long r1SpanInfo = r1.spanInfos[startIndex];
+            final long r2SpanInfo = r2.spanInfos[startIndex];
+            if (r1SpanInfo != r2SpanInfo) {
+                // We do not detect the case where a full block span is encoded differently
+                // (with a marker object in the spans array and the lower 16 bits of spanInfo in one case,
+                // versus a Long object in the other).
+                // We also wouldn't detect a singleton container that is encoded as null span object in one
+                // case, with the lower 16 bits indicating the singleton value, and with an actual container
+                // with a single element in the other.
+                // Bottom line we need the exact same optimization applied to both RspBitmap arguments.
+                break;
+            }
+            final Object r1Span = r1.spans[startIndex];
+            final Object r2Span = r2.spans[startIndex];
+
+            if (r1Span == r2Span) {
+                // r1Span and r2Span are either:
+                // (a) Both null, representing singleton spans, so our check for spanInfo equality was enough
+                // to guarantee sameness
+                // (b) The same object, representing a shared container or full block span (either marker or Long; if
+                // marker our check for spanInfo equality was enough to guarantee sameness).
+                continue;
+            }
+            // r1Span != r2Span
+            if (r1Span instanceof Long && r2Span instanceof Long) {
+                if (((Long) r1Span).longValue() != ((Long) r2Span).longValue()) {
+                    break;
+                }
+            } else {
+                // In the case of containers, we only detect same object being shared;
+                // we do not try to compare contents of containers otherwise.
+                break;
+            }
+        }
+        final RspBitmap r;
+        if (startIndex == 0) {
+            r = r1.deepCopy();
+        } else {
+            if (startIndex == r1.size) {
+                return makeEmpty();
+            }
+            r = new RspBitmap(r1, startIndex, r1.size - 1);
+        }
         r.andNotEqualsUnsafeNoWriteCheck(r2);
         return r;
     }
@@ -1435,7 +1487,7 @@ public class RspBitmap extends RspArray<RspBitmap> implements OrderedLongSet {
         try (final RowSet.RangeIterator rit = keys.ixRangeIterator()) {
             final BuilderSequential builder = new OrderedLongSetBuilderSequential();
             invert(builder, rit, maximumPosition);
-            return builder.getTreeIndexImpl();
+            return builder.getOrderedLongSet();
         }
     }
 
@@ -1535,25 +1587,25 @@ public class RspBitmap extends RspArray<RspBitmap> implements OrderedLongSet {
 
     public RspBitmap ixInsertNoWriteCheck(final OrderedLongSet other) {
         if (other instanceof SingleRange) {
-            insertTreeIndexUnsafeNoWriteCheck((SingleRange) other);
+            insertOrderedLongSetUnsafeNoWriteCheck((SingleRange) other);
         } else if (other instanceof SortedRanges) {
-            insertTreeIndexUnsafeNoWriteCheck((SortedRanges) other);
+            insertOrderedLongSetUnsafeNoWriteCheck((SortedRanges) other);
         } else {
-            insertTreeIndexUnsafeNoWriteCheck((RspBitmap) other);
+            insertOrderedLongSetUnsafeNoWriteCheck((RspBitmap) other);
         }
         finishMutations();
         return this;
     }
 
-    public void insertTreeIndexUnsafeNoWriteCheck(final SingleRange ix) {
+    public void insertOrderedLongSetUnsafeNoWriteCheck(final SingleRange ix) {
         addRangeUnsafeNoWriteCheck(0, ix.ixFirstKey(), ix.ixLastKey());
     }
 
-    public void insertTreeIndexUnsafeNoWriteCheck(final SortedRanges sr) {
+    public void insertOrderedLongSetUnsafeNoWriteCheck(final SortedRanges sr) {
         addRangesUnsafeNoWriteCheck(sr.getRangeIterator());
     }
 
-    public void insertTreeIndexUnsafeNoWriteCheck(final RspBitmap rb) {
+    public void insertOrderedLongSetUnsafeNoWriteCheck(final RspBitmap rb) {
         orEqualsUnsafeNoWriteCheck(rb);
     }
 
@@ -1864,7 +1916,7 @@ public class RspBitmap extends RspArray<RspBitmap> implements OrderedLongSet {
             RspBitmap rspOther = (RspBitmap) other;
             rspOther = rspOther.applyOffsetOnNew(shiftAmount);
             final RspBitmap ans = getWriteRef();
-            ans.insertTreeIndexUnsafeNoWriteCheck(rspOther);
+            ans.insertOrderedLongSetUnsafeNoWriteCheck(rspOther);
             ans.finishMutations();
             return ans;
         }
@@ -2152,7 +2204,7 @@ public class RspBitmap extends RspArray<RspBitmap> implements OrderedLongSet {
         }
 
         @Override
-        public RspBitmap getTreeIndexImpl() {
+        public RspBitmap getOrderedLongSet() {
             final RspBitmap ans = rb;
             rb = null;
             ans.tryCompactUnsafe(4);
@@ -2183,12 +2235,12 @@ public class RspBitmap extends RspArray<RspBitmap> implements OrderedLongSet {
 
         @Override
         public void add(final SortedRanges ix, final boolean acquire) {
-            rb.insertTreeIndexUnsafeNoWriteCheck(ix);
+            rb.insertOrderedLongSetUnsafeNoWriteCheck(ix);
         }
 
         @Override
         public void add(final RspBitmap ix, final boolean acquire) {
-            rb.insertTreeIndexUnsafeNoWriteCheck(ix);
+            rb.insertOrderedLongSetUnsafeNoWriteCheck(ix);
         }
     }
 }

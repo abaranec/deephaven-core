@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.updategraph;
 
 import io.deephaven.base.log.LogOutput;
@@ -24,7 +23,7 @@ public abstract class AbstractNotification implements NotificationQueue.Notifica
     }
 
     @Override
-    public boolean mustExecuteWithUgpLock() {
+    public boolean mustExecuteWithUpdateGraphLock() {
         return false;
     }
 

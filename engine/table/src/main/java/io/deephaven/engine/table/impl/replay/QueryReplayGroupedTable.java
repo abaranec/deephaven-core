@@ -1,29 +1,27 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.replay;
 
 
-import io.deephaven.base.verify.Require;
+import io.deephaven.engine.primitive.iterator.CloseableIterator;
 import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.engine.rowset.RowSetFactory;
-import io.deephaven.engine.rowset.TrackingRowSet;
-import io.deephaven.engine.table.impl.indexer.RowSetIndexer;
-import io.deephaven.time.DateTime;
-import io.deephaven.engine.table.impl.QueryTable;
+import io.deephaven.engine.table.BasicDataIndex;
 import io.deephaven.engine.table.ColumnSource;
+import io.deephaven.engine.table.Table;
+import io.deephaven.engine.table.impl.indexer.DataIndexer;
 import io.deephaven.engine.table.impl.sources.RedirectedColumnSource;
-import io.deephaven.engine.table.TupleSource;
-import io.deephaven.engine.table.impl.TupleSourceFactory;
-import io.deephaven.engine.table.impl.util.*;
+import io.deephaven.engine.table.impl.util.WritableRowRedirection;
+import org.jetbrains.annotations.NotNull;
 
-import java.util.Arrays;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.PriorityQueue;
 
-public abstract class QueryReplayGroupedTable extends QueryTable implements Runnable {
+public abstract class QueryReplayGroupedTable extends ReplayTableBase implements Runnable {
 
 
     protected final WritableRowRedirection rowRedirection;
@@ -35,20 +33,20 @@ public abstract class QueryReplayGroupedTable extends QueryTable implements Runn
         Map<String, ColumnSource<?>> result = new LinkedHashMap<>();
         for (Map.Entry<String, ? extends ColumnSource<?>> stringEntry : input.entrySet()) {
             ColumnSource<?> value = stringEntry.getValue();
-            result.put(stringEntry.getKey(), new RedirectedColumnSource<>(rowRedirection, value));
+            result.put(stringEntry.getKey(), RedirectedColumnSource.maybeRedirect(rowRedirection, value));
         }
         return result;
     }
 
-    static class IteratorsAndNextTime implements Comparable<IteratorsAndNextTime> {
+    protected static class IteratorsAndNextTime implements Comparable<IteratorsAndNextTime> {
 
         private final RowSet.Iterator iterator;
-        private final ColumnSource<DateTime> columnSource;
-        DateTime lastTime;
-        long lastIndex;
+        private final ColumnSource<Instant> columnSource;
+        protected Instant lastTime;
+        protected long lastIndex;
         public final long pos;
 
-        private IteratorsAndNextTime(RowSet.Iterator iterator, ColumnSource<DateTime> columnSource, long pos) {
+        private IteratorsAndNextTime(RowSet.Iterator iterator, ColumnSource<Instant> columnSource, long pos) {
             this.iterator = iterator;
             this.columnSource = columnSource;
             this.pos = pos;
@@ -56,7 +54,7 @@ public abstract class QueryReplayGroupedTable extends QueryTable implements Runn
             lastTime = columnSource.get(lastIndex);
         }
 
-        IteratorsAndNextTime next() {
+        protected IteratorsAndNextTime next() {
             if (iterator.hasNext()) {
                 lastIndex = iterator.nextLong();
                 lastTime = columnSource.get(lastIndex);
@@ -75,30 +73,34 @@ public abstract class QueryReplayGroupedTable extends QueryTable implements Runn
         }
     }
 
-    protected QueryReplayGroupedTable(TrackingRowSet rowSet, Map<String, ? extends ColumnSource<?>> input,
-            String timeColumn, Replayer replayer, WritableRowRedirection rowRedirection, String[] groupingColumns) {
+    protected QueryReplayGroupedTable(
+            @NotNull final String description,
+            @NotNull final Table source,
+            @NotNull final String timeColumn,
+            @NotNull final Replayer replayer,
+            @NotNull final WritableRowRedirection rowRedirection,
+            @NotNull final String[] groupingColumns) {
 
-        super(RowSetFactory.empty().toTracking(), getResultSources(input, rowRedirection));
+        super(description, RowSetFactory.empty().toTracking(),
+                getResultSources(source.getColumnSourceMap(), rowRedirection));
         this.rowRedirection = rowRedirection;
-        Map<Object, RowSet> grouping;
+        this.replayer = Objects.requireNonNull(replayer, "replayer");
 
-        final ColumnSource<?>[] columnSources =
-                Arrays.stream(groupingColumns).map(input::get).toArray(ColumnSource[]::new);
-        final TupleSource<?> tupleSource = TupleSourceFactory.makeTupleSource(columnSources);
-        grouping = RowSetIndexer.of(rowSet).getGrouping(tupleSource);
 
-        // noinspection unchecked
-        ColumnSource<DateTime> timeSource = (ColumnSource<DateTime>) input.get(timeColumn);
+        final BasicDataIndex dataIndex = DataIndexer.getOrCreateDataIndex(source, groupingColumns);
+        final Table indexTable = dataIndex.table();
+
+        ColumnSource<Instant> timeSource = source.getColumnSource(timeColumn, Instant.class);
         int pos = 0;
-        for (RowSet groupRowSet : grouping.values()) {
-            RowSet.Iterator iterator = groupRowSet.iterator();
-            if (iterator.hasNext()) {
-                allIterators.add(new IteratorsAndNextTime(iterator, timeSource, pos++));
+        try (final CloseableIterator<RowSet> it = indexTable.columnIterator(dataIndex.rowSetColumnName())) {
+            while (it.hasNext()) {
+                RowSet.Iterator iterator = it.next().iterator();
+                if (iterator.hasNext()) {
+                    allIterators.add(new IteratorsAndNextTime(iterator, timeSource, pos++));
+                }
             }
         }
-        Require.requirement(replayer != null, "replayer != null");
-        setRefreshing(true);
-        this.replayer = replayer;
+
         run();
     }
 }

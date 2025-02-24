@@ -1,8 +1,10 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit CharToDoubleCast and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit CharToDoubleCast and run "./gradlew replicateOperators" to regenerate
+//
+// @formatter:off
 package io.deephaven.engine.table.impl.util.cast;
 
 import io.deephaven.chunk.*;
@@ -31,7 +33,8 @@ public class IntToDoubleCast implements ToDoubleCast {
     }
 
     public static <T2 extends Any> void castInto(IntChunk<? extends T2> input, WritableDoubleChunk<T2> result) {
-        for (int ii = 0; ii < input.size(); ++ii) {
+        final int size = input.size();
+        for (int ii = 0; ii < size; ++ii) {
             final int value = input.get(ii);
             if (value == QueryConstants.NULL_INT) {
                 result.set(ii, QueryConstants.NULL_DOUBLE);

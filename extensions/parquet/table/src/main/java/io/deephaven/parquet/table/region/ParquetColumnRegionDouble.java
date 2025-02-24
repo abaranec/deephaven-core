@@ -1,8 +1,10 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit ParquetColumnRegionChar and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit ParquetColumnRegionChar and run "./gradlew replicateRegionsAndRegionedSources" to regenerate
+//
+// @formatter:off
 package io.deephaven.parquet.table.region;
 
 import io.deephaven.engine.table.impl.locations.TableDataException;
@@ -23,14 +25,16 @@ public final class ParquetColumnRegionDouble<ATTR extends Any> extends ParquetCo
         super(columnChunkPageStore.mask(), columnChunkPageStore);
     }
 
+    // region getBytes
+    // endregion getBytes
+
     @Override
-    public double getDouble(final long elementIndex) {
-        final ChunkPage<ATTR> page = getChunkPageContaining(elementIndex);
+    public double getDouble(final long rowKey) {
+        final ChunkPage<ATTR> page = getChunkPageContaining(rowKey);
         try {
-            return page.asDoubleChunk().get(page.getChunkOffset(elementIndex));
+            return page.asDoubleChunk().get(page.getChunkOffset(rowKey));
         } catch (Exception e) {
-            throw new TableDataException("Error retrieving double at table double rowSet " + elementIndex
-                    + ", from a parquet table", e);
+            throw new TableDataException("Error retrieving double at row key " + rowKey + " from a parquet table", e);
         }
     }
 }

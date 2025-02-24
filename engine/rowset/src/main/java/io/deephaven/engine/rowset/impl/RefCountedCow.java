@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.rowset.impl;
 
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
@@ -24,7 +27,7 @@ import io.deephaven.util.annotations.VisibleForTesting;
  * </p>
  *
  * <pre>
- * {@Code
+ * {@code
  *
  *   class MyType extends RefCountedCow<MyType> {
  *       &#64;Override protected MyType self() { return this; }
@@ -69,14 +72,15 @@ import io.deephaven.util.annotations.VisibleForTesting;
  * @param <T> A class that will extend us, to get RefCounted functionality.
  */
 public abstract class RefCountedCow<T> {
-    private static final boolean debug = RspArray.debug ||
-            Configuration.getInstance().getBooleanForClassWithDefault(
-                    RefCountedCow.class, "debug", false);
+
+    private static final boolean debug =
+            Configuration.getInstance().getBooleanForClassWithDefault(RefCountedCow.class, "debug", false);
 
     /**
      * Field updater for refCount, so we can avoid creating an {@link java.util.concurrent.atomic.AtomicInteger} for
      * each instance.
      */
+    @SuppressWarnings("rawtypes")
     private static final AtomicIntegerFieldUpdater<RefCountedCow> REFCOUNT_UPDATER =
             AtomicIntegerFieldUpdater.newUpdater(RefCountedCow.class, "refCount");
 

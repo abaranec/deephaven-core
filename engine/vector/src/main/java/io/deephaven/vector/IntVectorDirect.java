@@ -1,47 +1,52 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit CharVectorDirect and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit CharVectorDirect and run "./gradlew replicateVectors" to regenerate
+//
+// @formatter:off
 package io.deephaven.vector;
 
-import io.deephaven.util.datastructures.LongSizedDataStructure;
+import io.deephaven.base.verify.Require;
+import io.deephaven.engine.primitive.iterator.CloseablePrimitiveIteratorOfInt;
 import io.deephaven.util.annotations.ArrayType;
 import io.deephaven.util.annotations.ArrayTypeGetter;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.Arrays;
 
 import static io.deephaven.util.QueryConstants.NULL_INT;
 
+/**
+ * A {@link IntVector} backed by an array.
+ */
 @ArrayType(type = int[].class)
-public class IntVectorDirect implements IntVector {
+public final class IntVectorDirect implements IntVector {
 
     private final static long serialVersionUID = 3636374971797603565L;
 
+    public static final IntVector ZERO_LENGTH_VECTOR = new IntVectorDirect();
+
     private final int[] data;
 
-    public IntVectorDirect(int... data){
-        this.data = data;
+    public IntVectorDirect(@NotNull final int... data) {
+        this.data = Require.neqNull(data, "data");
     }
 
     @Override
-    public int get(long i) {
-        if (i < 0 || i > data.length - 1) {
+    public int get(final long index) {
+        if (index < 0 || index >= data.length) {
             return NULL_INT;
         }
-        return data[LongSizedDataStructure.intSize("IntVectorDirect get",  i)];
+        return data[(int) index];
     }
 
     @Override
-    public IntVector subVector(long fromIndex, long toIndex) {
-        return new IntVectorSlice(this, fromIndex, toIndex - fromIndex);
+    public IntVector subVector(final long fromIndexInclusive, final long toIndexExclusive) {
+        return new IntVectorSlice(this, fromIndexInclusive, toIndexExclusive - fromIndexInclusive);
     }
 
-    public IntVector subVectorByPositions(long [] positions) {
+    public IntVector subVectorByPositions(final long[] positions) {
         return new IntSubVector(this, positions);
     }
 
@@ -49,6 +54,19 @@ public class IntVectorDirect implements IntVector {
     @ArrayTypeGetter
     public int[] toArray() {
         return data;
+    }
+
+    @Override
+    public int[] copyToArray() {
+        return Arrays.copyOf(data, data.length);
+    }
+
+    @Override
+    public CloseablePrimitiveIteratorOfInt iterator(final long fromIndexInclusive, final long toIndexExclusive) {
+        if (fromIndexInclusive == 0 && toIndexExclusive == data.length) {
+            return CloseablePrimitiveIteratorOfInt.of(data);
+        }
+        return IntVector.super.iterator(fromIndexInclusive, toIndexExclusive);
     }
 
     @Override
@@ -62,12 +80,12 @@ public class IntVectorDirect implements IntVector {
     }
 
     @Override
-    public final String toString() {
+    public String toString() {
         return IntVector.toString(this, 10);
     }
 
     @Override
-    public final boolean equals(Object obj) {
+    public boolean equals(final Object obj) {
         if (obj instanceof IntVectorDirect) {
             return Arrays.equals(data, ((IntVectorDirect) obj).data);
         }
@@ -75,7 +93,7 @@ public class IntVectorDirect implements IntVector {
     }
 
     @Override
-    public final int hashCode() {
+    public int hashCode() {
         return IntVector.hashCode(this);
     }
 }

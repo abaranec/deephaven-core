@@ -1,11 +1,14 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit CharSsmBackedSource and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit CharSsmBackedSource and run "./gradlew replicateSegmentedSortedMultiset" to regenerate
+//
+// @formatter:off
 package io.deephaven.engine.table.impl.by.ssmcountdistinct;
 
 import java.util.Objects;
+import io.deephaven.util.compare.ObjectComparisons;
 
 import io.deephaven.vector.ObjectVector;
 import io.deephaven.engine.table.impl.AbstractColumnSource;
@@ -19,27 +22,27 @@ import io.deephaven.engine.rowset.RowSet;
  * A {@link SsmBackedColumnSource} for Objects.
  */
 public class ObjectSsmBackedSource extends AbstractColumnSource<ObjectVector>
-                                 implements ColumnSourceGetDefaults.ForObject<ObjectVector>,
-                                            MutableColumnSourceGetDefaults.ForObject<ObjectVector>,
-                                            SsmBackedColumnSource<ObjectSegmentedSortedMultiset, ObjectVector> {
+        implements ColumnSourceGetDefaults.ForObject<ObjectVector>,
+        MutableColumnSourceGetDefaults.ForObject<ObjectVector>,
+        SsmBackedColumnSource<ObjectSegmentedSortedMultiset, ObjectVector> {
     private final ObjectArraySource<ObjectSegmentedSortedMultiset> underlying;
     private boolean trackingPrevious = false;
 
-    //region Constructor
+    // region Constructor
     public ObjectSsmBackedSource(Class type) {
         super(ObjectVector.class, type);
         underlying = new ObjectArraySource<>(ObjectSegmentedSortedMultiset.class, type);
     }
-    //endregion Constructor
+    // endregion Constructor
 
-    //region SsmBackedColumnSource
+    // region SsmBackedColumnSource
     @Override
     public ObjectSegmentedSortedMultiset getOrCreate(long key) {
         ObjectSegmentedSortedMultiset ssm = underlying.getUnsafe(key);
-        if(ssm == null) {
-            //region CreateNew
-            underlying.set(key, ssm = new ObjectSegmentedSortedMultiset(DistinctOperatorFactory.NODE_SIZE, Object.class));
-            //endregion CreateNew
+        if (ssm == null) {
+            // region CreateNew
+            underlying.set(key, ssm = new ObjectSegmentedSortedMultiset(SsmDistinctContext.NODE_SIZE, Object.class));
+            // endregion CreateNew
         }
         ssm.setTrackDeltas(trackingPrevious);
         return ssm;
@@ -64,7 +67,7 @@ public class ObjectSsmBackedSource extends AbstractColumnSource<ObjectVector>
     public ObjectArraySource<ObjectSegmentedSortedMultiset> getUnderlyingSource() {
         return underlying;
     }
-    //endregion
+    // endregion
 
     @Override
     public boolean isImmutable() {
@@ -72,13 +75,13 @@ public class ObjectSsmBackedSource extends AbstractColumnSource<ObjectVector>
     }
 
     @Override
-    public ObjectVector get(long index) {
-        return underlying.get(index);
+    public ObjectVector get(long rowKey) {
+        return underlying.get(rowKey);
     }
 
     @Override
-    public ObjectVector getPrev(long index) {
-        final ObjectSegmentedSortedMultiset maybePrev = underlying.getPrev(index);
+    public ObjectVector getPrev(long rowKey) {
+        final ObjectSegmentedSortedMultiset maybePrev = underlying.getPrev(rowKey);
         return maybePrev == null ? null : maybePrev.getPrevValues();
     }
 
@@ -92,7 +95,7 @@ public class ObjectSsmBackedSource extends AbstractColumnSource<ObjectVector>
     public void clearDeltas(RowSet indices) {
         indices.iterator().forEachLong(key -> {
             final ObjectSegmentedSortedMultiset ssm = getCurrentSsm(key);
-            if(ssm != null) {
+            if (ssm != null) {
                 ssm.clearDeltas();
             }
             return true;

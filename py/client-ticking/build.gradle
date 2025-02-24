@@ -1,0 +1,180 @@
+plugins {
+    id 'com.bmuschko.docker-remote-api'
+    id 'io.deephaven.project.register'
+    id 'io.deephaven.deephaven-in-docker'
+}
+
+configurations {
+    pythonWheel
+}
+
+dependencies {
+    pythonWheel project(':py-client')
+}
+
+evaluationDependsOn(':cpp-client')
+evaluationDependsOn Docker.registryProject('fedora')
+evaluationDependsOn Docker.registryProject('ubi-minimal')
+
+def prefix = '/opt/deephaven'
+
+// start a grpc-api server
+String randomSuffix = UUID.randomUUID().toString();
+deephavenDocker {
+    envVars.set([
+        'START_OPTS':'-Xmx512m -DAuthHandlers=io.deephaven.auth.AnonymousAuthenticationHandler'
+    ])
+    containerName.set "pydeephaven-test-container-${randomSuffix}"
+    networkName.set "pydeephaven-network-${randomSuffix}"
+}
+
+// This task is based off of manylinux wheel, and is technically independent of specific python implementation. We are
+// currently using this for CPython wheel builds, but could use it in the future for other python implementations (PyPy).
+def pyClientTickingWheel = { String pythonTag -> Docker.registerDockerTask(project, "pyClientTickingWheel-${pythonTag}") {
+    // Only tested on x86-64, and we only build dependencies for x86-64
+    platform = 'linux/amd64'
+
+    copyIn {
+        from(layout.projectDirectory) {
+            include 'setup.py'
+            include 'README.md'
+            include 'src/**/py.typed'
+            include 'src/**/*.py'
+            include 'src/**/*.pyx'
+            include 'src/**/*.pxd'
+            include 'pyClientTickingWheel/entrypoint.sh'
+        }
+    }
+    copyOut {
+        into layout.buildDirectory.dir("pyClientTickingWheel/${pythonTag}")
+    }
+    dockerfile {
+        from(Docker.localImageName('cpp-client-py'))
+        runCommand("""mkdir -p \\
+                        /out \\
+                        '${prefix}/log' \\
+                        '${prefix}/src/py-client-ticking/src' \\
+                        '${prefix}/src/py-client-ticking/in-wheels'; \\
+                   /opt/python/${pythonTag}/bin/pip install cython setuptools
+                   """)
+        copyFile('setup.py', "${prefix}/src/py-client-ticking")
+        copyFile('README.md', "${prefix}/src/py-client-ticking")
+        copyFile('src/', "${prefix}/src/py-client-ticking/src/")
+        copyFile('pyClientTickingWheel/entrypoint.sh', '/entrypoint.sh')
+        environmentVariable([
+                PREFIX: prefix,
+                PYTHON_TAG: pythonTag,
+                DEEPHAVEN_VERSION: project.version.toString()
+        ])
+    }
+    parentContainers = [ project.tasks.getByPath(':cpp-client:cppClientPy') ]
+    entrypoint = ['/entrypoint.sh']
+}}
+
+def getCPythonTag = { String pythonVersion ->
+    def noPeriodVersion = pythonVersion.replace('.', '')
+    return "cp${noPeriodVersion}-cp${noPeriodVersion}".toString()
+}
+
+def pythonVersions = [ '3.8', '3.9', '3.10', '3.11', '3.12' ]
+
+Map<String, TaskProvider<? extends Task>> cpythonBuilds = pythonVersions.collectEntries { pythonVersion ->
+    def cpythonTag = getCPythonTag(pythonVersion)
+    return [(cpythonTag): pyClientTickingWheel(cpythonTag)]
+}
+
+// Our testing images are currently CPython specific
+def testCPythonClientTicking = { String pythonVersion, String image -> Docker.registerDockerTask(project, "testCPythonClientTicking-${pythonVersion}-${image}") {
+    def cpythonWheelTask = cpythonBuilds.get(getCPythonTag(pythonVersion)).get()
+    // Only tested on x86-64, and we only build dependencies for x86-64
+    platform = 'linux/amd64'
+    copyIn {
+        from(configurations.pythonWheel) {
+            into 'dep-wheels'
+        }
+        from(layout.projectDirectory) {
+            include 'tests/**'
+            include 'testPyClientTicking/entrypoint.sh'
+        }
+        from(cpythonWheelTask.outputs) {
+            into 'pyt-wheels'
+        }
+    }
+    dockerfile {
+        from(Docker.localImageName(image))
+        runCommand(
+                '''set -eux; \
+                   DNF=`type microdnf >/dev/null 2>&1 && echo 'microdnf --disableplugin=subscription-manager' || echo 'dnf -q'`; \
+                   $DNF -y update
+                   ''')
+        runCommand("PYTHON_VERSION='${pythonVersion}'; " +
+                '''set -eux; \
+                   DNF=`type microdnf >/dev/null 2>&1 && echo 'microdnf --disableplugin=subscription-manager' || echo 'dnf -q'`; \
+                   $DNF -y install "python${PYTHON_VERSION}"; \
+                   "python${PYTHON_VERSION}" -m venv "/project/${PYTHON_VERSION}"; \
+                   source "/project/${PYTHON_VERSION}/bin/activate"; \
+                   pip install --upgrade pip; \
+                   pip install unittest-xml-reporting; \
+                   rm -fr /out; \
+                   mkdir -p \
+                       /out/report \
+                       /project/tests
+                   ''')
+        copyFile('tests/', '/project/tests/')
+        copyFile('dep-wheels/', '/project/dep-wheels')
+        copyFile('pyt-wheels/', '/project/pyt-wheels')
+        copyFile('testPyClientTicking/entrypoint.sh', '/entrypoint.sh')
+        workingDir('/project')
+        //
+        // Setup for test run.
+        //
+        environmentVariable([
+                DH_HOST: deephavenDocker.containerName.get(),
+                DH_PORT: '10000',
+                PYTHON_VERSION: pythonVersion
+        ])
+    }
+    containerDependencies.dependsOn = [deephavenDocker.healthyTask]
+    containerDependencies.finalizedBy = deephavenDocker.endTask
+    network = deephavenDocker.networkName.get()
+    parentContainers = [ cpythonWheelTask, Docker.registryTask(project, image.toString()) ]
+    copyOut {
+        into layout.buildDirectory.dir("testCPythonClientTicking/${image}/${pythonVersion}")
+    }
+    entrypoint = ['/entrypoint.sh']
+}}
+
+Map<String, TaskProvider<? extends Task>> fedoraCPythonTests = pythonVersions.collectEntries { pythonVersion ->
+    return [(pythonVersion): testCPythonClientTicking(pythonVersion, 'fedora')]
+}
+
+// Image does not support 3.10 nor 3.12
+Map<String, TaskProvider<? extends Task>> ubiMinimalCPythonTests = (pythonVersions - ['3.10', '3.12']).collectEntries { pythonVersion ->
+    return [(pythonVersion): testCPythonClientTicking(pythonVersion, 'ubi-minimal')]
+}
+
+def testPyClientTicking = project.tasks.register('testPyClientTicking') {
+    dependsOn fedoraCPythonTests.values()
+    dependsOn ubiMinimalCPythonTests.values()
+    doLast {
+        for (def cpythonTest in fedoraCPythonTests.values()) {
+            cpythonTest.get().state.rethrowFailure()
+        }
+        for (def cpythonTest in ubiMinimalCPythonTests.values()) {
+            cpythonTest.get().state.rethrowFailure()
+        }
+    }
+}
+
+def syncWheels = tasks.register('syncWheels', Sync) {
+    cpythonBuilds.values().each { cpythonBuild ->
+        from cpythonBuild.get().outputs
+    }
+    into layout.buildDirectory.dir('wheel')
+}
+
+assemble.dependsOn syncWheels
+
+// check.dependsOn testPyClientTicking
+
+deephavenDocker.shouldLogIfTaskFails testPyClientTicking

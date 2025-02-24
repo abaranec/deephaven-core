@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sort.radix;
 
 import io.deephaven.engine.table.impl.SortingOrder;
@@ -13,8 +16,9 @@ class ByteRadixSortKernel {
         return new ByteRadixSortContext(size, last, order);
     }
 
-    private static class ByteRadixSortContext<ATTR extends Any, KEY_INDICES extends RowKeys> implements LongSortKernel<ATTR, KEY_INDICES> {
-        final WritableLongChunk<KEY_INDICES> [] keys;
+    private static class ByteRadixSortContext<ATTR extends Any, KEY_INDICES extends RowKeys>
+            implements LongSortKernel<ATTR, KEY_INDICES> {
+        final WritableLongChunk<KEY_INDICES>[] keys;
         private final int size;
         private final boolean last;
         private final SortingOrder order;
@@ -23,17 +27,18 @@ class ByteRadixSortKernel {
             this.size = size;
             this.last = last;
             this.order = order;
-            //noinspection unchecked
-            keys = new WritableLongChunk[(int)Byte.MAX_VALUE - (int)Byte.MIN_VALUE];
+            // noinspection unchecked
+            keys = new WritableLongChunk[(int) Byte.MAX_VALUE - (int) Byte.MIN_VALUE];
             for (int ii = 0; ii < keys.length; ++ii) {
                 keys[ii] = WritableLongChunk.makeWritableChunk(size);
             }
         }
 
-        private void doBucket(WritableLongChunk<KEY_INDICES> indexKeys, ByteChunk<ATTR> valuesToSort, int start, int length) {
+        private void doBucket(WritableLongChunk<KEY_INDICES> indexKeys, ByteChunk<ATTR> valuesToSort, int start,
+                int length) {
             for (int ii = start; ii < start + length; ++ii) {
                 final byte value = valuesToSort.get(ii);
-                keys[(int)value - Byte.MIN_VALUE].add(indexKeys.get(ii));
+                keys[(int) value - Byte.MIN_VALUE].add(indexKeys.get(ii));
             }
         }
 
@@ -45,32 +50,34 @@ class ByteRadixSortKernel {
 
 
         @Override
-        public void sort(WritableLongChunk<KEY_INDICES> indexKeys, WritableChunk<ATTR> valuesToSort) {
+        public void sort(WritableLongChunk<KEY_INDICES> valuesToPermute, WritableChunk<ATTR> valuesToSort) {
             zeroSize();
-            doBucket(indexKeys, valuesToSort.asByteChunk(), 0, valuesToSort.size());
+            doBucket(valuesToPermute, valuesToSort.asByteChunk(), 0, valuesToSort.size());
             if (order == SortingOrder.Ascending) {
-                ascendingBuckets(indexKeys, valuesToSort.asWritableByteChunk(), 0, valuesToSort.size());
+                ascendingBuckets(valuesToPermute, valuesToSort.asWritableByteChunk(), 0, valuesToSort.size());
             } else {
-                descendingBuckets(indexKeys, valuesToSort.asWritableByteChunk(), 0, valuesToSort.size());
+                descendingBuckets(valuesToPermute, valuesToSort.asWritableByteChunk(), 0, valuesToSort.size());
             }
         }
 
         @Override
-        public void sort(WritableLongChunk<KEY_INDICES> indexKeys, WritableChunk<ATTR> valuesToSort, IntChunk<? extends ChunkPositions> offsetsIn, IntChunk<? extends ChunkLengths> lengthsIn) {
+        public void sort(WritableLongChunk<KEY_INDICES> valuesToPermute, WritableChunk<ATTR> valuesToSort,
+                IntChunk<? extends ChunkPositions> offsetsIn, IntChunk<? extends ChunkLengths> lengthsIn) {
             for (int ii = 0; ii < offsetsIn.size(); ++ii) {
                 zeroSize();
                 final int start = offsetsIn.get(ii);
                 final int length = lengthsIn.get(ii);
-                doBucket(indexKeys, valuesToSort.asByteChunk(), start, length);
+                doBucket(valuesToPermute, valuesToSort.asByteChunk(), start, length);
                 if (order == SortingOrder.Ascending) {
-                    ascendingBuckets(indexKeys, valuesToSort.asWritableByteChunk(), start, length);
+                    ascendingBuckets(valuesToPermute, valuesToSort.asWritableByteChunk(), start, length);
                 } else {
-                    descendingBuckets(indexKeys, valuesToSort.asWritableByteChunk(), start, length);
+                    descendingBuckets(valuesToPermute, valuesToSort.asWritableByteChunk(), start, length);
                 }
             }
         }
 
-        void ascendingBuckets(WritableLongChunk<KEY_INDICES> indexKeys, WritableByteChunk<ATTR> valuesToSort, int start, int length) {
+        void ascendingBuckets(WritableLongChunk<KEY_INDICES> indexKeys, WritableByteChunk<ATTR> valuesToSort, int start,
+                int length) {
             int indexPos = start;
             for (int ii = 0; ii < keys.length; ++ii) {
                 if (keys[ii].size() > 0) {
@@ -84,7 +91,7 @@ class ByteRadixSortKernel {
                     final int keySize = keys[ii].size();
                     if (keySize > 0) {
                         for (int jj = valuePos; jj < valuePos + keySize; ++jj) {
-                            valuesToSort.set(jj, (byte)(ii - Byte.MIN_VALUE));
+                            valuesToSort.set(jj, (byte) (ii - Byte.MIN_VALUE));
                         }
                         valuePos += keySize;
                     }
@@ -92,7 +99,8 @@ class ByteRadixSortKernel {
             }
         }
 
-        void descendingBuckets(WritableLongChunk<KEY_INDICES> indexKeys, WritableByteChunk<ATTR> valuesToSort, int start, int length) {
+        void descendingBuckets(WritableLongChunk<KEY_INDICES> indexKeys, WritableByteChunk<ATTR> valuesToSort,
+                int start, int length) {
             int indexPos = start;
             for (int ii = keys.length - 1; ii >= 0; --ii) {
                 if (keys[ii].size() > 0) {
@@ -106,7 +114,7 @@ class ByteRadixSortKernel {
                     final int keySize = keys[ii].size();
                     if (keySize > 0) {
                         for (int jj = valuePos; jj < valuePos + keySize; ++jj) {
-                            valuesToSort.set(jj, (byte)(ii - Byte.MIN_VALUE));
+                            valuesToSort.set(jj, (byte) (ii - Byte.MIN_VALUE));
                         }
                         valuePos += keySize;
                     }
@@ -115,7 +123,6 @@ class ByteRadixSortKernel {
         }
 
         @Override
-        public void close() {
-        }
+        public void close() {}
     }
 }

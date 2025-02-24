@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.rowset;
 
 import io.deephaven.engine.updategraph.LogicalClock;
@@ -43,6 +46,16 @@ public interface TrackingRowSet extends RowSet {
     WritableRowSet copyPrev();
 
     /**
+     * Access the read-only value of this TrackingRowSet as of the end of the previous update graph cycle. The returned
+     * {@link RowSet} must not be mutated or {@link #close() closed}; it belongs to this TrackingRowSet. Callers should
+     * be sure to only use the result during the updating phase of a cycle, and never across logical clock phases/steps.
+     *
+     * @return A read-only view of the previous value, owned by this TrackingRowSet
+     */
+    RowSet prev();
+
+
+    /**
      * Same as {@code get(rowPosition)}, as of the end of the previous update graph cycle.
      *
      * @param rowPosition A row position in this RowSet between {@code 0} and {@code sizePrev() - 1}.
@@ -78,12 +91,6 @@ public interface TrackingRowSet extends RowSet {
      * Minimal interface for optional, opaque indexer objects hosted by TrackingRowSet instances.
      */
     interface Indexer {
-
-        /**
-         * Callback for the host TrackingRowSet to report a modification that may invalidate cached indexing
-         * information.
-         */
-        void rowSetChanged();
     }
 
     /**
@@ -94,6 +101,13 @@ public interface TrackingRowSet extends RowSet {
      * @return An opaque indexer object associated with this TrackingRowSet
      */
     <INDEXER_TYPE extends Indexer> INDEXER_TYPE indexer(@NotNull Function<TrackingRowSet, INDEXER_TYPE> indexerFactory);
+
+    /**
+     * Get an opaque {@link Indexer} object previously associated with this TrackingRowSet.
+     *
+     * @return An opaque indexer object associated with this TrackingRowSet, or {@code null} if none has been set
+     */
+    <INDEXER_TYPE extends Indexer> INDEXER_TYPE indexer();
 
     @Override
     default TrackingWritableRowSet writableCast() {

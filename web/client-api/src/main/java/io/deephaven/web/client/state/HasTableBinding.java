@@ -1,6 +1,8 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.web.client.state;
 
-import elemental2.dom.CustomEventInit;
 import io.deephaven.web.client.api.TableTicket;
 
 /**
@@ -23,7 +25,7 @@ public interface HasTableBinding {
 
     void fireEvent(String name);
 
-    void fireEvent(String name, CustomEventInit eventInit);
+    <T> void fireEvent(String name, T detail);
 
     void setState(ClientTableState appendTo);
 

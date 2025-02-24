@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.by.ssmpercentile;
 
 import io.deephaven.base.verify.Assert;
@@ -11,15 +10,16 @@ import io.deephaven.chunk.attributes.Values;
 import io.deephaven.configuration.Configuration;
 import io.deephaven.engine.table.ColumnSource;
 import io.deephaven.engine.rowset.chunkattributes.RowKeys;
-import io.deephaven.time.DateTime;
+import io.deephaven.engine.table.WritableColumnSource;
 import io.deephaven.engine.table.impl.by.IterativeChunkedAggregationOperator;
 import io.deephaven.engine.table.impl.sources.*;
 import io.deephaven.chunk.*;
 import io.deephaven.engine.table.impl.ssms.SegmentedSortedMultiSet;
 import io.deephaven.engine.table.impl.util.compact.CompactKernel;
-import org.apache.commons.lang3.mutable.MutableInt;
+import io.deephaven.util.mutable.MutableInt;
 import org.jetbrains.annotations.NotNull;
 
+import java.time.Instant;
 import java.util.Collections;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -30,7 +30,7 @@ import java.util.function.Supplier;
 public class SsmChunkedPercentileOperator implements IterativeChunkedAggregationOperator {
     private static final int NODE_SIZE =
             Configuration.getInstance().getIntegerWithDefault("SsmChunkedMinMaxOperator.nodeSize", 4096);
-    private final ArrayBackedColumnSource internalResult;
+    private final WritableColumnSource internalResult;
     private final ColumnSource externalResult;
     /**
      * Even slots hold the low values, odd slots hold the high values.
@@ -43,22 +43,22 @@ public class SsmChunkedPercentileOperator implements IterativeChunkedAggregation
     private final ChunkType chunkType;
     private final PercentileTypeHelper percentileTypeHelper;
 
-    public SsmChunkedPercentileOperator(Class<?> type, double percentile, boolean averageMedian, String name) {
+    public SsmChunkedPercentileOperator(Class<?> type, double percentile, boolean averageEvenlyDivided, String name) {
         this.name = name;
         this.ssms = new ObjectArraySource<>(SegmentedSortedMultiSet.class);
-        final boolean isDateTime = type == DateTime.class;
-        if (isDateTime) {
+        final boolean isInstant = type == Instant.class;
+        if (isInstant) {
             chunkType = ChunkType.Long;
         } else {
             chunkType = ChunkType.fromElementType(type);
         }
-        if (isDateTime) {
+        if (isInstant) {
             internalResult = new LongArraySource();
             // noinspection unchecked
-            externalResult = new BoxedColumnSource.OfDateTime(internalResult);
-            averageMedian = false;
+            externalResult = new LongAsInstantColumnSource(internalResult);
+            averageEvenlyDivided = false;
         } else {
-            if (averageMedian) {
+            if (averageEvenlyDivided) {
                 switch (chunkType) {
                     case Int:
                     case Long:
@@ -81,12 +81,12 @@ public class SsmChunkedPercentileOperator implements IterativeChunkedAggregation
         compactAndCountKernel = CompactKernel.makeCompact(chunkType);
         ssmFactory = SegmentedSortedMultiSet.makeFactory(chunkType, NODE_SIZE, type);
         removeContextFactory = SegmentedSortedMultiSet.makeRemoveContextFactory(NODE_SIZE);
-        percentileTypeHelper = makeTypeHelper(chunkType, type, percentile, averageMedian, internalResult);
+        percentileTypeHelper = makeTypeHelper(chunkType, type, percentile, averageEvenlyDivided, internalResult);
     }
 
     private static PercentileTypeHelper makeTypeHelper(ChunkType chunkType, Class<?> type, double percentile,
-            boolean averageMedian, ArrayBackedColumnSource resultColumn) {
-        if (averageMedian) {
+            boolean averageEvenlyDivided, WritableColumnSource resultColumn) {
+        if (averageEvenlyDivided) {
             switch (chunkType) {
                 // for things that are not int, long, double, or float we do not actually average the median;
                 // we just do the standard 50-%tile thing. It might be worth defining this to be friendlier.
@@ -138,12 +138,14 @@ public class SsmChunkedPercentileOperator implements IterativeChunkedAggregation
     }
 
     @NotNull
-    private static PercentileTypeHelper makeObjectHelper(Class<?> type, double percentile,
-            ArrayBackedColumnSource resultColumn) {
+    private static PercentileTypeHelper makeObjectHelper(
+            Class<?> type,
+            double percentile,
+            WritableColumnSource resultColumn) {
         if (type == Boolean.class) {
             return new BooleanPercentileTypeHelper(percentile, resultColumn);
-        } else if (type == DateTime.class) {
-            return new DateTimePercentileTypeHelper(percentile, resultColumn);
+        } else if (type == Instant.class) {
+            return new InstantPercentileTypeHelper(percentile, resultColumn);
         } else {
             return new ObjectPercentileTypeHelper(percentile, resultColumn);
         }
@@ -244,7 +246,7 @@ public class SsmChunkedPercentileOperator implements IterativeChunkedAggregation
         int loPivot;
         if (ssmLo.size() > 0) {
             loPivot = percentileTypeHelper.pivot(ssmLo, valueCopy, counts, startPosition, runLength, leftOvers);
-            Assert.leq(leftOvers.intValue(), "leftOvers.intValue()", ssmHi.totalSize(), "ssmHi.totalSize()");
+            Assert.leq(leftOvers.get(), "leftOvers.get()", ssmHi.totalSize(), "ssmHi.totalSize()");
         } else {
             loPivot = 0;
         }
@@ -254,14 +256,14 @@ public class SsmChunkedPercentileOperator implements IterativeChunkedAggregation
                     context.valueResettable.resetFromChunk(valueCopy, startPosition, loPivot);
             final WritableIntChunk<ChunkLengths> loCountSlice =
                     context.countResettable.resetFromChunk(counts, startPosition, loPivot);
-            if (leftOvers.intValue() > 0) {
-                counts.set(startPosition + loPivot - 1, counts.get(startPosition + loPivot - 1) - leftOvers.intValue());
+            if (leftOvers.get() > 0) {
+                counts.set(startPosition + loPivot - 1, counts.get(startPosition + loPivot - 1) - leftOvers.get());
             }
             ssmLo.remove(removeContext, loValueSlice, loCountSlice);
         }
 
-        if (leftOvers.intValue() > 0) {
-            counts.set(startPosition + loPivot - 1, leftOvers.intValue());
+        if (leftOvers.get() > 0) {
+            counts.set(startPosition + loPivot - 1, leftOvers.get());
             loPivot--;
         }
 

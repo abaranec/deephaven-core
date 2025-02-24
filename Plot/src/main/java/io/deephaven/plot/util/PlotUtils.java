@@ -1,50 +1,47 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.plot.util;
 
-import io.deephaven.api.Selectable;
+import io.deephaven.api.ColumnName;
+import io.deephaven.api.agg.Aggregation;
 import io.deephaven.base.verify.Require;
-import io.deephaven.datastructures.util.CollectionUtil;
 import io.deephaven.engine.table.impl.QueryTable;
-import io.deephaven.engine.table.impl.select.SelectColumn;
+import io.deephaven.engine.table.vectors.ColumnVectors;
 import io.deephaven.plot.ChartImpl;
 import io.deephaven.plot.datasets.category.CategoryDataSeries;
 import io.deephaven.plot.datasets.data.*;
 import io.deephaven.plot.datasets.interval.IntervalXYDataSeriesArray;
 import io.deephaven.plot.errors.PlotInfo;
-import io.deephaven.plot.util.tables.TableBackedTableMapHandle;
+import io.deephaven.plot.util.tables.TableBackedPartitionedTableHandle;
 import io.deephaven.plot.util.tables.TableHandle;
-import io.deephaven.engine.table.DataColumn;
 import io.deephaven.engine.table.Table;
 import io.deephaven.engine.table.TableDefinition;
-import io.deephaven.engine.table.MatchPair;
-import io.deephaven.engine.table.lang.QueryScope;
-import io.deephaven.time.DateTime;
-import io.deephaven.engine.table.impl.by.AggregationFactory;
-import io.deephaven.engine.table.impl.by.KeyOnlyFirstOrLastBySpec;
+import io.deephaven.engine.context.QueryScope;
 import io.deephaven.gui.color.ColorPaletteArray;
+import io.deephaven.time.DateTimeUtils;
 import io.deephaven.util.QueryConstants;
 import io.deephaven.engine.util.TableTools;
 import io.deephaven.engine.table.impl.BaseTable;
-import io.deephaven.engine.table.impl.by.AggType;
 import io.deephaven.engine.table.ColumnSource;
 import io.deephaven.gui.color.Color;
 import io.deephaven.gui.color.ColorPalette;
 import io.deephaven.gui.color.Paint;
 import io.deephaven.gui.table.filters.Condition;
+import io.deephaven.vector.Vector;
 import org.jetbrains.annotations.NotNull;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.IntStream;
 
+import static io.deephaven.api.agg.Aggregation.AggCount;
+import static io.deephaven.api.agg.Aggregation.AggLast;
 import static io.deephaven.util.QueryConstants.*;
-import static io.deephaven.engine.table.impl.by.AggregationFactory.*;
-import static io.deephaven.function.IntegerNumericPrimitives.abs;
+import static io.deephaven.function.Numeric.abs;
 
 /**
  * Utilities class for plotting.
@@ -53,7 +50,7 @@ public class PlotUtils {
 
     private PlotUtils() {}
 
-    /** Instances of ColorPaletteArray have some state, so this is kept privat. */
+    /** Instances of ColorPaletteArray have some state, so this is kept private. */
     private static final ColorPaletteArray MATPLOT_COLORS = new ColorPaletteArray(ColorPaletteArray.Palette.MATPLOTLIB);
 
     private static final Random rng = new Random();
@@ -67,7 +64,7 @@ public class PlotUtils {
     private static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
     private static final Number[] EMPTY_NUMBER_ARRAY = new Number[0];
     private static final Date[] EMPTY_DATE_ARRAY = new Date[0];
-    private static final DateTime[] EMPTY_DATETIME_ARRAY = new DateTime[0];
+    private static final Instant[] EMPTY_INSTANT_ARRAY = new Instant[0];
 
     private static int randVar() {
         return abs(rng.nextInt());
@@ -694,15 +691,15 @@ public class PlotUtils {
         return new TableHandle(t, cols);
     }
 
-    public static TableBackedTableMapHandle createCategoryTableMapHandle(Table t,
+    public static TableBackedPartitionedTableHandle createCategoryPartitionedTableHandle(Table t,
             final String catColumn,
             final String[] otherColumns,
             final String[] byColumns,
             final PlotInfo plotInfo) {
-        return createCategoryTableMapHandle(t, new String[] {catColumn}, otherColumns, byColumns, plotInfo);
+        return createCategoryPartitionedTableHandle(t, new String[] {catColumn}, otherColumns, byColumns, plotInfo);
     }
 
-    public static TableBackedTableMapHandle createCategoryTableMapHandle(Table t,
+    public static TableBackedPartitionedTableHandle createCategoryPartitionedTableHandle(Table t,
             final String[] catColumns,
             final String[] otherColumns,
             final String[] byColumns,
@@ -718,34 +715,30 @@ public class PlotUtils {
         Collections.addAll(columns, lastByColumns);
         columns.add(CategoryDataSeries.CAT_SERIES_ORDER_COLUMN);
 
-        return new TableBackedTableMapHandle(t, columns, byColumns, plotInfo);
+        return new TableBackedPartitionedTableHandle(t, columns, byColumns, plotInfo);
     }
 
     public static Table createCategoryTable(final Table t, final String[] catColumns) {
         // We need to do the equivalent of LastBy wrt. to columns included, or we have a chance to break ACLs
         final List<String> lastColumns = t.getDefinition().getColumnNames();
         lastColumns.removeAll(Arrays.asList(catColumns));
-        final Table result = ((QueryTable) t).by(
-                createCategoryComboAgg(AggLast(lastColumns.toArray(CollectionUtil.ZERO_LENGTH_STRING_ARRAY))),
-                SelectColumn.from(Selectable.from(catColumns)));
+        final QueryTable result = (QueryTable) t.aggBy(
+                createCategoryAggs(AggLast(lastColumns.toArray(String[]::new))),
+                ColumnName.from(catColumns));
 
         // We must explicitly copy attributes because we are doing a modified manual first/lastBy which will not
         // automatically do the copy.
-        ((BaseTable) t).copyAttributes(result, BaseTable.CopyAttributeOperation.LastBy);
+        ((BaseTable<?>) t).copyAttributes(result, BaseTable.CopyAttributeOperation.LastBy);
         return result;
     }
 
     public static Table createCategoryHistogramTable(final Table t, final String... byColumns) {
-        return ((QueryTable) t).by(createCategoryComboAgg(AggCount(IntervalXYDataSeriesArray.COUNT)),
-                SelectColumn.from(Selectable.from(byColumns)));
+        return t.aggBy(createCategoryAggs(AggCount(IntervalXYDataSeriesArray.COUNT)), ColumnName.from(byColumns));
 
     }
 
-    public static AggregationFactory createCategoryComboAgg(AggregationElement agg) {
-        return AggCombo(
-                Agg(new KeyOnlyFirstOrLastBySpec(CategoryDataSeries.CAT_SERIES_ORDER_COLUMN, AggType.First),
-                        MatchPair.ZERO_LENGTH_MATCH_PAIR_ARRAY),
-                agg);
+    public static Collection<? extends Aggregation> createCategoryAggs(Aggregation agg) {
+        return List.of(Aggregation.AggFirstRowKey(CategoryDataSeries.CAT_SERIES_ORDER_COLUMN), agg);
     }
 
     public static List<Condition> getColumnConditions(final Table arg, final String column) {
@@ -758,15 +751,15 @@ public class PlotUtils {
 
         final ColumnSource columnSource = t.getColumnSource(numericCol);
 
-        if (columnSource.getType() == DateTime.class) {
+        if (columnSource.getType() == Instant.class) {
             return key -> {
-                final DateTime dateTime = (DateTime) columnSource.get(key);
-                return dateTime == null ? NULL_LONG : dateTime.getNanos();
+                final Instant instant = (Instant) columnSource.get(key);
+                return instant == null ? NULL_LONG : DateTimeUtils.epochNanos(instant);
             };
         } else if (columnSource.getType() == Date.class) {
             return key -> {
-                final Date dateTime = (Date) columnSource.get(key);
-                return dateTime == null ? NULL_LONG : dateTime.getTime() * 1000000;
+                final Date instant = (Date) columnSource.get(key);
+                return instant == null ? NULL_LONG : instant.getTime() * 1000000;
             };
         } else {
             return key -> (Number) columnSource.get(key);
@@ -811,8 +804,8 @@ public class PlotUtils {
     }
 
     public static <T> IndexableData createIndexableData(final Table t, final String column, final PlotInfo plotInfo) {
-        final DataColumn<T> dataColumn = t.getColumn(column);
-        final Object o = dataColumn.getDirect();
+        final Vector<?> vector = ColumnVectors.of(t, column);
+        final Object o = vector.copyToArray();
 
         return new IndexableDataArray((T[]) o, plotInfo);
     }
@@ -886,9 +879,9 @@ public class PlotUtils {
             return new IndexableDataCharacter((char[]) data, plotInfo);
         } else if (c.equals(byte.class)) {
             return new IndexableDataByte((byte[]) data, plotInfo);
-        } else if (c.equals(DateTime.class)) {
+        } else if (c.equals(Instant.class)) {
             if (data instanceof long[]) {
-                return new IndexableDataDateTime((long[]) data, plotInfo);
+                return new IndexableDataInstant((long[]) data, plotInfo);
             }
         }
 
@@ -935,8 +928,8 @@ public class PlotUtils {
             return new IndexableNumericDataArrayLong(EMPTY_LONG_ARRAY, plotInfo);
         } else if (dataType == short.class) {
             return new IndexableNumericDataArrayShort(EMPTY_SHORT_ARRAY, plotInfo);
-        } else if (dataType == DateTime.class) {
-            return new IndexableNumericDataArrayDateTime(EMPTY_DATETIME_ARRAY, plotInfo);
+        } else if (dataType == Instant.class) {
+            return new IndexableNumericDataArrayInstant(EMPTY_INSTANT_ARRAY, plotInfo);
         } else if (dataType == Date.class) {
             return new IndexableNumericDataArrayDate(EMPTY_DATE_ARRAY, plotInfo);
         } else if (Number.class.isAssignableFrom(dataType)) {
@@ -958,11 +951,11 @@ public class PlotUtils {
             return new IndexableNumericDataArrayLong((long[]) data, plotInfo);
         } else if (dataType == short.class) {
             return new IndexableNumericDataArrayShort((short[]) data, plotInfo);
-        } else if (dataType == DateTime.class) {
+        } else if (dataType == Instant.class) {
             if (data instanceof long[]) {
                 return new IndexableNumericDataArrayLong((long[]) data, plotInfo);
             } else {
-                return new IndexableNumericDataArrayDateTime((DateTime[]) data, plotInfo);
+                return new IndexableNumericDataArrayInstant((Instant[]) data, plotInfo);
             }
         } else if (dataType == Date.class) {
             return new IndexableNumericDataArrayDate((Date[]) data, plotInfo);

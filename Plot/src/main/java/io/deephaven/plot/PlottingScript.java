@@ -1,8 +1,13 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.plot;
 
+import com.google.auto.service.AutoService;
 import io.deephaven.engine.util.GroovyDeephavenSession.InitScript;
 import javax.inject.Inject;
 
+@AutoService(InitScript.class)
 public class PlottingScript implements InitScript {
 
     @Inject

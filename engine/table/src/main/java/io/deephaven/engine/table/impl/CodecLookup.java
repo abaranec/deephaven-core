@@ -1,19 +1,25 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl;
 
+import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.engine.table.ColumnDefinition;
+import io.deephaven.engine.table.impl.dataindex.RowSetCodec;
+import io.deephaven.util.codec.*;
 import io.deephaven.vector.ObjectVector;
 import io.deephaven.vector.Vector;
 import io.deephaven.stringset.StringSet;
-import io.deephaven.time.DateTime;
-import io.deephaven.util.codec.CodecCache;
-import io.deephaven.util.codec.ExternalizableCodec;
-import io.deephaven.util.codec.ObjectCodec;
-import io.deephaven.util.codec.SerializableCodec;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.Externalizable;
 import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.LocalDateTime;
 
 /**
  * Utility class to concentrate {@link ObjectCodec} lookups.
@@ -48,7 +54,7 @@ public class CodecLookup {
                         "Array type " + dataType + " does not match component type " + componentType);
             }
             // Arrays of primitives or basic types do not require codecs
-            return !(componentType.isPrimitive() || noCodecRequired(dataType));
+            return !(componentType.isPrimitive() || noCodecRequired(componentType));
         }
         if (Vector.class.isAssignableFrom(dataType)) {
             if (componentType == null) {
@@ -56,7 +62,7 @@ public class CodecLookup {
             }
             if (ObjectVector.class.isAssignableFrom(dataType)) {
                 // Vectors of basic types do not require codecs
-                return !noCodecRequired(dataType);
+                return !noCodecRequired(componentType);
             }
             // VectorBases of primitive types do not require codecs
             return false;
@@ -67,13 +73,20 @@ public class CodecLookup {
 
     private static boolean noCodecRequired(@NotNull final Class<?> dataType) {
         return dataType == Boolean.class ||
-                dataType == DateTime.class ||
+                dataType == Instant.class ||
+                dataType == LocalDate.class ||
+                dataType == LocalTime.class ||
+                dataType == LocalDateTime.class ||
                 dataType == String.class ||
                 // A BigDecimal column maps to a logical type of decimal, with
                 // appropriate precision and scale calculated from column data,
                 // unless the user explicitly requested something else
                 // via instructions.
-                dataType == BigDecimal.class;
+                dataType == BigDecimal.class ||
+
+                // BigIntegers can be encoded as a DecimalLogicalType using a precision of 1 and scale of 0, which lets
+                // them be read by other parquet tools.
+                dataType == BigInteger.class;
     }
 
     /**
@@ -131,6 +144,10 @@ public class CodecLookup {
      * @return The default {@link ObjectCodec}
      */
     public static <TYPE> ObjectCodec<TYPE> getDefaultCodec(@NotNull final Class<TYPE> dataType) {
+        // TODO (https://github.com/deephaven/deephaven-core/issues/5262): Eliminate reliance on RowSetCodec
+        if (dataType.equals(RowSet.class)) {
+            return CodecCache.DEFAULT.getCodec(RowSetCodec.class.getName(), null);
+        }
         if (Externalizable.class.isAssignableFrom(dataType)) {
             return CodecCache.DEFAULT.getCodec(ExternalizableCodec.class.getName(), dataType.getName());
         }

@@ -1,10 +1,8 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.util.file;
 
-import io.deephaven.base.Procedure;
 import io.deephaven.base.stats.State;
 import io.deephaven.base.stats.Stats;
 import io.deephaven.base.stats.Value;
@@ -60,7 +58,7 @@ public final class FileHandle implements SeekableByteChannel {
             Stats.makeItem("FileHandle", "forceDurationNanos", State.FACTORY).getValue();
 
     private final FileChannel fileChannel;
-    private final Procedure.Nullary postCloseProcedure;
+    private final Runnable postCloseProcedure;
 
     /**
      * <p>
@@ -73,7 +71,7 @@ public final class FileHandle implements SeekableByteChannel {
      * @param postCloseProcedure A procedure to invoke if its detected that the {@link FileChannel} is closed - must be
      *        idempotent
      */
-    public FileHandle(@NotNull final FileChannel fileChannel, @NotNull final Procedure.Nullary postCloseProcedure) {
+    public FileHandle(@NotNull final FileChannel fileChannel, @NotNull final Runnable postCloseProcedure) {
         this.fileChannel = Require.neqNull(fileChannel, "fileChannel");
         this.postCloseProcedure = Require.neqNull(postCloseProcedure, "postCloseProcedure");
     }
@@ -96,7 +94,7 @@ public final class FileHandle implements SeekableByteChannel {
                 SIZE_DURATION_NANOS.sample(System.nanoTime() - startTimeNanos);
             }
         } catch (ClosedChannelException e) {
-            postCloseProcedure.call();
+            postCloseProcedure.run();
             throw e;
         }
     }
@@ -119,7 +117,7 @@ public final class FileHandle implements SeekableByteChannel {
                 GET_POSITION_DURATION_NANOS.sample(System.nanoTime() - startTimeNanos);
             }
         } catch (ClosedChannelException e) {
-            postCloseProcedure.call();
+            postCloseProcedure.run();
             throw e;
         }
     }
@@ -143,7 +141,7 @@ public final class FileHandle implements SeekableByteChannel {
                 SET_POSITION_DURATION_NANOS.sample(System.nanoTime() - startTimeNanos);
             }
         } catch (ClosedChannelException e) {
-            postCloseProcedure.call();
+            postCloseProcedure.run();
             throw e;
         }
         return this;
@@ -171,7 +169,7 @@ public final class FileHandle implements SeekableByteChannel {
                 READ_SIZE_BYTES.sample(sizeBytes);
             }
         } catch (ClosedChannelException e) {
-            postCloseProcedure.call();
+            postCloseProcedure.run();
             throw e;
         }
     }
@@ -198,14 +196,14 @@ public final class FileHandle implements SeekableByteChannel {
                 READ_SIZE_BYTES.sample(sizeBytes);
             }
         } catch (ClosedChannelException e) {
-            postCloseProcedure.call();
+            postCloseProcedure.run();
             throw e;
         }
     }
 
     /**
      * <p>
-     * Attempt to write {@code source.remaining(){} bytes, starting from {@code position} (0-indexed) in the file.
+     * Attempt to write {@code source.remaining()} bytes, starting from {@code position} (0-indexed) in the file.
      * <p>
      * See {@link FileChannel#write(ByteBuffer, long)}.
      *
@@ -225,7 +223,7 @@ public final class FileHandle implements SeekableByteChannel {
                 WRITE_SIZE_BYTES.sample(sizeBytes);
             }
         } catch (ClosedChannelException e) {
-            postCloseProcedure.call();
+            postCloseProcedure.run();
             throw e;
         }
     }
@@ -253,7 +251,7 @@ public final class FileHandle implements SeekableByteChannel {
                 WRITE_SIZE_BYTES.sample(sizeBytes);
             }
         } catch (ClosedChannelException e) {
-            postCloseProcedure.call();
+            postCloseProcedure.run();
             throw e;
         }
     }
@@ -277,7 +275,7 @@ public final class FileHandle implements SeekableByteChannel {
                 TRUNCATE_DURATION_NANOS.sample(System.nanoTime() - startTimeNanos);
             }
         } catch (ClosedChannelException e) {
-            postCloseProcedure.call();
+            postCloseProcedure.run();
             throw e;
         }
         return this;
@@ -298,7 +296,7 @@ public final class FileHandle implements SeekableByteChannel {
                 FORCE_DURATION_NANOS.sample(System.nanoTime() - startTimeNanos);
             }
         } catch (ClosedChannelException e) {
-            postCloseProcedure.call();
+            postCloseProcedure.run();
             throw e;
         }
     }
@@ -315,7 +313,7 @@ public final class FileHandle implements SeekableByteChannel {
     public final boolean isOpen() {
         final boolean isOpen = fileChannel.isOpen();
         if (!isOpen) {
-            postCloseProcedure.call();
+            postCloseProcedure.run();
         }
         return isOpen;
     }
@@ -331,7 +329,7 @@ public final class FileHandle implements SeekableByteChannel {
         try {
             fileChannel.close();
         } finally {
-            postCloseProcedure.call();
+            postCloseProcedure.run();
         }
     }
 }

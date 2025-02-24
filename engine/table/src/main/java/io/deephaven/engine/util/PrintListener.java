@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.util;
 
 import io.deephaven.engine.table.Table;
@@ -52,7 +55,7 @@ public class PrintListener extends InstrumentedTableUpdateListener {
         this.description = description;
         this.table = table;
         this.rowCount = rowCount;
-        table.listenForUpdates(this);
+        table.addUpdateListener(this);
     }
 
     @Override

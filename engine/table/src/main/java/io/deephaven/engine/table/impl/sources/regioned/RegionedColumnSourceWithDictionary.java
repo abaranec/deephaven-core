@@ -1,17 +1,16 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources.regioned;
 
-import io.deephaven.engine.rowset.*;
-import io.deephaven.engine.rowset.RowSequenceFactory;
-import io.deephaven.engine.rowset.RowSetFactory;
-import io.deephaven.engine.table.*;
-import io.deephaven.engine.table.impl.TableUpdateImpl;
-import io.deephaven.engine.table.impl.perf.QueryPerformanceRecorder;
-import io.deephaven.engine.table.impl.*;
-import io.deephaven.engine.table.impl.locations.ColumnLocation;
-import io.deephaven.engine.table.impl.ColumnSourceGetDefaults;
-import io.deephaven.engine.table.impl.sources.RowIdSource;
-import io.deephaven.engine.table.impl.chunkattributes.DictionaryKeys;
 import io.deephaven.chunk.attributes.Values;
+import io.deephaven.engine.rowset.*;
+import io.deephaven.engine.table.*;
+import io.deephaven.engine.table.impl.*;
+import io.deephaven.engine.table.impl.chunkattributes.DictionaryKeys;
+import io.deephaven.engine.table.impl.locations.ColumnLocation;
+import io.deephaven.engine.table.impl.perf.QueryPerformanceRecorder;
+import io.deephaven.engine.table.impl.sources.RowKeyColumnSource;
 import org.apache.commons.lang3.mutable.Mutable;
 import org.apache.commons.lang3.mutable.MutableObject;
 import org.jetbrains.annotations.NotNull;
@@ -69,9 +68,9 @@ class RegionedColumnSourceWithDictionary<DATA_TYPE>
         }
 
         @Override
-        public long getLong(final long elementIndex) {
-            return (elementIndex == RowSequence.NULL_ROW_KEY ? getNullRegion() : lookupRegion(elementIndex))
-                    .getLong(elementIndex);
+        public long getLong(final long rowKey) {
+            return (rowKey == RowSequence.NULL_ROW_KEY ? getNullRegion() : lookupRegion(rowKey))
+                    .getLong(rowKey);
         }
 
         @Override
@@ -159,9 +158,9 @@ class RegionedColumnSourceWithDictionary<DATA_TYPE>
         }
 
         @Override
-        public DATA_TYPE get(final long elementIndex) {
-            return (elementIndex == RowSequence.NULL_ROW_KEY ? getNullRegion() : lookupRegion(elementIndex))
-                    .getObject(elementIndex);
+        public DATA_TYPE get(final long rowKey) {
+            return (rowKey == RowSequence.NULL_ROW_KEY ? getNullRegion() : lookupRegion(rowKey))
+                    .getObject(rowKey);
         }
 
         @Override
@@ -228,11 +227,12 @@ class RegionedColumnSourceWithDictionary<DATA_TYPE>
                             RowSequenceFactory.EMPTY_ITERATOR, symbolTableIndexBuilder);
                 } while (keysToVisit.hasNext());
             }
+            // noinspection resource
             symbolTableRowSet = symbolTableIndexBuilder.build().toTracking();
         }
 
         final Map<String, ColumnSource<?>> symbolTableColumnSources = new LinkedHashMap<>();
-        symbolTableColumnSources.put(SymbolTableSource.ID_COLUMN_NAME, new RowIdSource());
+        symbolTableColumnSources.put(SymbolTableSource.ID_COLUMN_NAME, RowKeyColumnSource.INSTANCE);
         symbolTableColumnSources.put(SymbolTableSource.SYMBOL_COLUMN_NAME, dictionaryColumn);
 
         return new QueryTable(symbolTableRowSet, symbolTableColumnSources);
@@ -245,22 +245,21 @@ class RegionedColumnSourceWithDictionary<DATA_TYPE>
         return sourceTable.memoizeResult(MemoizedOperationKey.symbolTable(this, useLookupCaching), () -> {
             final String description = "getSymbolTable(" + sourceTable.getDescription() + ", " + useLookupCaching + ')';
             return QueryPerformanceRecorder.withNugget(description, sourceTable.size(), () -> {
-                final SwapListener swapListener =
-                        sourceTable.createSwapListenerIfRefreshing(SwapListener::new);
+                final OperationSnapshotControl snapshotControl =
+                        sourceTable.createSnapshotControlIfRefreshing(OperationSnapshotControl::new);
                 final Mutable<Table> result = new MutableObject<>();
-                sourceTable.initializeWithSnapshot(description, swapListener,
+                BaseTable.initializeWithSnapshot(description, snapshotControl,
                         (final boolean usePrev, final long beforeClockValue) -> {
                             final QueryTable symbolTable;
-                            if (swapListener == null) {
+                            if (snapshotControl == null) {
                                 symbolTable = getStaticSymbolTable(sourceTable.getRowSet(), useLookupCaching);
                             } else {
                                 symbolTable = getStaticSymbolTable(
                                         usePrev ? sourceTable.getRowSet().copyPrev() : sourceTable.getRowSet(),
                                         useLookupCaching);
-                                swapListener.setListenerAndResult(
+                                snapshotControl.setListenerAndResult(
                                         new SymbolTableUpdateListener(description, sourceTable, symbolTable),
                                         symbolTable);
-                                symbolTable.addParentReference(swapListener);
                             }
                             result.setValue(symbolTable);
                             return true;
@@ -272,7 +271,7 @@ class RegionedColumnSourceWithDictionary<DATA_TYPE>
 
     private final class SymbolTableUpdateListener extends BaseTable.ListenerImpl {
 
-        private final BaseTable symbolTable;
+        private final BaseTable<?> symbolTable;
         private final ModifiedColumnSet emptyModifiedColumns;
 
         private SymbolTableUpdateListener(@NotNull final String description, @NotNull final Table sourceTable,
@@ -297,6 +296,7 @@ class RegionedColumnSourceWithDictionary<DATA_TYPE>
             }
 
             final RowSetBuilderSequential symbolTableAddedBuilder = RowSetFactory.builderSequential();
+            // noinspection unchecked
             final RegionedColumnSourceBase<DATA_TYPE, Values, ColumnRegionObject<DATA_TYPE, Values>> dictionaryColumn =
                     (RegionedColumnSourceBase<DATA_TYPE, Values, ColumnRegionObject<DATA_TYPE, Values>>) symbolTable
                             .getColumnSource(SymbolTableSource.SYMBOL_COLUMN_NAME);

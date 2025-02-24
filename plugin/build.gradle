@@ -1,0 +1,11 @@
+plugins {
+    id 'java-library'
+    id 'io.deephaven.project.register'
+}
+
+description = 'The Deephaven plugin interface'
+
+dependencies {
+    compileOnly project(':util-immutables')
+    annotationProcessor libs.immutables.value
+}

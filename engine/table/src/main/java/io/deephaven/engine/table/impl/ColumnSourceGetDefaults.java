@@ -1,9 +1,14 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl;
 
 import io.deephaven.engine.table.ColumnSource;
-import io.deephaven.time.DateTime;
+import org.jetbrains.annotations.Nullable;
 
-import static io.deephaven.time.DateTimeUtils.nanosToTime;
+import java.time.Instant;
+
+import static io.deephaven.time.DateTimeUtils.epochNanosToInstant;
 import static io.deephaven.util.type.TypeUtils.box;
 
 /**
@@ -18,42 +23,42 @@ public final class ColumnSourceGetDefaults {
     public interface ForObject<DATA_TYPE> extends ColumnSource<DATA_TYPE> {
 
         @Override
-        default Boolean getBoolean(final long index) {
+        default Boolean getBoolean(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default byte getByte(final long index) {
+        default byte getByte(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default char getChar(final long index) {
+        default char getChar(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default double getDouble(final long index) {
+        default double getDouble(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default float getFloat(final long index) {
+        default float getFloat(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default int getInt(final long index) {
+        default int getInt(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default long getLong(final long index) {
+        default long getLong(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default short getShort(final long index) {
+        default short getShort(final long rowKey) {
             throw new UnsupportedOperationException();
         }
     }
@@ -64,42 +69,42 @@ public final class ColumnSourceGetDefaults {
     public interface ForBoolean extends ColumnSource<Boolean> {
 
         @Override
-        default Boolean getBoolean(final long index) {
-            return get(index);
+        default Boolean getBoolean(final long rowKey) {
+            return get(rowKey);
         }
 
         @Override
-        default byte getByte(final long index) {
+        default byte getByte(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default char getChar(final long index) {
+        default char getChar(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default double getDouble(final long index) {
+        default double getDouble(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default float getFloat(final long index) {
+        default float getFloat(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default int getInt(final long index) {
+        default int getInt(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default long getLong(final long index) {
+        default long getLong(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default short getShort(final long index) {
+        default short getShort(final long rowKey) {
             throw new UnsupportedOperationException();
         }
     }
@@ -110,42 +115,42 @@ public final class ColumnSourceGetDefaults {
     public interface ForByte extends ColumnSource<Byte> {
 
         @Override
-        default Byte get(final long index) {
-            return box(getByte(index));
+        default Byte get(final long rowKey) {
+            return box(getByte(rowKey));
         }
 
         @Override
-        default Boolean getBoolean(final long index) {
+        default Boolean getBoolean(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default char getChar(final long index) {
+        default char getChar(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default double getDouble(final long index) {
+        default double getDouble(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default float getFloat(final long index) {
+        default float getFloat(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default int getInt(final long index) {
+        default int getInt(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default long getLong(final long index) {
+        default long getLong(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default short getShort(final long index) {
+        default short getShort(final long rowKey) {
             throw new UnsupportedOperationException();
         }
     }
@@ -156,42 +161,42 @@ public final class ColumnSourceGetDefaults {
     public interface ForChar extends ColumnSource<Character> {
 
         @Override
-        default Character get(final long index) {
-            return box(getChar(index));
+        default Character get(final long rowKey) {
+            return box(getChar(rowKey));
         }
 
         @Override
-        default Boolean getBoolean(final long index) {
+        default Boolean getBoolean(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default byte getByte(final long index) {
+        default byte getByte(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default double getDouble(final long index) {
+        default double getDouble(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default float getFloat(final long index) {
+        default float getFloat(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default int getInt(final long index) {
+        default int getInt(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default long getLong(final long index) {
+        default long getLong(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default short getShort(final long index) {
+        default short getShort(final long rowKey) {
             throw new UnsupportedOperationException();
         }
     }
@@ -202,42 +207,42 @@ public final class ColumnSourceGetDefaults {
     public interface ForDouble extends ColumnSource<Double> {
 
         @Override
-        default Double get(final long index) {
-            return box(getDouble(index));
+        default Double get(final long rowKey) {
+            return box(getDouble(rowKey));
         }
 
         @Override
-        default Boolean getBoolean(final long index) {
+        default Boolean getBoolean(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default byte getByte(final long index) {
+        default byte getByte(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default char getChar(final long index) {
+        default char getChar(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default float getFloat(final long index) {
+        default float getFloat(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default int getInt(final long index) {
+        default int getInt(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default long getLong(final long index) {
+        default long getLong(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default short getShort(final long index) {
+        default short getShort(final long rowKey) {
             throw new UnsupportedOperationException();
         }
     }
@@ -248,42 +253,42 @@ public final class ColumnSourceGetDefaults {
     public interface ForFloat extends ColumnSource<Float> {
 
         @Override
-        default Float get(final long index) {
-            return box(getFloat(index));
+        default Float get(final long rowKey) {
+            return box(getFloat(rowKey));
         }
 
         @Override
-        default Boolean getBoolean(final long index) {
+        default Boolean getBoolean(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default byte getByte(final long index) {
+        default byte getByte(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default char getChar(final long index) {
+        default char getChar(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default double getDouble(final long index) {
+        default double getDouble(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default int getInt(final long index) {
+        default int getInt(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default long getLong(final long index) {
+        default long getLong(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default short getShort(final long index) {
+        default short getShort(final long rowKey) {
             throw new UnsupportedOperationException();
         }
     }
@@ -294,42 +299,42 @@ public final class ColumnSourceGetDefaults {
     public interface ForInt extends ColumnSource<Integer> {
 
         @Override
-        default Integer get(final long index) {
-            return box(getInt(index));
+        default Integer get(final long rowKey) {
+            return box(getInt(rowKey));
         }
 
         @Override
-        default Boolean getBoolean(final long index) {
+        default Boolean getBoolean(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default byte getByte(final long index) {
+        default byte getByte(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default char getChar(final long index) {
+        default char getChar(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default double getDouble(final long index) {
+        default double getDouble(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default float getFloat(final long index) {
+        default float getFloat(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default long getLong(final long index) {
+        default long getLong(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default short getShort(final long index) {
+        default short getShort(final long rowKey) {
             throw new UnsupportedOperationException();
         }
     }
@@ -339,37 +344,37 @@ public final class ColumnSourceGetDefaults {
      */
     public interface LongBacked<DATA_TYPE> extends ColumnSource<DATA_TYPE> {
 
-        default Boolean getBoolean(final long index) {
+        default Boolean getBoolean(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default byte getByte(final long index) {
+        default byte getByte(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default char getChar(final long index) {
+        default char getChar(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default double getDouble(final long index) {
+        default double getDouble(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default float getFloat(final long index) {
+        default float getFloat(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default int getInt(final long index) {
+        default int getInt(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default short getShort(final long index) {
+        default short getShort(final long rowKey) {
             throw new UnsupportedOperationException();
         }
     }
@@ -378,21 +383,21 @@ public final class ColumnSourceGetDefaults {
      * Default interface for long {@link ColumnSource} implementations.
      */
     public interface ForLong extends LongBacked<Long> {
-
+        @Nullable
         @Override
-        default Long get(final long index) {
-            return box(getLong(index));
+        default Long get(final long rowKey) {
+            return box(getLong(rowKey));
         }
     }
 
     /**
-     * Default interface for {@link DateTime} {@link ColumnSource} implementations.
+     * Default interface for {@link Instant} {@link ColumnSource} implementations.
      */
-    public interface ForLongAsDateTime extends LongBacked<DateTime> {
-
+    public interface ForLongAsInstant extends LongBacked<Instant> {
+        @Nullable
         @Override
-        default DateTime get(final long index) {
-            return nanosToTime(getLong(index));
+        default Instant get(long rowKey) {
+            return epochNanosToInstant(getLong(rowKey));
         }
     }
 
@@ -402,42 +407,42 @@ public final class ColumnSourceGetDefaults {
     public interface ForShort extends ColumnSource<Short> {
 
         @Override
-        default Short get(final long index) {
-            return box(getShort(index));
+        default Short get(final long rowKey) {
+            return box(getShort(rowKey));
         }
 
         @Override
-        default Boolean getBoolean(final long index) {
+        default Boolean getBoolean(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default byte getByte(final long index) {
+        default byte getByte(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default char getChar(final long index) {
+        default char getChar(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default double getDouble(final long index) {
+        default double getDouble(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default float getFloat(final long index) {
+        default float getFloat(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default int getInt(final long index) {
+        default int getInt(final long rowKey) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        default long getLong(final long index) {
+        default long getLong(final long rowKey) {
             throw new UnsupportedOperationException();
         }
     }

@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.by.ssmminmax;
 
 import io.deephaven.chunk.attributes.ChunkLengths;
@@ -9,7 +8,7 @@ import io.deephaven.chunk.attributes.ChunkPositions;
 import io.deephaven.chunk.attributes.Values;
 import io.deephaven.configuration.Configuration;
 import io.deephaven.engine.rowset.chunkattributes.RowKeys;
-import io.deephaven.time.DateTime;
+import io.deephaven.engine.table.WritableColumnSource;
 import io.deephaven.engine.table.impl.by.IterativeChunkedAggregationOperator;
 import io.deephaven.engine.table.impl.sources.ArrayBackedColumnSource;
 import io.deephaven.engine.table.ColumnSource;
@@ -18,6 +17,7 @@ import io.deephaven.chunk.*;
 import io.deephaven.engine.table.impl.ssms.SegmentedSortedMultiSet;
 import io.deephaven.engine.table.impl.util.compact.CompactKernel;
 
+import java.time.Instant;
 import java.util.Collections;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -28,7 +28,7 @@ import java.util.function.Supplier;
 public class SsmChunkedMinMaxOperator implements IterativeChunkedAggregationOperator {
     private static final int NODE_SIZE =
             Configuration.getInstance().getIntegerWithDefault("SsmChunkedMinMaxOperator.nodeSize", 4096);
-    private final ArrayBackedColumnSource resultColumn;
+    private final WritableColumnSource resultColumn;
     private final ObjectArraySource<SegmentedSortedMultiSet> ssms;
     private final String name;
     private final CompactKernel compactAndCountKernel;
@@ -47,7 +47,7 @@ public class SsmChunkedMinMaxOperator implements IterativeChunkedAggregationOper
         // region resultColumn initialization
         this.resultColumn = ArrayBackedColumnSource.getMemoryColumnSource(0, type);
         // endregion resultColumn initialization
-        if (type == DateTime.class) {
+        if (type == Instant.class) {
             chunkType = ChunkType.Long;
         } else {
             chunkType = ChunkType.fromElementType(type);
@@ -59,9 +59,9 @@ public class SsmChunkedMinMaxOperator implements IterativeChunkedAggregationOper
     }
 
     private static SetResult makeSetResult(ChunkType chunkType, Class<?> type, boolean minimum,
-            ArrayBackedColumnSource resultColumn) {
-        if (type == DateTime.class) {
-            return new DateTimeSetResult(minimum, resultColumn);
+            WritableColumnSource resultColumn) {
+        if (type == Instant.class) {
+            return new InstantSetResult(minimum, resultColumn);
         } else if (type == Boolean.class) {
             return new BooleanSetResult(minimum, resultColumn);
         }
@@ -392,7 +392,7 @@ public class SsmChunkedMinMaxOperator implements IterativeChunkedAggregationOper
     }
 
     private class SecondaryOperator implements IterativeChunkedAggregationOperator {
-        private final ArrayBackedColumnSource resultColumn;
+        private final WritableColumnSource resultColumn;
         private final String resultName;
         private final SetResult setResult;
 

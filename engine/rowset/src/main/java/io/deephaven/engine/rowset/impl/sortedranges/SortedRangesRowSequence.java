@@ -1,12 +1,15 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.rowset.impl.sortedranges;
 
 import io.deephaven.base.verify.Assert;
 import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.engine.rowset.RowSetFactory;
 import io.deephaven.engine.rowset.RowSequenceFactory;
-import io.deephaven.engine.rowset.impl.TrackingWritableRowSetImpl;
+import io.deephaven.engine.rowset.chunkattributes.OrderedRowKeys;
 import io.deephaven.engine.rowset.chunkattributes.OrderedRowKeyRanges;
-import io.deephaven.engine.rowset.chunkattributes.RowKeys;
+import io.deephaven.engine.rowset.impl.WritableRowSetImpl;
 import io.deephaven.util.datastructures.LongAbortableConsumer;
 import io.deephaven.engine.rowset.RowSequence;
 import io.deephaven.engine.rowset.impl.RowSequenceAsChunkImpl;
@@ -70,20 +73,16 @@ public class SortedRangesRowSequence extends RowSequenceAsChunkImpl {
 
     @Override
     public void close() {
-        closeSortedArrayRowSequence();
-    }
-
-    protected final void closeSortedArrayRowSequence() {
         if (sar == null) {
             return;
         }
         sar.release();
         sar = null;
-        closeRowSequenceAsChunkImpl();
+        super.close();
     }
 
     @Override
-    public Iterator getRowSequenceIterator() {
+    public RowSequence.Iterator getRowSequenceIterator() {
         return new Iterator(this);
     }
 
@@ -141,7 +140,7 @@ public class SortedRangesRowSequence extends RowSequenceAsChunkImpl {
     @Override
     public RowSet asRowSet() {
         if (size == sar.getCardinality()) {
-            return new TrackingWritableRowSetImpl(sar.deepCopy());
+            return new WritableRowSetImpl(sar.deepCopy());
         }
         if (size <= 0) {
             return RowSetFactory.empty();
@@ -176,11 +175,11 @@ public class SortedRangesRowSequence extends RowSequenceAsChunkImpl {
             }
             ans.count = iAns;
         }
-        return new TrackingWritableRowSetImpl(ans);
+        return new WritableRowSetImpl(ans);
     }
 
     @Override
-    public void fillRowKeyChunk(final WritableLongChunk<? extends RowKeys> chunkToFill) {
+    public void fillRowKeyChunk(final WritableLongChunk<? super OrderedRowKeys> chunkToFill) {
         chunkToFill.setSize(0);
         forEachRowKey((final long key) -> {
             chunkToFill.add(key);
@@ -358,7 +357,7 @@ public class SortedRangesRowSequence extends RowSequenceAsChunkImpl {
     private void reset(final long startPos, final int startIdx, final long startOffset,
             final int endIdx, final long endOffset, final long size) {
         if (sar != null) {
-            closeRowSequenceAsChunkImpl();
+            invalidateRowSequenceAsChunkImpl();
         }
         this.startPos = startPos;
         this.startIdx = startIdx;
@@ -380,10 +379,9 @@ public class SortedRangesRowSequence extends RowSequenceAsChunkImpl {
                 if (SortedRanges.DEBUG) {
                     throw new IllegalStateException();
                 }
-                // We purposely /do not/ close the RspRowSequence part as it will get reused.
-                // The API doc for Iterator states that clients should /never/ call close. So that we eneded up here
-                // means
-                // there is some kind of bug.
+                // We purposely /do not/ close the SortedRangesRowSequence part as it will get reused.
+                // The API doc for Iterator states that clients should /never/ call close. So that we ended up here
+                // means there is some kind of bug.
                 closeRowSequenceAsChunkImpl();
             }
         }

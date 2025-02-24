@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.annotations;
 
 import org.immutables.value.Value;
@@ -14,7 +17,9 @@ import java.lang.annotation.Target;
 @Target({ElementType.TYPE})
 @Retention(RetentionPolicy.CLASS)
 @Value.Style(visibility = ImplementationVisibility.PACKAGE,
-        defaults = @Value.Immutable(prehash = true, intern = true), strictBuilder = true,
-        weakInterning = true)
+        defaults = @Value.Immutable(prehash = true, intern = true),
+        strictBuilder = true,
+        weakInterning = true,
+        includeHashCode = "getClass().hashCode()")
 public @interface NodeStyle {
 }

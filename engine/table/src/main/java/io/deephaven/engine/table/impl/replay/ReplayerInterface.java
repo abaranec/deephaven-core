@@ -1,11 +1,10 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.replay;
 
+import io.deephaven.base.clock.Clock;
 import io.deephaven.engine.table.Table;
-import io.deephaven.time.DateTime;
 
 import java.io.IOException;
 import java.util.TimerTask;
@@ -28,14 +27,12 @@ public interface ReplayerInterface {
 
     /**
      * Shuts down the replayer.
-     *
-     * @throws IOException problem shutting down the replayer.
      */
-    void shutdown() throws IOException;
+    void shutdown();
 
     /**
-     * Wait a specified interval for the replayer to complete.  If the replayer has not completed by the
-     * end of the interval, the method returns.
+     * Wait a specified interval for the replayer to complete. If the replayer has not completed by the end of the
+     * interval, the method returns.
      *
      * @param maxTimeMillis maximum number of milliseconds to wait.
      * @throws IOException problems encountered
@@ -60,25 +57,18 @@ public interface ReplayerInterface {
     void schedule(TimerTask task, long delay, long period);
 
     /**
-     * Simulated time.
-     *
-     * @return simulated time.
-     */
-    DateTime currentTime() throws IOException;
-
-    /**
      * Prepares a historical table for replaying.
      *
      * @param dataSource historical table to replay
      * @param timeColumn column in the table containing timestamps
      * @return dynamic, replayed version of the table.
      */
-    Table replay(Table dataSource,String timeColumn) throws IOException;
+    Table replay(Table dataSource, String timeColumn) throws IOException;
 
     /**
-     * Prepares a grouped historical table for replaying.  This method can be faster than the ungrouped replay, but
-     * the performance increase comes with a cost.  Within a group, the data ordering is maintained.  Between groups,
-     * data ordering is not maintained for a time interval.
+     * Prepares a grouped historical table for replaying. This method can be faster than the ungrouped replay, but the
+     * performance increase comes with a cost. Within a group, the data ordering is maintained. Between groups, data
+     * ordering is not maintained for a time interval.
      *
      * @param dataSource historical table to replay
      * @param timeColumn column in the table containing timestamps
@@ -102,4 +92,6 @@ public interface ReplayerInterface {
      * @return handle to the replayer.
      */
     ReplayerHandle getHandle();
+
+    Clock clock();
 }

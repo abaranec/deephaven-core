@@ -1,21 +1,19 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources;
 
+import io.deephaven.engine.table.impl.AbstractColumnSource;
 import io.deephaven.engine.table.impl.DefaultGetContext;
 import io.deephaven.engine.table.WritableColumnSource;
 import io.deephaven.engine.rowset.chunkattributes.RowKeys;
+import io.deephaven.qst.type.BoxedType;
+import io.deephaven.qst.type.GenericType;
 import io.deephaven.util.type.ArrayTypeUtils;
-import io.deephaven.time.DateTime;
-import io.deephaven.util.datastructures.LongSizedDataStructure;
 import io.deephaven.chunk.*;
-import io.deephaven.engine.rowset.chunkattributes.OrderedRowKeyRanges;
 import io.deephaven.chunk.attributes.Values;
 import io.deephaven.engine.rowset.RowSequence;
 import io.deephaven.engine.rowset.RowSequenceFactory;
-import io.deephaven.engine.table.impl.util.ShiftData;
 import io.deephaven.qst.array.Array;
 import io.deephaven.qst.array.BooleanArray;
 import io.deephaven.qst.array.ByteArray;
@@ -33,17 +31,12 @@ import io.deephaven.qst.type.GenericType.Visitor;
 import io.deephaven.qst.type.InstantType;
 import io.deephaven.qst.type.StringType;
 import io.deephaven.util.SoftRecycler;
-import org.apache.commons.lang3.mutable.MutableInt;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Objects;
-import java.util.concurrent.TimeUnit;
-
-import static io.deephaven.util.QueryConstants.NULL_LONG;
 
 /**
  * A ColumnSource backed by in-memory arrays of data.
@@ -52,8 +45,8 @@ import static io.deephaven.util.QueryConstants.NULL_LONG;
  * that the column source can be incrementally expanded without copying data from one array to another.
  */
 public abstract class ArrayBackedColumnSource<T>
-        extends AbstractDeferredGroupingColumnSource<T>
-        implements FillUnordered, ShiftData.ShiftCallback, WritableColumnSource<T>, InMemoryColumnSource,
+        extends AbstractColumnSource<T>
+        implements FillUnordered<Values>, WritableColumnSource<T>, InMemoryColumnSource,
         ChunkedBackingStoreExposedWritableSource {
 
     static final int DEFAULT_RECYCLER_CAPACITY = 1024;
@@ -101,17 +94,15 @@ public abstract class ArrayBackedColumnSource<T>
             () -> new long[IN_USE_BLOCK_SIZE],
             block -> Arrays.fill(block, 0));
 
-    public static ArrayBackedColumnSource<?> from(Array<?> array) {
-        return array.walk(new ArrayAdapter<>()).getOut();
+    public static WritableColumnSource<?> from(Array<?> array) {
+        return array.walk(new ArrayAdapter<>());
     }
 
-    public static <T> ArrayBackedColumnSource<T> from(PrimitiveArray<T> array) {
-        ArrayAdapter<T> adapter = new ArrayAdapter<>();
-        array.walk((PrimitiveArray.Visitor) adapter);
+    public static <T> WritableColumnSource<T> from(PrimitiveArray<T> array) {
+        PrimitiveArray.Visitor<WritableColumnSource<?>> adapter = new ArrayAdapter<>();
         // noinspection unchecked
-        return (ArrayBackedColumnSource<T>) adapter.getOut();
+        return (WritableColumnSource<T>) array.walk(adapter);
     }
-
 
     /**
      * The highest slot that can be used without a call to {@link #ensureCapacity(long)}.
@@ -176,10 +167,10 @@ public abstract class ArrayBackedColumnSource<T>
      * @param componentType the component type of the resulting column source
      * @return an in-memory column source with the requested data
      */
-    public static <T> ArrayBackedColumnSource<T> getMemoryColumnSource(@NotNull final Collection<T> data,
+    public static <T> WritableColumnSource<T> getMemoryColumnSource(@NotNull final Collection<T> data,
             @NotNull final Class<T> dataType,
             @Nullable final Class<?> componentType) {
-        final ArrayBackedColumnSource<T> result = getMemoryColumnSource(data.size(), dataType, componentType);
+        final WritableColumnSource<T> result = getMemoryColumnSource(data.size(), dataType, componentType);
         long i = 0;
         for (T o : data) {
             result.set(i++, o);
@@ -195,10 +186,10 @@ public abstract class ArrayBackedColumnSource<T>
      * @param componentType the component type of the resulting column source
      * @return an in-memory column source with the requested data
      */
-    public static <T> ArrayBackedColumnSource<T> getMemoryColumnSource(@NotNull final T[] data,
+    public static <T> WritableColumnSource<T> getMemoryColumnSource(@NotNull final T[] data,
             @NotNull final Class<T> dataType,
             @Nullable final Class<?> componentType) {
-        final ArrayBackedColumnSource<T> result = getMemoryColumnSource(data.length, dataType, componentType);
+        final WritableColumnSource<T> result = getMemoryColumnSource(data.length, dataType, componentType);
         try (final FillFromContext context = result.makeFillFromContext(data.length);
                 final RowSequence range = RowSequenceFactory.forRange(0, data.length - 1)) {
             result.fillFromChunk(context, ObjectChunk.chunkWrap(data), range);
@@ -320,14 +311,30 @@ public abstract class ArrayBackedColumnSource<T>
     }
 
     /**
-     * Produces an DateTimeArraySource with the given data.
+     * Produces an InstantArraySource with the given data.
      *
      * @param data an array containing the data to insert into the ColumnSource, represented as long nanoseconds since
      *        the epoch
      * @return an in-memory column source with the requested data
      */
-    public static ArrayBackedColumnSource<DateTime> getDateTimeMemoryColumnSource(@NotNull final long[] data) {
-        final ArrayBackedColumnSource<DateTime> result = new DateTimeArraySource();
+    public static WritableColumnSource<Instant> getInstantMemoryColumnSource(LongChunk<Values> data) {
+        final WritableColumnSource<Instant> result = new InstantArraySource();
+        result.ensureCapacity(data.size());
+        for (int ii = 0; ii < data.size(); ++ii) {
+            result.set(ii, data.get(ii));
+        }
+        return result;
+    }
+
+    /**
+     * Produces an InstantArraySource with the given data.
+     *
+     * @param data an array containing the data to insert into the ColumnSource, represented as long nanoseconds since
+     *        the epoch
+     * @return an in-memory column source with the requested data
+     */
+    public static WritableColumnSource<Instant> getInstantMemoryColumnSource(@NotNull final long[] data) {
+        final WritableColumnSource<Instant> result = new InstantArraySource();
         result.ensureCapacity(data.length);
         final WritableColumnSource<Long> asLong = (WritableColumnSource<Long>) result.reinterpret(long.class);
         try (final FillFromContext context = asLong.makeFillFromContext(data.length);
@@ -361,12 +368,12 @@ public abstract class ArrayBackedColumnSource<T>
      * @param <T> the type parameter for the ColumnSource's type
      * @return an in-memory column source of the requested type
      */
-    public static <T> ArrayBackedColumnSource<T> getMemoryColumnSource(final long size,
+    public static <T> WritableColumnSource<T> getMemoryColumnSource(final long size,
             @NotNull final Class<T> dataType) {
         return getMemoryColumnSource(size, dataType, null);
     }
 
-    public static <T> ArrayBackedColumnSource<T> getMemoryColumnSource(@NotNull final Class<T> dataType,
+    public static <T> WritableColumnSource<T> getMemoryColumnSource(@NotNull final Class<T> dataType,
             @Nullable final Class<?> componentType) {
         return getMemoryColumnSource(0, dataType, componentType);
     }
@@ -380,9 +387,9 @@ public abstract class ArrayBackedColumnSource<T>
      * @param <T> the type parameter for the ColumnSource's type
      * @return an in-memory column source of the requested type
      */
-    public static <T> ArrayBackedColumnSource<T> getMemoryColumnSource(final long size,
+    public static <T> WritableColumnSource<T> getMemoryColumnSource(final long size,
             @NotNull final Class<T> dataType, @Nullable final Class<?> componentType) {
-        final ArrayBackedColumnSource<?> result;
+        final WritableColumnSource<?> result;
         if (dataType == byte.class || dataType == Byte.class) {
             result = new ByteArraySource();
         } else if (dataType == char.class || dataType == Character.class) {
@@ -399,8 +406,8 @@ public abstract class ArrayBackedColumnSource<T>
             result = new ShortArraySource();
         } else if (dataType == boolean.class || dataType == Boolean.class) {
             result = new BooleanArraySource();
-        } else if (dataType == DateTime.class) {
-            result = new DateTimeArraySource();
+        } else if (dataType == Instant.class) {
+            result = new InstantArraySource();
         } else {
             if (componentType != null) {
                 result = new ObjectArraySource<>(dataType, componentType);
@@ -412,25 +419,11 @@ public abstract class ArrayBackedColumnSource<T>
             result.ensureCapacity(size);
         }
         // noinspection unchecked
-        return (ArrayBackedColumnSource<T>) result;
+        return (WritableColumnSource<T>) result;
     }
 
     @Override
     public abstract void ensureCapacity(long size, boolean nullFill);
-
-    @Override
-    public void shift(final long start, final long end, final long offset) {
-        if (offset > 0) {
-            for (long i = end; i >= start; i--) {
-                set((i + offset), get(i));
-            }
-        } else {
-            for (long i = start; i <= end; i++) {
-                set((i + offset), get(i));
-            }
-        }
-
-    }
 
     /**
      * Creates an in-memory ColumnSource from the supplied dataArray, using instanceof checks to determine the
@@ -511,38 +504,6 @@ public abstract class ArrayBackedColumnSource<T>
     abstract Object getPrevBlock(int blockIndex);
 
     @Override
-    public void fillChunk(@NotNull final FillContext context, @NotNull final WritableChunk<? super Values> destination,
-            @NotNull final RowSequence rowSequence) {
-        if (rowSequence.getAverageRunLengthEstimate() < USE_RANGES_AVERAGE_RUN_LENGTH) {
-            fillSparseChunk(destination, rowSequence);
-            return;
-        }
-        MutableInt destOffset = new MutableInt(0);
-        rowSequence.forAllRowKeyRanges((final long from, final long to) -> {
-            final int fromBlock = getBlockNo(from);
-            final int toBlock = getBlockNo(to);
-            final int fromOffsetInBlock = (int) (from & INDEX_MASK);
-            if (fromBlock == toBlock) {
-                final int sz = LongSizedDataStructure.intSize("int cast", to - from + 1);
-                destination.copyFromArray(getBlock(fromBlock), fromOffsetInBlock, destOffset.intValue(), sz);
-                destOffset.add(sz);
-            } else {
-                final int sz = BLOCK_SIZE - fromOffsetInBlock;
-                destination.copyFromArray(getBlock(fromBlock), fromOffsetInBlock, destOffset.intValue(), sz);
-                destOffset.add(sz);
-                for (int blockNo = fromBlock + 1; blockNo < toBlock; ++blockNo) {
-                    destination.copyFromArray(getBlock(blockNo), 0, destOffset.intValue(), BLOCK_SIZE);
-                    destOffset.add(BLOCK_SIZE);
-                }
-                int restSz = (int) (to & INDEX_MASK) + 1;
-                destination.copyFromArray(getBlock(toBlock), 0, destOffset.intValue(), restSz);
-                destOffset.add(restSz);
-            }
-        });
-        destination.setSize(destOffset.intValue());
-    }
-
-    @Override
     public void fillChunkUnordered(@NotNull final FillContext context,
             @NotNull final WritableChunk<? super Values> destination,
             @NotNull final LongChunk<? extends RowKeys> keyIndices) {
@@ -570,10 +531,9 @@ public abstract class ArrayBackedColumnSource<T>
 
     @Override
     public Chunk<Values> getChunk(@NotNull final GetContext context, @NotNull final RowSequence rowSequence) {
-        final LongChunk<OrderedRowKeyRanges> ranges = rowSequence.asRowKeyRangesChunk();
-        if (ranges.size() == 2) {
-            final long first = ranges.get(0);
-            final long last = ranges.get(1);
+        if (rowSequence.isContiguous() && !rowSequence.isEmpty()) {
+            final long first = rowSequence.firstRowKey();
+            final long last = rowSequence.lastRowKey();
 
             if (getBlockNo(first) == getBlockNo(last)) {
                 // Optimization if the caller requests a single range which happens to fall within a single block
@@ -586,97 +546,87 @@ public abstract class ArrayBackedColumnSource<T>
         return getChunkByFilling(context, rowSequence);
     }
 
-    private static class ArrayAdapter<T> implements Array.Visitor, PrimitiveArray.Visitor {
-        private ArrayBackedColumnSource<?> out;
+    private static class ArrayAdapter<T>
+            implements Array.Visitor<WritableColumnSource<?>>, PrimitiveArray.Visitor<WritableColumnSource<?>> {
 
-        public ArrayBackedColumnSource<?> getOut() {
-            return Objects.requireNonNull(out);
+        @Override
+        public WritableColumnSource<?> visit(PrimitiveArray<?> primitive) {
+            return primitive.walk((PrimitiveArray.Visitor<WritableColumnSource<?>>) this);
         }
 
         @Override
-        public void visit(PrimitiveArray<?> primitive) {
-            primitive.walk((PrimitiveArray.Visitor) this);
+        public WritableColumnSource<?> visit(ByteArray byteArray) {
+            return ArrayBackedColumnSource.getMemoryColumnSource(byteArray.values());
         }
 
         @Override
-        public void visit(ByteArray byteArray) {
-            out = ArrayBackedColumnSource.getMemoryColumnSource(byteArray.values());
+        public WritableColumnSource<?> visit(BooleanArray booleanArray) {
+            return ArrayBackedColumnSource.getBooleanMemoryColumnSource(booleanArray.values());
         }
 
         @Override
-        public void visit(BooleanArray booleanArray) {
-            out = ArrayBackedColumnSource.getBooleanMemoryColumnSource(booleanArray.values());
+        public WritableColumnSource<?> visit(CharArray charArray) {
+            return ArrayBackedColumnSource.getMemoryColumnSource(charArray.values());
         }
 
         @Override
-        public void visit(CharArray charArray) {
-            out = ArrayBackedColumnSource.getMemoryColumnSource(charArray.values());
+        public WritableColumnSource<?> visit(ShortArray shortArray) {
+            return ArrayBackedColumnSource.getMemoryColumnSource(shortArray.values());
         }
 
         @Override
-        public void visit(ShortArray shortArray) {
-            out = ArrayBackedColumnSource.getMemoryColumnSource(shortArray.values());
+        public WritableColumnSource<?> visit(IntArray intArray) {
+            return ArrayBackedColumnSource.getMemoryColumnSource(intArray.values());
         }
 
         @Override
-        public void visit(IntArray intArray) {
-            out = ArrayBackedColumnSource.getMemoryColumnSource(intArray.values());
+        public WritableColumnSource<?> visit(LongArray longArray) {
+            return ArrayBackedColumnSource.getMemoryColumnSource(longArray.values());
         }
 
         @Override
-        public void visit(LongArray longArray) {
-            out = ArrayBackedColumnSource.getMemoryColumnSource(longArray.values());
+        public WritableColumnSource<?> visit(FloatArray floatArray) {
+            return ArrayBackedColumnSource.getMemoryColumnSource(floatArray.values());
         }
 
         @Override
-        public void visit(FloatArray floatArray) {
-            out = ArrayBackedColumnSource.getMemoryColumnSource(floatArray.values());
+        public WritableColumnSource<?> visit(DoubleArray doubleArray) {
+            return ArrayBackedColumnSource.getMemoryColumnSource(doubleArray.values());
         }
 
         @Override
-        public void visit(DoubleArray doubleArray) {
-            out = ArrayBackedColumnSource.getMemoryColumnSource(doubleArray.values());
-        }
-
-        @Override
-        public void visit(GenericArray<?> generic) {
-            generic.componentType().walk(new Visitor() {
+        public WritableColumnSource<?> visit(GenericArray<?> generic) {
+            return generic.componentType().walk(new Visitor<>() {
                 @Override
-                public void visit(StringType stringType) {
-                    out = ArrayBackedColumnSource.getMemoryColumnSource(generic.cast(stringType).values(), String.class,
-                            null);
+                public WritableColumnSource<?> visit(BoxedType<?> boxedType) {
+                    return simple(boxedType);
                 }
 
                 @Override
-                public void visit(InstantType instantType) {
-                    DateTimeArraySource source = new DateTimeArraySource();
-                    source.ensureCapacity(generic.size());
-                    int ix = 0;
-                    for (Instant value : generic.cast(instantType).values()) {
-                        if (value == null) {
-                            source.set(ix++, NULL_LONG);
-                        } else {
-                            long nanos =
-                                    Math.addExact(TimeUnit.SECONDS.toNanos(value.getEpochSecond()), value.getNano());
-                            source.set(ix++, nanos);
-                        }
-                    }
-                    out = source;
+                public WritableColumnSource<?> visit(StringType stringType) {
+                    return simple(stringType);
                 }
 
                 @Override
-                public void visit(ArrayType<?, ?> arrayType) {
+                public WritableColumnSource<?> visit(InstantType instantType) {
+                    return simple(instantType);
+                }
+
+                @Override
+                public WritableColumnSource<?> visit(ArrayType<?, ?> arrayType) {
                     // noinspection unchecked
                     ArrayType<T, ?> tType = (ArrayType<T, ?>) arrayType;
-                    out = ArrayBackedColumnSource.getMemoryColumnSource(generic.cast(tType).values(), tType.clazz(),
-                            arrayType.componentType().clazz());
+                    return ArrayBackedColumnSource.getMemoryColumnSource(
+                            generic.cast(tType).values(), tType.clazz(), arrayType.componentType().clazz());
                 }
 
                 @Override
-                public void visit(CustomType<?> customType) {
-                    // noinspection unchecked
-                    CustomType<T> tType = (CustomType<T>) customType;
-                    out = ArrayBackedColumnSource.getMemoryColumnSource(generic.cast(tType).values(), tType.clazz(),
+                public WritableColumnSource<?> visit(CustomType<?> customType) {
+                    return simple(customType);
+                }
+
+                private <X> WritableColumnSource<X> simple(GenericType<X> type) {
+                    return ArrayBackedColumnSource.getMemoryColumnSource(generic.cast(type).values(), type.clazz(),
                             null);
                 }
             });

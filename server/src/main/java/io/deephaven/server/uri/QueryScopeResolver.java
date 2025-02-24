@@ -1,6 +1,9 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.server.uri;
 
-import io.deephaven.server.console.GlobalSessionProvider;
+import io.deephaven.engine.context.ExecutionContext;
 import io.deephaven.uri.DeephavenUri;
 import io.deephaven.uri.QueryScopeUri;
 import io.deephaven.uri.resolver.UriResolver;
@@ -9,7 +12,6 @@ import io.deephaven.uri.resolver.UriResolversInstance;
 import javax.inject.Inject;
 import java.net.URI;
 import java.util.Collections;
-import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -26,12 +28,8 @@ public final class QueryScopeResolver implements UriResolver {
         return UriResolversInstance.get().find(QueryScopeResolver.class).get();
     }
 
-    private final GlobalSessionProvider globalSessionProvider;
-
     @Inject
-    public QueryScopeResolver(GlobalSessionProvider globalSessionProvider) {
-        this.globalSessionProvider = Objects.requireNonNull(globalSessionProvider);
-    }
+    public QueryScopeResolver() {}
 
     @Override
     public Set<String> schemes() {
@@ -53,6 +51,6 @@ public final class QueryScopeResolver implements UriResolver {
     }
 
     public Object resolve(String variableName) {
-        return globalSessionProvider.getGlobalSession().getVariable(variableName, null);
+        return ExecutionContext.getContext().getQueryScope().readParamValue(variableName, null);
     }
 }

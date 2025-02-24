@@ -1,30 +1,67 @@
 plugins {
     id 'java-library'
+    id 'io.deephaven.project.register'
 }
 
 dependencies {
+    implementation project(":util-thread")
+    implementation project(":util-processenvironment")
+    implementation project(':authentication')
+    implementation project(':authorization')
     implementation project(':engine-table')
     implementation project(':extensions-csv')
+    implementation project(':extensions-arrow')
     implementation project(':extensions-parquet-table')
+    implementation project(':extensions-performance')
+    implementation project(':extensions-jdbc')
     implementation project(':Util');
+    implementation project(':Integrations')
+    implementation libs.commons.lang3
+    implementation libs.commons.text
 
-    //TODO(1722) This isn't actually an api dependency, but downstream dagger compiles will need it
-    api(project(':java-client-barrage-dagger'))
+    implementation libs.javaparser.core
+    implementation project(':open-api-lang-parser')
+
+    api(project(':java-client-barrage'))
+    api(project(':java-client-session-dagger')) {
+        because 'downstream dagger compile, see deephaven-core#1722'
+    }
+    implementation libs.hdrhistogram
 
     implementation project(':proto:proto-backplane-grpc-flight')
-    implementation project(':open-api-lang-tools')
-    implementation project(':log-factory')
-    implementation project(':application-mode')
-    implementation 'com.github.f4b6a3:uuid-creator:3.6.0'
+    api(project(':open-api-lang-tools')) {
+        because 'downstream dagger compile, see deephaven-core#1722'
+    }
+    api(project(':log-factory')) {
+        because 'downstream dagger compile, see deephaven-core#1722'
+    }
+    implementation libs.slf4j.jul.to.slf4j
+    api(project(':application-mode')) {
+        because 'downstream dagger compile, see deephaven-core#1722'
+    }
+    implementation libs.f4b6a3.uuid.creator
 
     api(project(':Configuration')) {
         because 'jetty/netty implementations will access the configuration in their main()s'
     }
 
-    Classpaths.inheritFlatbuffer(project, 'implementation')
+    api project(':ssl-config')
 
-    Classpaths.inheritDagger(project)
-    Classpaths.inheritDagger(project, /* test */ true)
+    implementation libs.flatbuffers.java
+
+    implementation libs.dagger
+    annotationProcessor libs.dagger.compiler
+
+    testImplementation libs.dagger
+    testAnnotationProcessor libs.dagger.compiler
+
+    compileOnly libs.autoservice
+    annotationProcessor libs.autoservice.compiler
+    testCompileOnly libs.autoservice
+    testAnnotationProcessor libs.autoservice.compiler
+
+    compileOnly project(':util-immutables')
+    annotationProcessor libs.immutables.value
 
     implementation project(':Plot')
 
@@ -33,25 +70,47 @@ dependencies {
     if ('true' == project.findProperty('extensions.classgraph.enabled')) {
         runtimeOnly project(':extensions-classgraph')
     }
+    testImplementation project(':extensions-classgraph')
+
     if ('true' == project.findProperty('extensions.suanshu.enabled')) {
         runtimeOnly project(':extensions-suanshu')
     }
 
-    Classpaths.inheritGrpcPlatform(project, 'api')
+    api(project(':plugin')) {
+        because 'downstream dagger compile, see deephaven-core#1722'
+    }
+    api(project(':plugin-dagger')) {
+        because 'downstream dagger compile, see deephaven-core#1722'
+    }
 
-    //TODO(1722) This isn't actually an api dependency, but downstream dagger compiles will need it
-    api('io.grpc:grpc-services')
+    runtimeOnly project(':plugin-figure')
+    runtimeOnly project(':plugin-partitionedtable')
+    runtimeOnly project(':plugin-hierarchicaltable')
+    implementation project(':plugin-gc-app')
 
-    testImplementation 'io.grpc:grpc-testing'
+    api platform(libs.grpc.bom)
 
-    testImplementation project(':proto:proto-backplane-grpc')
+    api(libs.grpc.services) {
+        because 'downstream dagger compile, see deephaven-core#1722'
+    }
 
-    testImplementation TestTools.projectDependency(project, 'engine-table'),
-            TestTools.projectDependency(project, 'Util')
+    implementation project(':grpc-java:grpc-mtls')
 
-    runtimeOnly project(':Numerics'), project(':Integrations'), project(':extensions-kafka')
-    Classpaths.inheritAssertJ(project)
+    implementation libs.dev.dirs.directories
+
+    testImplementation project(':server-test-utils')
+
+    runtimeOnly project(':Numerics'), project(':extensions-kafka')
+    testImplementation libs.assertj
 
     testRuntimeOnly project(':log-to-slf4j')
-    Classpaths.inheritSlf4j(project, 'slf4j-simple', 'testRuntimeOnly')
+    testRuntimeOnly libs.slf4j.simple
+
+    runtimeOnly project(':authentication:example-providers:psk')
+}
+
+TestTools.addEngineOutOfBandTest(project)
+
+test {
+    systemProperty 'ApplicationConfigs.testAppDir', layout.projectDirectory.dir('src/test/app.d/').toString()
 }

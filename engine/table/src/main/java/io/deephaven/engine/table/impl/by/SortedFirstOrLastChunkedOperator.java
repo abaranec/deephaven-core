@@ -1,11 +1,15 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.by;
 
 import io.deephaven.chunk.attributes.ChunkLengths;
 import io.deephaven.chunk.attributes.ChunkPositions;
 import io.deephaven.chunk.attributes.Values;
+import io.deephaven.engine.rowset.RowSequence;
 import io.deephaven.engine.table.impl.SortingOrder;
 import io.deephaven.engine.table.Table;
-import io.deephaven.engine.table.MatchPair;
+import io.deephaven.engine.table.impl.MatchPair;
 import io.deephaven.engine.table.impl.sort.IntSortKernel;
 import io.deephaven.engine.table.impl.sort.LongSortKernel;
 import io.deephaven.engine.table.impl.sort.permute.LongPermuteKernel;
@@ -23,7 +27,9 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Supplier;
 
-public class SortedFirstOrLastChunkedOperator implements IterativeChunkedAggregationOperator {
+public class SortedFirstOrLastChunkedOperator
+        extends BasicStateChangeRecorder
+        implements IterativeChunkedAggregationOperator {
     private final ChunkType chunkType;
     private final boolean isFirst;
     private final Supplier<SegmentedSortedArray> ssaFactory;
@@ -43,9 +49,8 @@ public class SortedFirstOrLastChunkedOperator implements IterativeChunkedAggrega
 
         this.resultColumns = new LinkedHashMap<>();
         for (final MatchPair mp : resultNames) {
-            // noinspection unchecked,rawtypes
-            resultColumns.put(mp.leftColumn(),
-                    new RedirectedColumnSource(rowRedirection, originalTable.getColumnSource(mp.rightColumn())));
+            resultColumns.put(mp.leftColumn(), RedirectedColumnSource.maybeRedirect(
+                    rowRedirection, originalTable.getColumnSource(mp.rightColumn())));
         }
     }
 
@@ -413,6 +418,9 @@ public class SortedFirstOrLastChunkedOperator implements IterativeChunkedAggrega
         ssa.insert(values, indices);
         final long newValue = isFirst ? ssa.getFirst() : ssa.getLast();
         final long oldValue = redirections.getAndSetUnsafe(destination, newValue);
+        if (oldValue == RowSequence.NULL_ROW_KEY && newValue != RowSequence.NULL_ROW_KEY) {
+            onReincarnated(destination);
+        }
         return oldValue != newValue;
     }
 
@@ -429,6 +437,9 @@ public class SortedFirstOrLastChunkedOperator implements IterativeChunkedAggrega
         ssa.remove(values, indices);
         final long newValue = isFirst ? ssa.getFirst() : ssa.getLast();
         final long oldValue = redirections.getAndSetUnsafe(destination, newValue);
+        if (oldValue != RowSequence.NULL_ROW_KEY && newValue == RowSequence.NULL_ROW_KEY) {
+            onEmptied(destination);
+        }
         return oldValue != newValue;
     }
 

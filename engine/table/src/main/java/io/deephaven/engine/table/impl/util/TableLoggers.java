@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.util;
 
 import io.deephaven.engine.table.impl.perf.UpdatePerformanceTracker;
@@ -5,19 +8,17 @@ import io.deephaven.engine.table.impl.QueryTable;
 import io.deephaven.util.annotations.ScriptApi;
 
 /**
- * Tools to obtain internal, Deephaven logs as tables. These tables include query logs and performance logs.
+ * Accessors for Deephaven tables of instrumentation logs. These tables include query logs and performance logs
  */
 public class TableLoggers {
     /**
      * Return a table with update performance data.
      *
-     * Note this table will only tick if/since startUpdatePerformanceLog is called.
-     *
      * @return A table with update performance data.
      */
     @ScriptApi
     public static QueryTable updatePerformanceLog() {
-        return UpdatePerformanceTracker.getInstance().getQueryTable();
+        return UpdatePerformanceTracker.getQueryTable();
     }
 
     /**
@@ -28,7 +29,7 @@ public class TableLoggers {
      */
     @ScriptApi
     public static QueryTable queryPerformanceLog() {
-        return MemoryTableLoggers.getInstance().getQplLoggerQueryTable();
+        return EngineMetrics.getInstance().getQplLoggerQueryTable();
     }
 
     /**
@@ -38,17 +39,17 @@ public class TableLoggers {
      */
     @ScriptApi
     public static QueryTable queryOperationPerformanceLog() {
-        return MemoryTableLoggers.getInstance().getQoplLoggerQueryTable();
+        return EngineMetrics.getInstance().getQoplLoggerQueryTable();
     }
 
     /**
      * Return a table with metrics collected for the current engine process.
      *
-     * @return A table with metrics fopr the current engine process.
+     * @return A table with metrics for the current engine process.
      */
     @ScriptApi
     public static QueryTable processMetricsLog() {
-        return MemoryTableLoggers.getInstance().getProcessMetricsQueryTable();
+        return EngineMetrics.getInstance().getProcessMetricsQueryTable();
     }
 
     /**
@@ -58,7 +59,7 @@ public class TableLoggers {
      */
     @ScriptApi
     public static QueryTable processInfoLog() {
-        return MemoryTableLoggers.getInstance().getProcessInfoQueryTable();
+        return EngineMetrics.getInstance().getProcessInfoQueryTable();
     }
 
     /**
@@ -67,7 +68,7 @@ public class TableLoggers {
      * @return A table with memory and GC data.
      */
     @ScriptApi
-    public static QueryTable processMemoryLog() {
-        return ProcessMemoryTracker.getInstance().getQueryTable();
+    public static QueryTable serverStateLog() {
+        return ServerStateTracker.getInstance().getQueryTable();
     }
 }

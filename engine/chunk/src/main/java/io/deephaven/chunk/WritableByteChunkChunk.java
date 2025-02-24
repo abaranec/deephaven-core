@@ -1,8 +1,10 @@
-/*
- * ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit WritableCharChunkChunk and regenerate
- * ---------------------------------------------------------------------------------------------------------------------
- */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit WritableCharChunkChunk and run "./gradlew replicateSourcesAndChunks" to regenerate
+//
+// @formatter:off
 package io.deephaven.chunk;
 
 import io.deephaven.chunk.attributes.Any;
@@ -11,7 +13,7 @@ import io.deephaven.chunk.attributes.Any;
 public class WritableByteChunkChunk<ATTR extends Any> extends ByteChunkChunk<ATTR> implements WritableChunkChunk<ATTR> {
 
     public static <ATTR extends Any> WritableByteChunk<ATTR>[] makeArray(int capacity) {
-        //noinspection unchecked
+        // noinspection unchecked
         return new WritableByteChunk[capacity];
     }
 
@@ -23,7 +25,8 @@ public class WritableByteChunkChunk<ATTR extends Any> extends ByteChunkChunk<ATT
         return new WritableByteChunkChunk<>(data, 0, data.length);
     }
 
-    public static <ATTR extends Any> WritableByteChunkChunk<ATTR> writableChunkWrap(WritableByteChunk<ATTR>[] data, int offset, int size) {
+    public static <ATTR extends Any> WritableByteChunkChunk<ATTR> writableChunkWrap(WritableByteChunk<ATTR>[] data,
+            int offset, int size) {
         return new WritableByteChunkChunk<>(data, offset, size);
     }
 

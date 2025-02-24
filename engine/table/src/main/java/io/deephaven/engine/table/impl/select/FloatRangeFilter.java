@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.select;
 
 import io.deephaven.engine.rowset.WritableRowSet;
@@ -9,8 +12,25 @@ import io.deephaven.engine.table.ColumnSource;
 import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.gui.table.filters.Condition;
 import io.deephaven.util.QueryConstants;
+import org.jetbrains.annotations.NotNull;
 
 public class FloatRangeFilter extends AbstractRangeFilter {
+
+    public static FloatRangeFilter lt(String columnName, float x) {
+        return new FloatRangeFilter(columnName, x, QueryConstants.NULL_FLOAT, true, false);
+    }
+
+    public static FloatRangeFilter leq(String columnName, float x) {
+        return new FloatRangeFilter(columnName, x, QueryConstants.NULL_FLOAT, true, true);
+    }
+
+    public static FloatRangeFilter gt(String columnName, float x) {
+        return new FloatRangeFilter(columnName, x, Float.NaN, false, true);
+    }
+
+    public static FloatRangeFilter geq(String columnName, float x) {
+        return new FloatRangeFilter(columnName, x, Float.NaN, true, true);
+    }
 
     private final float upper;
     private final float lower;
@@ -21,8 +41,7 @@ public class FloatRangeFilter extends AbstractRangeFilter {
 
     public FloatRangeFilter(String columnName, float val1, float val2, boolean lowerInclusive, boolean upperInclusive) {
         super(columnName, lowerInclusive, upperInclusive);
-
-        if(val1 > val2) {
+        if (FloatComparisons.gt(val1, val2)) {
             upper = val1;
             lower = val2;
         } else {
@@ -36,41 +55,45 @@ public class FloatRangeFilter extends AbstractRangeFilter {
         final double parsed = Double.parseDouble(val);
         final double offset = Math.pow(10, -precision);
         final boolean positiveOrZero = parsed >= 0;
-
-        return new FloatRangeFilter(columnName, (float)parsed, (float)(positiveOrZero ? parsed + offset : parsed - offset), positiveOrZero, !positiveOrZero);
+        return new FloatRangeFilter(columnName, (float) parsed,
+                (float) (positiveOrZero ? parsed + offset : parsed - offset), positiveOrZero, !positiveOrZero);
     }
 
-    static WhereFilter makeFloatRangeFilter(String columnName, Condition condition, String value) {
+    static WhereFilter makeFloatRangeFilter(String columnName, Condition condition, float value) {
         switch (condition) {
             case LESS_THAN:
-                return new FloatRangeFilter(columnName, Float.parseFloat(value), QueryConstants.NULL_FLOAT, true, false);
+                return lt(columnName, value);
             case LESS_THAN_OR_EQUAL:
-                return new FloatRangeFilter(columnName, Float.parseFloat(value), QueryConstants.NULL_FLOAT, true, true);
+                return leq(columnName, value);
             case GREATER_THAN:
-                return new FloatRangeFilter(columnName, Float.parseFloat(value), Float.NaN, false, true);
+                return gt(columnName, value);
             case GREATER_THAN_OR_EQUAL:
-                return new FloatRangeFilter(columnName, Float.parseFloat(value), Float.NaN, true, true);
+                return geq(columnName, value);
             default:
-                throw new IllegalArgumentException("RangeConditionFilter does not support condition " + condition);
+                throw new IllegalArgumentException("RangeFilter does not support condition " + condition);
         }
     }
 
     @Override
-    public void init(TableDefinition tableDefinition) {
+    public void init(@NotNull final TableDefinition tableDefinition) {
         if (chunkFilter != null) {
             return;
         }
 
         final ColumnDefinition def = tableDefinition.getColumn(columnName);
         if (def == null) {
-            throw new RuntimeException("Column \"" + columnName + "\" doesn't exist in this table, available columns: " + tableDefinition.getColumnNames());
+            throw new RuntimeException("Column \"" + columnName + "\" doesn't exist in this table, available columns: "
+                    + tableDefinition.getColumnNames());
         }
         chunkFilter = FloatRangeComparator.makeFloatFilter(lower, upper, lowerInclusive, upperInclusive);
     }
 
     @Override
     public FloatRangeFilter copy() {
-        return new FloatRangeFilter(columnName, lower, upper, lowerInclusive, upperInclusive);
+        final FloatRangeFilter copy = new FloatRangeFilter(columnName, lower, upper, lowerInclusive, upperInclusive);
+        copy.chunkFilter = chunkFilter;
+        copy.longFilter = longFilter;
+        return copy;
     }
 
     @Override
@@ -80,33 +103,42 @@ public class FloatRangeFilter extends AbstractRangeFilter {
                 (upperInclusive ? "]" : ")") + ")";
     }
 
+    @NotNull
     @Override
-    WritableRowSet binarySearch(RowSet selection, ColumnSource columnSource, boolean usePrev, boolean reverse) {
+    WritableRowSet binarySearch(
+            @NotNull final RowSet selection,
+            @NotNull final ColumnSource<?> columnSource,
+            final boolean usePrev,
+            final boolean reverse) {
         if (selection.isEmpty()) {
             return selection.copy();
         }
 
-        //noinspection unchecked
-        final ColumnSource<Float> floatColumnSource = (ColumnSource<Float>)columnSource;
+        // noinspection unchecked
+        final ColumnSource<Float> floatColumnSource = (ColumnSource<Float>) columnSource;
 
         final float startValue = reverse ? upper : lower;
         final float endValue = reverse ? lower : upper;
         final boolean startInclusive = reverse ? upperInclusive : lowerInclusive;
         final boolean endInclusive = reverse ? lowerInclusive : upperInclusive;
-        final int compareSign = reverse ? - 1 : 1;
+        final int compareSign = reverse ? -1 : 1;
 
-        long lowerBoundMin = bound(selection, usePrev, floatColumnSource, 0, selection.size(), startValue, startInclusive, compareSign, false);
-        long upperBoundMin = bound(selection, usePrev, floatColumnSource, lowerBoundMin, selection.size(), endValue, endInclusive, compareSign, true);
+        long lowerBoundMin = bound(selection, usePrev, floatColumnSource, 0, selection.size(), startValue,
+                startInclusive, compareSign, false);
+        long upperBoundMin = bound(selection, usePrev, floatColumnSource, lowerBoundMin, selection.size(), endValue,
+                endInclusive, compareSign, true);
 
         return selection.subSetByPositionRange(lowerBoundMin, upperBoundMin);
     }
 
-    private static long bound(RowSet selection, boolean usePrev, ColumnSource<Float> floatColumnSource, long minPosition, long maxPosition, float targetValue, boolean inclusive, int compareSign, boolean end) {
+    private static long bound(RowSet selection, boolean usePrev, ColumnSource<Float> floatColumnSource,
+            long minPosition, long maxPosition, float targetValue, boolean inclusive, int compareSign, boolean end) {
         while (minPosition < maxPosition) {
             final long midPos = (minPosition + maxPosition) / 2;
             final long midIdx = selection.get(midPos);
 
-            final float compareValue = usePrev ? floatColumnSource.getPrevFloat(midIdx) : floatColumnSource.getFloat(midIdx);
+            final float compareValue =
+                    usePrev ? floatColumnSource.getPrevFloat(midIdx) : floatColumnSource.getFloat(midIdx);
             final int compareResult = compareSign * FloatComparisons.compare(compareValue, targetValue);
 
             if (compareResult < 0) {

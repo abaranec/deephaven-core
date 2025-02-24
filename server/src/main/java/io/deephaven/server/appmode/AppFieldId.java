@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.server.appmode;
 
 import com.google.common.base.Objects;
@@ -52,7 +55,7 @@ public class AppFieldId {
 
     @Override
     public String toString() {
-        return "AppFieldId{appId=" + app.id() + ", fieldName=" + fieldName + "}";
+        return "AppFieldId{appId=" + (app == null ? "" : app.id()) + ", fieldName=" + fieldName + "}";
     }
 
     @Override

@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.util.cast;
 
 import io.deephaven.chunk.*;
@@ -26,7 +29,8 @@ public class CharToDoubleCast implements ToDoubleCast {
     }
 
     public static <T2 extends Any> void castInto(CharChunk<? extends T2> input, WritableDoubleChunk<T2> result) {
-        for (int ii = 0; ii < input.size(); ++ii) {
+        final int size = input.size();
+        for (int ii = 0; ii < size; ++ii) {
             final char value = input.get(ii);
             if (value == QueryConstants.NULL_CHAR) {
                 result.set(ii, QueryConstants.NULL_DOUBLE);

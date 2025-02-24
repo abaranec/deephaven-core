@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.base;
 
 import io.deephaven.base.queue.ConcurrentQueue;
@@ -56,6 +55,23 @@ public class LockFreeArrayQueue<T> implements ConcurrentQueue<T>, ProducerConsum
      */
     public static int getMaxAllowedCapacity() {
         return 1 << LOG2CAP_MAX;
+    }
+
+    /**
+     * Creates a lock free array queue of at least capacity {@code desiredSize}.
+     *
+     * @param desiredSize the desired size
+     * @return the queue with at least {@code desiredSize} capacity
+     * @param <T> the object type
+     */
+    public static <T> LockFreeArrayQueue<T> of(int desiredSize) {
+        final int maxAllowedCapacity = getMaxAllowedCapacity();
+        if (desiredSize > maxAllowedCapacity) {
+            throw new IllegalArgumentException(
+                    String.format("desiredSize > maxAllowedCapacity: %d > %d", desiredSize, maxAllowedCapacity));
+        }
+        final int log2cap = MathUtil.ceilLog2(desiredSize);
+        return new LockFreeArrayQueue<>(Math.max(LOG2CAP_MIN, log2cap));
     }
 
     // Basic characteristics:

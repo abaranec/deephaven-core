@@ -1,6 +1,9 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.by.ssmpercentile;
 
-import io.deephaven.engine.table.impl.sources.ArrayBackedColumnSource;
+import io.deephaven.engine.table.WritableColumnSource;
 import io.deephaven.engine.table.impl.sources.DoubleArraySource;
 import io.deephaven.engine.table.impl.ssms.CharSegmentedSortedMultiset;
 import io.deephaven.engine.table.impl.ssms.SegmentedSortedMultiSet;
@@ -11,11 +14,11 @@ public class CharPercentileTypeMedianHelper extends CharPercentileTypeHelper {
     private final double percentile;
     private final DoubleArraySource resultColumn;
 
-    CharPercentileTypeMedianHelper(double percentile, ArrayBackedColumnSource resultColumn) {
+    CharPercentileTypeMedianHelper(double percentile, WritableColumnSource resultColumn) {
         super(percentile, null);
         this.percentile = percentile;
         // region resultColumn
-        this.resultColumn = (DoubleArraySource)resultColumn;
+        this.resultColumn = (DoubleArraySource) resultColumn;
         // endregion
     }
 
@@ -29,7 +32,7 @@ public class CharPercentileTypeMedianHelper extends CharPercentileTypeHelper {
         if (totalSize == 0) {
             newResult = NULL_DOUBLE;
         } else {
-            final long targetLo = (int)((totalSize - 1) * percentile) + 1;
+            final long targetLo = (int) ((totalSize - 1) * percentile) + 1;
             if (loSize < targetLo) {
                 ssmHi.moveFrontToBack(ssmLo, targetLo - loSize);
             } else if (loSize > targetLo) {
@@ -37,11 +40,12 @@ public class CharPercentileTypeMedianHelper extends CharPercentileTypeHelper {
             }
 
             if (ssmLo.totalSize() == ssmHi.totalSize()) {
-                // region averageMedian
-                return setResult(destination, (((CharSegmentedSortedMultiset)ssmLo).getMaxChar() + ((CharSegmentedSortedMultiset)ssmHi).getMinChar()) / 2.0);
-                // endregion averageMedian
+                // region averageEvenlyDivided
+                return setResult(destination, (((CharSegmentedSortedMultiset) ssmLo).getMaxChar()
+                        + ((CharSegmentedSortedMultiset) ssmHi).getMinChar()) / 2.0);
+                // endregion averageEvenlyDivided
             } else {
-                return setResult(destination, ((CharSegmentedSortedMultiset)ssmLo).getMaxChar());
+                return setResult(destination, ((CharSegmentedSortedMultiset) ssmLo).getMaxChar());
             }
         }
         return setResult(destination, newResult);

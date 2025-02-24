@@ -1,14 +1,22 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl;
 
+import com.google.auto.service.AutoService;
+import io.deephaven.engine.context.ExecutionContext;
+import io.deephaven.engine.table.MultiJoinFactory;
+import io.deephaven.engine.table.MultiJoinInput;
 import io.deephaven.engine.table.Table;
 import io.deephaven.engine.table.TableDefinition;
 import io.deephaven.engine.table.TableFactory;
-import io.deephaven.engine.table.impl.util.AppendOnlyArrayBackedMutableTable;
-import io.deephaven.engine.table.impl.util.KeyedArrayBackedMutableTable;
+import io.deephaven.engine.table.impl.util.AppendOnlyArrayBackedInputTable;
+import io.deephaven.engine.table.impl.util.KeyedArrayBackedInputTable;
 import io.deephaven.engine.util.TableTools;
-import io.deephaven.time.DateTime;
-import io.deephaven.time.DateTimeUtils;
 import io.deephaven.qst.TableCreator;
+import io.deephaven.qst.table.BlinkInputTable;
+import io.deephaven.qst.table.Clock;
+import io.deephaven.qst.table.ClockSystem;
 import io.deephaven.qst.table.EmptyTable;
 import io.deephaven.qst.table.InMemoryAppendOnlyInputTable;
 import io.deephaven.qst.table.InMemoryKeyBackedInputTable;
@@ -18,17 +26,24 @@ import io.deephaven.qst.table.TableHeader;
 import io.deephaven.qst.table.TableSchema;
 import io.deephaven.qst.table.TableSpec;
 import io.deephaven.qst.table.TicketTable;
-import io.deephaven.qst.table.TimeProvider;
-import io.deephaven.qst.table.TimeProviderSystem;
 import io.deephaven.qst.table.TimeTable;
+import io.deephaven.stream.TablePublisher;
 
-import java.util.Objects;
+import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
+/**
+ * Engine-specific implementation of {@link TableCreator}.
+ */
 public enum TableCreatorImpl implements TableCreator<Table> {
+
     INSTANCE;
 
+    @SuppressWarnings("unused")
+    @AutoService(TableFactory.TableCreatorProvider.class)
     public static final class TableCreatorProvider implements TableFactory.TableCreatorProvider {
 
         @Override
@@ -53,10 +68,13 @@ public enum TableCreatorImpl implements TableCreator<Table> {
 
     @Override
     public final Table of(TimeTable timeTable) {
-        final io.deephaven.time.TimeProvider provider = TimeProviderAdapter
-                .of(timeTable.timeProvider());
-        final DateTime firstTime = timeTable.startTime().map(DateTime::of).orElse(null);
-        return TableTools.timeTable(provider, firstTime, timeTable.interval().toNanos());
+        return io.deephaven.engine.table.impl.TimeTable.newBuilder()
+                .registrar(ExecutionContext.getContext().getUpdateGraph())
+                .clock(ClockAdapter.of(timeTable.clock()))
+                .startTime(timeTable.startTime().orElse(null))
+                .period(timeTable.interval())
+                .blinkTable(timeTable.blinkTable())
+                .build();
     }
 
     @Override
@@ -66,10 +84,19 @@ public enum TableCreatorImpl implements TableCreator<Table> {
     }
 
     @Override
-    public final UpdatableTable of(InputTable inputTable) {
-        return UpdatableTableAdapter.of(inputTable);
+    public final Table of(InputTable inputTable) {
+        return InputTableAdapter.of(inputTable);
     }
 
+    @Override
+    public final Table multiJoin(List<io.deephaven.qst.table.MultiJoinInput<Table>> multiJoinInputs) {
+        return MultiJoinFactory.of(multiJoinInputs.stream().map(TableCreatorImpl::adapt).toArray(MultiJoinInput[]::new))
+                .table();
+    }
+
+    private static MultiJoinInput adapt(io.deephaven.qst.table.MultiJoinInput<Table> input) {
+        return MultiJoinInput.of(input.table(), input.matches(), input.additions());
+    }
 
     @Override
     public final Table merge(Iterable<Table> tables) {
@@ -119,7 +146,7 @@ public enum TableCreatorImpl implements TableCreator<Table> {
     @Override
     public final Table merge(Table t1, Table t2, Table t3, Table t4, Table t5, Table t6, Table t7, Table t8, Table t9,
             Table... remaining) {
-        return TableTools.merge(Stream.concat(Stream.of(t1, t2, t3, t4, t5, t6, t7, t8, t9), Stream.of(remaining))
+        return TableTools.merge(Stream.concat(Stream.of(t1, t2, t3, t4, t5, t6, t7, t8, t9), Arrays.stream(remaining))
                 .toArray(Table[]::new));
     }
 
@@ -128,72 +155,66 @@ public enum TableCreatorImpl implements TableCreator<Table> {
         return TableTools.merge(tables);
     }
 
-    static class TimeProviderAdapter implements TimeProvider.Visitor {
+    enum ClockAdapter implements Clock.Visitor<io.deephaven.base.clock.Clock> {
+        INSTANCE;
 
-        public static io.deephaven.time.TimeProvider of(TimeProvider provider) {
-            return provider.walk(new TimeProviderAdapter()).getOut();
-        }
-
-        private static final io.deephaven.time.TimeProvider SYSTEM_PROVIDER = DateTimeUtils::currentTime;
-
-        private io.deephaven.time.TimeProvider out;
-
-        public io.deephaven.time.TimeProvider getOut() {
-            return Objects.requireNonNull(out);
+        public static io.deephaven.base.clock.Clock of(Clock provider) {
+            return provider.walk(INSTANCE);
         }
 
         @Override
-        public void visit(TimeProviderSystem system) {
-            out = SYSTEM_PROVIDER;
+        public io.deephaven.base.clock.Clock visit(ClockSystem system) {
+            return io.deephaven.base.clock.Clock.system();
         }
     }
 
-    static class UpdatableTableAdapter implements InputTable.Visitor {
+    enum InputTableAdapter implements InputTable.Visitor<Table> {
+        INSTANCE;
 
-        public static UpdatableTable of(InputTable inputTable) {
-            return inputTable.walk(new UpdatableTableAdapter()).out();
-        }
+        private static final AtomicInteger blinkTableCount = new AtomicInteger();
 
-        private UpdatableTable out;
-
-        public UpdatableTable out() {
-            return Objects.requireNonNull(out);
+        public static Table of(InputTable inputTable) {
+            return inputTable.walk(INSTANCE);
         }
 
         @Override
-        public void visit(InMemoryAppendOnlyInputTable inMemoryAppendOnly) {
+        public UpdatableTable visit(InMemoryAppendOnlyInputTable inMemoryAppendOnly) {
             final TableDefinition definition = DefinitionAdapter.of(inMemoryAppendOnly.schema());
-            out = AppendOnlyArrayBackedMutableTable.make(definition);
+            return AppendOnlyArrayBackedInputTable.make(definition);
         }
 
         @Override
-        public void visit(InMemoryKeyBackedInputTable inMemoryKeyBacked) {
+        public UpdatableTable visit(InMemoryKeyBackedInputTable inMemoryKeyBacked) {
             final TableDefinition definition = DefinitionAdapter.of(inMemoryKeyBacked.schema());
             final String[] keyColumnNames = inMemoryKeyBacked.keys().toArray(String[]::new);
-            out = KeyedArrayBackedMutableTable.make(definition, keyColumnNames);
+            return KeyedArrayBackedInputTable.make(definition, keyColumnNames);
+        }
+
+        @Override
+        public Table visit(BlinkInputTable blinkInputTable) {
+            final TableDefinition definition = DefinitionAdapter.of(blinkInputTable.schema());
+            return TablePublisher
+                    .of(TableCreatorImpl.class.getSimpleName() + ".BLINK-" + blinkTableCount.getAndIncrement(),
+                            definition, null, null)
+                    .inputTable();
         }
     }
 
-    static class DefinitionAdapter implements TableSchema.Visitor {
+    enum DefinitionAdapter implements TableSchema.Visitor<TableDefinition> {
+        INSTANCE;
 
         public static TableDefinition of(TableSchema schema) {
-            return schema.walk(new DefinitionAdapter()).out();
-        }
-
-        private TableDefinition out;
-
-        public TableDefinition out() {
-            return Objects.requireNonNull(out);
+            return schema.walk(INSTANCE);
         }
 
         @Override
-        public void visit(TableSpec spec) {
-            out = create(spec).getDefinition();
+        public TableDefinition visit(TableSpec spec) {
+            return create(spec).getDefinition();
         }
 
         @Override
-        public void visit(TableHeader header) {
-            out = TableDefinition.from(header);
+        public TableDefinition visit(TableHeader header) {
+            return TableDefinition.from(header);
         }
     }
 }

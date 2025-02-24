@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.jpy.integration;
 
 import io.deephaven.jpy.BuiltinsModule;
@@ -6,13 +9,13 @@ import io.deephaven.jpy.PythonTest;
 import io.deephaven.jpy.integration.DestructorModuleParent.OnDelete;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+
+import io.deephaven.jpy.integration.SomeJavaClassOutTest.SomeJavaClass;
 import org.jpy.PyInputMode;
-import org.jpy.PyLib;
 import org.jpy.PyModule;
 import org.jpy.PyObject;
 import org.junit.After;
 import org.junit.Assert;
-import org.junit.Assume;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -25,22 +28,18 @@ public class ReferenceCountingTest extends PythonTest {
     private BuiltinsModule builtins;
     private DestructorModuleParent destructor;
     private ReferenceCounting ref;
-    private JpyModule jpy;
 
     @Before
     public void setUp() {
-        ref = ReferenceCounting.create();
+        ref = ReferenceCounting.create(getCreateModule());
         noop = NoopModule.create(getCreateModule());
         pyOut = IdentityOut.create(getCreateModule(), PyObjectIdentityOut.class);
         builtins = BuiltinsModule.create();
         destructor = DestructorModuleParent.create(getCreateModule());
-        jpy = JpyModule.create();
-        // jpy.setFlags(EnumSet.of(Flag.ALL));
     }
 
     @After
     public void tearDown() {
-        // jpy.setFlags(EnumSet.of(Flag.OFF));
         destructor.close();
         builtins.close();
         pyOut.close();
@@ -57,21 +56,18 @@ public class ReferenceCountingTest extends PythonTest {
     public void pythonObjectViaExecuteHasOneReference() {
         final PyObject pyObject = PyObject.executeCode("dict()", PyInputMode.EXPRESSION);
         ref.check(1, pyObject);
-        ReferenceCounting.blackhole(pyObject);
     }
 
     @Test
     public void pythonObjectViaCallHasOneReference() {
         final PyObject pyObject = PyModule.getBuiltins().call("dict");
         ref.check(1, pyObject);
-        ReferenceCounting.blackhole(pyObject);
     }
 
     @Test
     public void pythonObjectViaProxyHasOneReference() {
         final PyObject pyObject = builtins.dict();
         ref.check(1, pyObject);
-        ReferenceCounting.blackhole(pyObject);
     }
 
     @Test
@@ -114,7 +110,7 @@ public class ReferenceCountingTest extends PythonTest {
         scope.asDict().delItem("copy2");
         ref.check(1, pyObject);
 
-        ReferenceCounting.blackhole(scope, pyObject);
+        ReferenceCounting.blackhole(scope);
     }
 
     @Test
@@ -133,7 +129,7 @@ public class ReferenceCountingTest extends PythonTest {
         final PyObject javaCopy2 = scope.asDict().get("copy1");
         ref.check(4, pyObject);
 
-        ReferenceCounting.blackhole(scope, pyObject, javaCopy1, javaCopy2);
+        ReferenceCounting.blackhole(scope, javaCopy1, javaCopy2);
     }
 
 
@@ -148,8 +144,6 @@ public class ReferenceCountingTest extends PythonTest {
         // Ensure that if our explicit type is less specific, reference counting is still correct
         noop.noop((Object) pyObject);
         ref.check(1, pyObject);
-
-        ReferenceCounting.blackhole(pyObject);
     }
 
     @Test
@@ -162,8 +156,7 @@ public class ReferenceCountingTest extends PythonTest {
 
         final PyObject copy2 = pyOut.identity((Object) pyObject);
         ref.check(3, pyObject);
-
-        ReferenceCounting.blackhole(pyObject, copy1, copy2);
+        ReferenceCounting.blackhole(copy1, copy2);
     }
 
     @Test
@@ -174,7 +167,6 @@ public class ReferenceCountingTest extends PythonTest {
         ref.check(2, devin);
         PyObject.executeCode("del devin", PyInputMode.STATEMENT);
         ref.check(1, devin);
-        ReferenceCounting.blackhole(devin);
     }
 
     @Test
@@ -230,5 +222,34 @@ public class ReferenceCountingTest extends PythonTest {
             ref.check(1, simpleObject);
             ref.check(1, someValue);
         }
+    }
+
+    @Test
+    public void expressionHasRefCount1() {
+        final PyObject pyObject = PyObject.executeCode("'expressionHasRefCount1'", PyInputMode.EXPRESSION);
+        ref.check(1, pyObject);
+    }
+
+    @Test
+    public void simpleIdentitiesHaveRefCount1() {
+        ref.check(1, pyOut.identity(12341234));
+        ref.check(1, pyOut.identity("'identitiesHaveRefCount1'"));
+        ref.check(1, pyOut.identity(new SomeJavaClass()));
+        ref.check(1, pyOut.identity(new int[] {1, 2, 3, 4, 1, 2, 3, 4}));
+        ref.check(1, pyOut.identity(new Integer[] {1, null, 42}));
+        ref.check(1, pyOut.identity(new String[] {"1", null, "42"}));
+        ref.check(1, pyOut.identity(new SomeJavaClass[] {new SomeJavaClass(), null}));
+    }
+
+    @Test
+    public void intIdentity() {
+        PyObject pyObject = pyOut.identity(1234213498);
+        ref.check(1, pyObject);
+
+        PyObject identity = pyOut.identity(pyObject);
+        Assert.assertNotSame(pyObject, identity);
+        Assert.assertEquals(pyObject, identity);
+        ref.check(2, pyObject);
+        ref.check(2, identity);
     }
 }

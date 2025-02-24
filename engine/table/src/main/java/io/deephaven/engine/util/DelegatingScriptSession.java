@@ -1,18 +1,20 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.util;
 
-import io.deephaven.engine.table.lang.QueryScope;
+import io.deephaven.engine.context.QueryScope;
 import io.deephaven.engine.liveness.LivenessReferent;
-import io.deephaven.engine.util.scripts.ScriptPathLoader;
-import io.deephaven.engine.util.scripts.ScriptPathLoaderState;
+import io.deephaven.engine.context.ExecutionContext;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.lang.ref.WeakReference;
 import java.nio.file.Path;
 import java.util.HashSet;
-import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
-import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 /**
  * The delegating script session delegates all calls to another script session. When evaluating a script it massages the
@@ -24,7 +26,7 @@ public class DelegatingScriptSession implements ScriptSession {
     private final Set<String> knownVariables = new HashSet<>();
 
     public DelegatingScriptSession(final ScriptSession delegate) {
-        this.delegate = delegate;
+        this.delegate = Objects.requireNonNull(delegate);
     }
 
     private Changes contextualizeChanges(final Changes diff) {
@@ -50,20 +52,19 @@ public class DelegatingScriptSession implements ScriptSession {
         return diff;
     }
 
-    @NotNull
     @Override
-    public Object getVariable(String name) throws QueryScope.MissingVariableException {
-        return delegate.getVariable(name);
+    public ExecutionContext getExecutionContext() {
+        return delegate.getExecutionContext();
     }
 
     @Override
-    public <T> T getVariable(String name, T defaultValue) {
-        return delegate.getVariable(name, defaultValue);
+    public void observeScopeChanges() {
+        delegate.observeScopeChanges();
     }
 
     @Override
-    public VariableProvider getVariableProvider() {
-        return delegate.getVariableProvider();
+    public QueryScope getQueryScope() {
+        return delegate.getQueryScope();
     }
 
     @Override
@@ -77,59 +78,23 @@ public class DelegatingScriptSession implements ScriptSession {
     }
 
     @Override
-    public Map<String, Object> getVariables() {
-        return delegate.getVariables();
-    }
-
-    @Override
-    public Set<String> getVariableNames() {
-        return delegate.getVariableNames();
-    }
-
-    @Override
-    public boolean hasVariableName(String name) {
-        return delegate.hasVariableName(name);
-    }
-
-    @Override
-    public void setVariable(String name, Object value) {
-        delegate.setVariable(name, value);
-    }
-
-    @Override
     public String scriptType() {
         return delegate.scriptType();
     }
 
     @Override
-    public void onApplicationInitializationBegin(Supplier<ScriptPathLoader> pathLoader,
-            ScriptPathLoaderState scriptLoaderState) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void onApplicationInitializationEnd() {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void setScriptPathLoader(Supplier<ScriptPathLoader> scriptPathLoader, boolean caching) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void clearScriptPathLoader() {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean setUseOriginalScriptLoaderState(boolean useOriginal) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
     public boolean tryManage(@NotNull LivenessReferent referent) {
         return delegate.tryManage(referent);
+    }
+
+    @Override
+    public boolean tryUnmanage(@NotNull LivenessReferent referent) {
+        return delegate.tryUnmanage(referent);
+    }
+
+    @Override
+    public boolean tryUnmanage(@NotNull Stream<? extends LivenessReferent> referents) {
+        return delegate.tryUnmanage(referents);
     }
 
     @Override
@@ -145,10 +110,5 @@ public class DelegatingScriptSession implements ScriptSession {
     @Override
     public WeakReference<? extends LivenessReferent> getWeakReference() {
         return delegate.getWeakReference();
-    }
-
-    @Override
-    public void release() {
-        delegate.release();
     }
 }

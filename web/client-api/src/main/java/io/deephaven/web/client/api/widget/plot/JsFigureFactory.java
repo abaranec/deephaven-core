@@ -1,27 +1,32 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.web.client.api.widget.plot;
 
+import com.vertispan.tsdefs.annotations.TsTypeRef;
 import elemental2.core.JsArray;
-import elemental2.dom.CustomEventInit;
 import elemental2.promise.Promise;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.console_pb.FetchFigureResponse;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.console_pb.FigureDescriptor;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.console_pb.figuredescriptor.*;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.console_pb.FigureDescriptor;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.console_pb.figuredescriptor.AxisDescriptor;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.console_pb.figuredescriptor.ChartDescriptor;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.console_pb.figuredescriptor.MultiSeriesDescriptor;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.console_pb.figuredescriptor.SeriesDescriptor;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.console_pb.figuredescriptor.SourceDescriptor;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.object_pb.FetchObjectResponse;
+import io.deephaven.web.client.api.JsPartitionedTable;
 import io.deephaven.web.client.api.JsTable;
-import io.deephaven.web.client.api.TableMap;
-import io.deephaven.web.client.fu.JsPromise;
 import io.deephaven.web.shared.fu.RemoverFn;
 import jsinterop.annotations.JsMethod;
 import jsinterop.base.Js;
 import jsinterop.base.JsPropertyMap;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
 public class JsFigureFactory {
     @JsMethod(namespace = "dh.plot.Figure", name = "create")
-    public static Promise<JsFigure> create(Object config) {
+    public static Promise<JsFigure> create(@TsTypeRef(JsFigureDescriptor.class) Object config) {
         if (config instanceof JsFigureDescriptor) {
             return create((JsFigureDescriptor) config);
         } else {
@@ -38,65 +43,67 @@ public class JsFigureFactory {
         }
 
         FigureDescriptor figureDescriptor = convertJsFigureDescriptor(descriptor);
-        FetchFigureResponse response = new FetchFigureResponse();
-        response.setFigureDescriptor(figureDescriptor);
-        return JsPromise.all(tables.map((table, index, all) -> table.copy(false)))
-                .then(tableCopies -> new JsFigure(
-                        c -> c.apply(null, response),
-                        (figure, descriptor1) -> {
-                            // We need to listen for disconnects and reconnects
-                            boolean[] isTableDisconnected = new boolean[tableCopies.length];
-                            ArrayList<RemoverFn> removerFns = new ArrayList<>(tableCopies.length * 3);
+        FetchObjectResponse response = new FetchObjectResponse();
+        response.setData(figureDescriptor.serializeBinary());
+        Promise<?>[] tableCopyPromises =
+                tables.map((table, index) -> table.copy(false)).asArray(new Promise[0]);
+        return Promise.all(tableCopyPromises)
+                .then(unknownTableCopies -> {
+                    JsArray<JsTable> jsTableCopies = Js.cast(unknownTableCopies);
+                    JsTable[] tableCopies = jsTableCopies.asArray(new JsTable[0]);
+                    return new JsFigure(
+                            c -> c.apply(null, response),
+                            (figure, descriptor1) -> {
+                                // We need to listen for disconnects and reconnects
+                                boolean[] isTableDisconnected = new boolean[tableCopies.length];
+                                ArrayList<RemoverFn> removerFns = new ArrayList<>(tableCopies.length * 3);
 
-                            for (int i = 0; i < tableCopies.length; i++) {
-                                final int tableIndex = i;
-                                // Tables are closed when the figure is closed, no need to remove listeners later
-                                removerFns.add(tableCopies[i].addEventListener(JsTable.EVENT_DISCONNECT, ignore -> {
-                                    isTableDisconnected[tableIndex] = true;
-                                    for (int j = 0; j < isTableDisconnected.length; j++) {
-                                        if (isTableDisconnected[j] && j != tableIndex) {
-                                            return;
+                                for (int i = 0; i < tableCopies.length; i++) {
+                                    final int tableIndex = i;
+                                    // Tables are closed when the figure is closed, no need to remove listeners later
+                                    removerFns.add(tableCopies[i].addEventListener(JsTable.EVENT_DISCONNECT, ignore -> {
+                                        isTableDisconnected[tableIndex] = true;
+                                        for (int j = 0; j < isTableDisconnected.length; j++) {
+                                            if (isTableDisconnected[j] && j != tableIndex) {
+                                                return;
+                                            }
                                         }
-                                    }
 
-                                    figure.fireEvent(JsFigure.EVENT_DISCONNECT);
-                                    figure.unsubscribe();
-                                }));
-                                removerFns.add(tableCopies[i].addEventListener(JsTable.EVENT_RECONNECT, ignore -> {
-                                    isTableDisconnected[tableIndex] = false;
-                                    for (int j = 0; j < isTableDisconnected.length; j++) {
-                                        if (isTableDisconnected[j]) {
-                                            return;
+                                        figure.fireEvent(JsFigure.EVENT_DISCONNECT);
+                                        figure.unsubscribe();
+                                    }));
+                                    removerFns.add(tableCopies[i].addEventListener(JsTable.EVENT_RECONNECT, ignore -> {
+                                        isTableDisconnected[tableIndex] = false;
+                                        for (int j = 0; j < isTableDisconnected.length; j++) {
+                                            if (isTableDisconnected[j]) {
+                                                return;
+                                            }
                                         }
-                                    }
 
-                                    try {
-                                        figure.verifyTables();
-                                        figure.fireEvent(JsFigure.EVENT_RECONNECT);
-                                        figure.enqueueSubscriptionCheck();
-                                    } catch (JsFigure.FigureSourceException e) {
-                                        final CustomEventInit init = CustomEventInit.create();
-                                        init.setDetail(e);
-                                        figure.fireEvent(JsFigure.EVENT_RECONNECTFAILED, init);
-                                    }
-                                }));
-                                removerFns.add(tableCopies[i].addEventListener(JsTable.EVENT_RECONNECTFAILED, err -> {
-                                    for (RemoverFn removerFn : removerFns) {
-                                        removerFn.remove();
-                                    }
-                                    figure.unsubscribe();
+                                        try {
+                                            figure.verifyTables();
+                                            figure.fireEvent(JsFigure.EVENT_RECONNECT);
+                                            figure.enqueueSubscriptionCheck();
+                                        } catch (JsFigure.FigureSourceException e) {
+                                            figure.fireEvent(JsFigure.EVENT_RECONNECTFAILED, e);
+                                        }
+                                    }));
+                                    removerFns
+                                            .add(tableCopies[i].addEventListener(JsTable.EVENT_RECONNECTFAILED, err -> {
+                                                for (RemoverFn removerFn : removerFns) {
+                                                    removerFn.remove();
+                                                }
+                                                figure.unsubscribe();
 
-                                    final CustomEventInit init = CustomEventInit.create();
-                                    init.setDetail(err);
-                                    figure.fireEvent(JsFigure.EVENT_RECONNECTFAILED, init);
-                                }));
-                            }
+                                                figure.fireEvent(JsFigure.EVENT_RECONNECTFAILED, err);
+                                            }));
+                                }
 
-                            return Promise.resolve(new JsFigure.FigureTableFetchData(
-                                    tableCopies,
-                                    new TableMap[0],
-                                    Collections.emptyMap()));
-                        }).refetch());
+                                return Promise.resolve(new JsFigure.FigureTableFetchData(
+                                        tableCopies,
+                                        new JsPartitionedTable[0]));
+                            }).refetch();
+                });
     }
 
     private static FigureDescriptor convertJsFigureDescriptor(JsFigureDescriptor jsDescriptor) {
@@ -104,15 +111,11 @@ public class JsFigureFactory {
         descriptor.setTitle(jsDescriptor.title);
         descriptor.setTitleFont(jsDescriptor.titleFont);
         descriptor.setTitleColor(jsDescriptor.titleColor);
-        descriptor.setUpdateInterval(jsDescriptor.updateInterval);
+        descriptor.setUpdateInterval("" + jsDescriptor.updateInterval);
         descriptor.setCols(jsDescriptor.cols);
         descriptor.setRows(jsDescriptor.rows);
 
         JsArray<JsTable> tables = jsDescriptor.getTables();
-        // The only thing used by the Figure with the tableIds (outside of the default fetchTables function) is the
-        // length of these tableIds.
-        descriptor.setTablesList(new JsArray<>());
-        descriptor.getTablesList().length = tables.length;
 
         JsArray<JsChartDescriptor> charts = jsDescriptor.charts;
         ChartDescriptor[] chartDescriptors = new ChartDescriptor[charts.length];

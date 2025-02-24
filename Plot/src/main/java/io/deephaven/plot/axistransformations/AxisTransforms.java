@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.plot.axistransformations;
 
 import io.deephaven.time.calendar.BusinessCalendar;
@@ -112,15 +111,13 @@ public enum AxisTransforms implements AxisTransform, Serializable {
                 Arrays.stream(values()).map(Enum::name).collect(Collectors.toCollection(LinkedHashSet::new));
         final Set<String> calendars = new LinkedHashSet<>(Arrays.asList(Calendars.calendarNames()));
         final Set<String> conflicts = new LinkedHashSet<>(results);
-        final boolean hasConflicts = conflicts.retainAll(calendars);
+        conflicts.retainAll(calendars);
 
-        if (hasConflicts) {
+        if (!conflicts.isEmpty()) {
             log.warning("AxisTransform enum and calendar names have conflicting values: values=" + conflicts);
         }
 
         results.addAll(calendars);
         return results.toArray(new String[0]);
     }
-
-
 }

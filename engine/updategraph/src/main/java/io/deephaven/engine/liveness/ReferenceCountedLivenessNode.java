@@ -1,17 +1,20 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.liveness;
 
-
+import io.deephaven.util.SafeCloseable;
 import io.deephaven.util.Utils;
 import io.deephaven.util.annotations.VisibleForTesting;
-import io.deephaven.util.referencecounting.ReferenceCounted;
 import org.jetbrains.annotations.NotNull;
 
 import java.lang.ref.WeakReference;
+import java.util.stream.Stream;
 
 /**
  * {@link LivenessNode} implementation that relies on reference counting to determine its liveness.
  */
-public abstract class ReferenceCountedLivenessNode extends ReferenceCounted implements LivenessNode {
+public abstract class ReferenceCountedLivenessNode extends ReferenceCountedLivenessReferent implements LivenessNode {
 
     final boolean enforceStrongReachability;
 
@@ -44,28 +47,6 @@ public abstract class ReferenceCountedLivenessNode extends ReferenceCounted impl
     }
 
     @Override
-    public final boolean tryRetainReference() {
-        if (Liveness.REFERENCE_TRACKING_DISABLED) {
-            return true;
-        }
-        return tryIncrementReferenceCount();
-    }
-
-    @Override
-    public final void dropReference() {
-        if (Liveness.REFERENCE_TRACKING_DISABLED) {
-            return;
-        }
-        if (Liveness.DEBUG_MODE_ENABLED) {
-            Liveness.log.info().append("LivenessDebug: Releasing ").append(Utils.REFERENT_FORMATTER, this).endl();
-        }
-        if (!tryDecrementReferenceCount()) {
-            throw new LivenessStateException(
-                    getReferentDescription() + " could not be released as it was no longer live");
-        }
-    }
-
-    @Override
     public WeakReference<? extends LivenessReferent> getWeakReference() {
         return tracker;
     }
@@ -79,34 +60,56 @@ public abstract class ReferenceCountedLivenessNode extends ReferenceCounted impl
             Liveness.log.info().append("LivenessDebug: ").append(getReferentDescription()).append(" managing ")
                     .append(referent.getReferentDescription()).endl();
         }
-        if (!referent.tryRetainReference()) {
+        if (!tryRetainReference()) {
             return false;
         }
-        tracker.addReference(referent);
+        try {
+            if (!referent.tryRetainReference()) {
+                return false;
+            }
+            tracker.addReference(referent);
+        } finally {
+            dropReference();
+        }
         return true;
     }
 
-    /**
-     * <p>
-     * Attempt to release (destructively when necessary) resources held by this object. This may render the object
-     * unusable for subsequent operations. Implementations should be sure to call super.destroy().
-     * <p>
-     * This is intended to only ever be used as a side effect of decreasing the reference count to 0.
-     */
-    protected void destroy() {}
-
     @Override
-    protected final void onReferenceCountAtZero() {
+    public final boolean tryUnmanage(@NotNull final LivenessReferent referent) {
         if (Liveness.REFERENCE_TRACKING_DISABLED) {
-            throw new IllegalStateException(
-                    "Reference count on " + this + " reached zero while liveness reference tracking is disabled");
+            return true;
+        }
+        if (!tryRetainReference()) {
+            return false;
         }
         try {
-            destroy();
-        } catch (Exception e) {
-            Liveness.log.warn().append("Exception while destroying ").append(Utils.REFERENT_FORMATTER, this)
-                    .append(" after reference count reached zero: ").append(e).endl();
+            tracker.dropReference(referent);
+        } finally {
+            dropReference();
         }
-        tracker.ensureReferencesDropped();
+        return true;
+    }
+
+    @Override
+    public final boolean tryUnmanage(@NotNull final Stream<? extends LivenessReferent> referents) {
+        if (Liveness.REFERENCE_TRACKING_DISABLED) {
+            return true;
+        }
+        if (!tryRetainReference()) {
+            return false;
+        }
+        try {
+            tracker.dropReferences(referents);
+        } finally {
+            dropReference();
+        }
+        return true;
+    }
+
+    @Override
+    public final void onReferenceCountAtZero() {
+        try (final SafeCloseable ignored = tracker.enqueueReferencesForDrop()) {
+            super.onReferenceCountAtZero();
+        }
     }
 }

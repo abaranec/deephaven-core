@@ -1,14 +1,27 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.api.agg.spec;
 
-import io.deephaven.annotations.SimpleStyle;
+import io.deephaven.annotations.SingletonStyle;
 import org.immutables.value.Value.Immutable;
 
+/**
+ * Specifies an aggregation that outputs the arithmetic mean for each group. Only works with numeric input types.
+ *
+ * @see io.deephaven.api.TableOperations#avgBy
+ */
 @Immutable
-@SimpleStyle
+@SingletonStyle
 public abstract class AggSpecAvg extends AggSpecEmptyBase {
 
     public static AggSpecAvg of() {
         return ImmutableAggSpecAvg.of();
+    }
+
+    @Override
+    public final String description() {
+        return "average";
     }
 
     @Override

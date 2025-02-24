@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.select;
 
 import io.deephaven.base.clock.Clock;
@@ -13,21 +12,25 @@ import io.deephaven.engine.rowset.RowSetFactory;
 import io.deephaven.engine.table.Table;
 import io.deephaven.engine.table.TableDefinition;
 import io.deephaven.engine.table.impl.lang.QueryLanguageFunctionUtils;
-import io.deephaven.engine.updategraph.UpdateGraphProcessor;
-import io.deephaven.time.DateTime;
+import io.deephaven.engine.table.impl.sources.ReinterpretUtils;
 import io.deephaven.engine.updategraph.DynamicNode;
 import io.deephaven.engine.table.impl.QueryTable;
 import io.deephaven.engine.table.ColumnSource;
+import io.deephaven.engine.updategraph.NotificationQueue;
+import io.deephaven.engine.updategraph.UpdateGraph;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import javax.annotation.OverridingMethodsMustInvokeSuper;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 
 /**
  * Boilerplate super-class for various clock-oriented filters.
  */
-public abstract class ClockFilter extends WhereFilterLivenessArtifactImpl implements ReindexingFilter, Runnable {
+public abstract class ClockFilter extends WhereFilterLivenessArtifactImpl
+        implements ReindexingFilter, Runnable, NotificationQueue.Dependency {
 
     protected final String columnName;
     protected final Clock clock;
@@ -56,9 +59,13 @@ public abstract class ClockFilter extends WhereFilterLivenessArtifactImpl implem
         return Collections.emptyList();
     }
 
+    @NotNull
     @Override
-    public final WritableRowSet filter(@NotNull final RowSet selection, @NotNull final RowSet fullSet,
-            @NotNull final Table table, boolean usePrev) {
+    public final WritableRowSet filter(
+            @NotNull final RowSet selection,
+            @NotNull final RowSet fullSet,
+            @NotNull final Table table,
+            final boolean usePrev) {
         if (usePrev) {
             throw new PreviousFilteringNotSupported();
         }
@@ -67,15 +74,7 @@ public abstract class ClockFilter extends WhereFilterLivenessArtifactImpl implem
         Require.requirement(DynamicNode.notDynamicOrNotRefreshing(table),
                 "DynamicNode.notDynamicOrNotRefreshing(table)");
 
-        final ColumnSource<DateTime> dateTimeColumnSource = table.getColumnSource(columnName);
-        // Obviously, column needs to be of date-time values.
-        Require.requirement(DateTime.class.isAssignableFrom(dateTimeColumnSource.getType()),
-                "DateTime.class.isAssignableFrom(dateTimeColumnSource.getType())");
-
-        nanosColumnSource = dateTimeColumnSource.allowsReinterpret(long.class)
-                ? table.dateTimeColumnAsNanos(columnName).getColumnSource(columnName)
-                : table.view(columnName + " = isNull(" + columnName + ") ? NULL_LONG : " + columnName + ".getNanos()")
-                        .getColumnSource(columnName);
+        nanosColumnSource = ReinterpretUtils.instantToLongSource(table.getColumnSource(columnName, Instant.class));
 
         final WritableRowSet initial = initializeAndGetInitialIndex(selection, fullSet, table);
         return initial == null ? RowSetFactory.empty() : initial;
@@ -97,19 +96,30 @@ public abstract class ClockFilter extends WhereFilterLivenessArtifactImpl implem
     }
 
     @Override
+    public boolean satisfied(long step) {
+        return updateGraph.satisfied(step);
+    }
+
+    @Override
+    public UpdateGraph getUpdateGraph() {
+        return updateGraph;
+    }
+
+    @Override
     public final void setRecomputeListener(@NotNull final RecomputeListener listener) {
         if (!refreshing) {
             return;
         }
-        UpdateGraphProcessor.DEFAULT.addSource(this);
+        updateGraph.addSource(this);
         this.resultTable = listener.getTable();
         listener.setIsRefreshing(true);
     }
 
+    @OverridingMethodsMustInvokeSuper
     @Override
     protected void destroy() {
         super.destroy();
-        UpdateGraphProcessor.DEFAULT.removeSource(this);
+        updateGraph.removeSource(this);
     }
 
     @Override
@@ -117,8 +127,7 @@ public abstract class ClockFilter extends WhereFilterLivenessArtifactImpl implem
         final RowSet added = updateAndGetAddedIndex();
         if (added != null && !added.isEmpty()) {
             resultTable.getRowSet().writableCast().insert(added);
-            resultTable.notifyListeners(added, RowSetFactory.empty(),
-                    RowSetFactory.empty());
+            resultTable.notifyListeners(added, RowSetFactory.empty(), RowSetFactory.empty());
         }
     }
 

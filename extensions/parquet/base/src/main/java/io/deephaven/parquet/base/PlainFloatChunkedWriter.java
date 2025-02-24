@@ -1,40 +1,42 @@
-/* ---------------------------------------------------------------------------------------------------------------------
- * AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY - for any changes edit PlainIntChunkedWriter and regenerate
- * ------------------------------------------------------------------------------------------------------------------ */
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
+// ****** AUTO-GENERATED CLASS - DO NOT EDIT MANUALLY
+// ****** Edit PlainIntChunkedWriter and run "./gradlew replicateParquetChunkedWriters" to regenerate
+//
+// @formatter:off
 package io.deephaven.parquet.base;
 
-import io.deephaven.parquet.base.util.Helpers;
+import io.deephaven.util.QueryConstants;
 import org.apache.parquet.bytes.ByteBufferAllocator;
 import org.apache.parquet.bytes.BytesInput;
 import org.apache.parquet.column.Encoding;
+import org.apache.parquet.column.statistics.Statistics;
 import org.apache.parquet.column.values.rle.RunLengthBitPackingHybridEncoder;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.*;
-
+import java.nio.FloatBuffer;
+import java.nio.IntBuffer;
 
 /**
- * Plain encoding except for booleans
+ * A writer for encoding floats in the PLAIN format
  */
-public class PlainFloatChunkedWriter extends AbstractBulkValuesWriter<FloatBuffer, Float> {
+final class PlainFloatChunkedWriter extends AbstractBulkValuesWriter<FloatBuffer> {
+    private static final int MAXIMUM_TOTAL_CAPACITY = Integer.MAX_VALUE / Float.BYTES;
     private final ByteBufferAllocator allocator;
-    private final int originalLimit;
 
     private FloatBuffer targetBuffer;
     private ByteBuffer innerBuffer;
+    private IntBuffer nullOffsets;
 
-    PlainFloatChunkedWriter(int pageSize, ByteBufferAllocator allocator) {
-        innerBuffer = allocator.allocate(pageSize);
-        innerBuffer.order(ByteOrder.LITTLE_ENDIAN);
-        originalLimit = innerBuffer.limit();
+    PlainFloatChunkedWriter(final int targetPageSize, @NotNull final ByteBufferAllocator allocator) {
         this.allocator = allocator;
-        targetBuffer = innerBuffer.asFloatBuffer();
-        targetBuffer.mark();
-        innerBuffer.mark();
+        realloc(targetPageSize);
+        nullOffsets = IntBuffer.allocate(4);
     }
-
 
     @Override
     public final void writeFloat(float v) {
@@ -43,7 +45,7 @@ public class PlainFloatChunkedWriter extends AbstractBulkValuesWriter<FloatBuffe
 
     @Override
     public long getBufferedSize() {
-        return targetBuffer.remaining() * Float.BYTES;
+        return (long) targetBuffer.remaining() * Float.BYTES;
     }
 
     @Override
@@ -54,8 +56,8 @@ public class PlainFloatChunkedWriter extends AbstractBulkValuesWriter<FloatBuffe
 
     @Override
     public void reset() {
-        innerBuffer.limit(originalLimit);
         innerBuffer.reset();
+        innerBuffer.limit(innerBuffer.capacity());
         targetBuffer.reset();
     }
 
@@ -86,47 +88,101 @@ public class PlainFloatChunkedWriter extends AbstractBulkValuesWriter<FloatBuffe
     }
 
     @Override
-    public void writeBulk(FloatBuffer bulkValues, int rowCount) {
+    public void writeBulk(@NotNull FloatBuffer bulkValues,
+            final int rowCount,
+            @NotNull final Statistics<?> statistics) {
+        ensureCapacityFor(bulkValues);
+        // Generate statistics before we perform the bulk write.
+        for (int i = 0; i < rowCount; i++) {
+            statistics.updateStats(bulkValues.get(i));
+        }
         targetBuffer.put(bulkValues);
     }
 
+    @NotNull
     @Override
-    public WriteResult writeBulkFilterNulls(FloatBuffer bulkValues, Float nullValue, RunLengthBitPackingHybridEncoder dlEncoder, int rowCount) throws IOException {
-        float nullFloat = nullValue;
-        int nullCount = 0;
+    public WriteResult writeBulkFilterNulls(@NotNull final FloatBuffer bulkValues,
+            @NotNull final RunLengthBitPackingHybridEncoder dlEncoder,
+            final int rowCount,
+            @NotNull final Statistics<?> statistics) throws IOException {
+        ensureCapacityFor(bulkValues);
         while (bulkValues.hasRemaining()) {
-            float next = bulkValues.get();
-            if (next != nullFloat) {
-                writeFloat(next);
-                dlEncoder.writeInt(1);
+            final float v = bulkValues.get();
+            if (v != QueryConstants.NULL_FLOAT) {
+                writeFloat(v);
+                statistics.updateStats(v);
+                dlEncoder.writeInt(DL_ITEM_PRESENT);
             } else {
-                nullCount++;
-                dlEncoder.writeInt(0);
+                statistics.incrementNumNulls();
+                dlEncoder.writeInt(DL_ITEM_NULL);
             }
         }
         return new WriteResult(rowCount);
     }
 
+    @NotNull
     @Override
-    public WriteResult writeBulkFilterNulls(FloatBuffer bulkValues, Float nullValue, int rowCount) {
-        float nullFloat = nullValue;
-        int nullCount = 0;
+    public WriteResult writeBulkVectorFilterNulls(@NotNull final FloatBuffer bulkValues,
+            final int rowCount,
+            @NotNull final Statistics<?> statistics) {
+        ensureCapacityFor(bulkValues);
         int i = 0;
-        IntBuffer nullOffsets = IntBuffer.allocate(4);
+        nullOffsets.clear();
         while (bulkValues.hasRemaining()) {
-            float next = bulkValues.get();
-            if (next != nullFloat) {
-                writeFloat(next);
+            final float v = bulkValues.get();
+            if (v != QueryConstants.NULL_FLOAT) {
+                writeFloat(v);
+                statistics.updateStats(v);
             } else {
                 nullOffsets = Helpers.ensureCapacity(nullOffsets);
                 nullOffsets.put(i);
-                nullCount++;
+                statistics.incrementNumNulls();
             }
             i++;
         }
         return new WriteResult(rowCount, nullOffsets);
     }
 
+    private void ensureCapacityFor(@NotNull final FloatBuffer valuesToAdd) {
+        if (!valuesToAdd.hasRemaining()) {
+            return;
+        }
 
+        final int currentCapacity = targetBuffer.capacity();
+        final int currentPosition = targetBuffer.position();
+        final long requiredCapacity = (long) currentPosition + valuesToAdd.remaining();
+        if (requiredCapacity < currentCapacity) {
+            return;
+        }
 
+        if (requiredCapacity > MAXIMUM_TOTAL_CAPACITY) {
+            throw new IllegalStateException("Unable to write " + requiredCapacity + " values. (Maximum capacity: "
+                    + MAXIMUM_TOTAL_CAPACITY + ".)");
+        }
+
+        int newCapacity = currentCapacity;
+        while (newCapacity < requiredCapacity) {
+            // note: since MAXIMUM_TOTAL_CAPACITY <= Integer.MAX_VALUE / 2, doubling 'newCapacity' will never overflow
+            newCapacity = Math.min(MAXIMUM_TOTAL_CAPACITY, newCapacity * 2);
+        }
+
+        realloc(newCapacity * Float.BYTES);
+    }
+
+    private void realloc(final int newCapacity) {
+        final ByteBuffer newBuf = allocator.allocate(newCapacity);
+        newBuf.order(ByteOrder.LITTLE_ENDIAN);
+        final FloatBuffer newFloatBuf = newBuf.asFloatBuffer();
+        newBuf.mark();
+        newFloatBuf.mark();
+
+        if (this.innerBuffer != null) {
+            targetBuffer.limit(targetBuffer.position());
+            targetBuffer.reset();
+            newFloatBuf.put(targetBuffer);
+            allocator.release(innerBuffer);
+        }
+        innerBuffer = newBuf;
+        targetBuffer = newFloatBuf;
+    }
 }

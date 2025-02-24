@@ -1,10 +1,9 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.base.stats;
 
-import io.deephaven.base.Function;
+import java.util.function.LongFunction;
 
 // --------------------------------------------------------------------
 /**
@@ -21,7 +20,7 @@ import io.deephaven.base.Function;
  */
 public class State extends Value {
 
-    public static char TYPE_TAG = 'S';
+    public static final char TYPE_TAG = 'S';
 
     public State(long now) {
         super(now);
@@ -35,9 +34,5 @@ public class State extends Value {
         return TYPE_TAG;
     }
 
-    public static final Function.Unary<State, Long> FACTORY = new Function.Unary<State, Long>() {
-        public State call(Long now) {
-            return new State(now);
-        }
-    };
+    public static final LongFunction<State> FACTORY = State::new;
 }

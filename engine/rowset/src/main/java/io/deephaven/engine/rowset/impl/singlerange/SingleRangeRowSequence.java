@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.rowset.impl.singlerange;
 
 import io.deephaven.engine.rowset.chunkattributes.OrderedRowKeyRanges;
@@ -5,10 +8,10 @@ import io.deephaven.engine.rowset.chunkattributes.OrderedRowKeyRanges;
 import io.deephaven.engine.rowset.RowSequence;
 import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.engine.rowset.RowSequenceFactory;
+import io.deephaven.engine.rowset.chunkattributes.OrderedRowKeys;
 import io.deephaven.engine.rowset.impl.WritableRowSetImpl;
 import io.deephaven.engine.rowset.impl.RowSequenceAsChunkImpl;
 import io.deephaven.chunk.WritableLongChunk;
-import io.deephaven.engine.rowset.chunkattributes.RowKeys;
 
 public class SingleRangeRowSequence extends RowSequenceAsChunkImpl implements SingleRangeMixin {
     private long rangeStart;
@@ -24,7 +27,7 @@ public class SingleRangeRowSequence extends RowSequenceAsChunkImpl implements Si
         return rangeEnd;
     }
 
-    SingleRangeRowSequence(final long rangeStart, final long rangeEnd) {
+    public SingleRangeRowSequence(final long rangeStart, final long rangeEnd) {
         this.rangeStart = rangeStart;
         this.rangeEnd = rangeEnd;
     }
@@ -70,7 +73,7 @@ public class SingleRangeRowSequence extends RowSequenceAsChunkImpl implements Si
     }
 
     @Override
-    public void fillRowKeyChunk(final WritableLongChunk<? extends RowKeys> chunkToFill) {
+    public void fillRowKeyChunk(final WritableLongChunk<? super OrderedRowKeys> chunkToFill) {
         final int n = intSize();
         for (int i = 0; i < n; ++i) {
             chunkToFill.set(i, rangeStart() + i);

@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.web.client.api.widget.plot;
 
 import io.deephaven.web.client.api.JsTable;
@@ -15,6 +18,7 @@ public class JsSourceDescriptor {
     public JsTable table;
 
     public String columnName;
+    // TODO (deephaven-core#3442) change to some kind of String+int union type
     public String type;
 
     @JsConstructor

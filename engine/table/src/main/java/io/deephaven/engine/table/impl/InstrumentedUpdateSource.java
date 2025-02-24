@@ -1,29 +1,48 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl;
 
 import io.deephaven.engine.table.impl.perf.PerformanceEntry;
-import io.deephaven.engine.table.impl.perf.UpdatePerformanceTracker;
+import io.deephaven.engine.updategraph.UpdateSourceRegistrar;
+import io.deephaven.engine.updategraph.impl.PeriodicUpdateGraph;
+import org.jetbrains.annotations.NotNull;
+
+import javax.annotation.Nullable;
+import java.util.Objects;
 
 public abstract class InstrumentedUpdateSource implements Runnable {
 
+    protected final UpdateSourceRegistrar updateSourceRegistrar;
+    @Nullable
     protected final PerformanceEntry entry;
 
-    public InstrumentedUpdateSource(String description) {
-        this.entry = UpdatePerformanceTracker.getInstance().getEntry(description);
+    public InstrumentedUpdateSource(
+            @NotNull final UpdateSourceRegistrar updateSourceRegistrar,
+            @Nullable final String description) {
+        this.updateSourceRegistrar = Objects.requireNonNull(updateSourceRegistrar);
+        this.entry = PeriodicUpdateGraph.createUpdatePerformanceEntry(
+                updateSourceRegistrar.getUpdateGraph(), description);
     }
 
     @Override
     public final void run() {
-        entry.onUpdateStart();
+        if (entry != null) {
+            entry.onUpdateStart();
+        }
         try {
             instrumentedRefresh();
+        } catch (final Exception error) {
+            updateSourceRegistrar.removeSource(this);
+            onRefreshError(error);
         } finally {
-            entry.onUpdateEnd();
+            if (entry != null) {
+                entry.onUpdateEnd();
+            }
         }
     }
 
     protected abstract void instrumentedRefresh();
+
+    protected abstract void onRefreshError(Exception error);
 }

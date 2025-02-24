@@ -1,17 +1,18 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.api;
 
 import io.deephaven.annotations.SimpleStyle;
 import org.immutables.value.Value.Immutable;
 import org.immutables.value.Value.Parameter;
 
-import java.io.Serializable;
-
 /**
  * Represents a {@link #column() column} and {@link #order() order} pair.
  */
 @Immutable
 @SimpleStyle
-public abstract class SortColumn implements Serializable {
+public abstract class SortColumn {
 
     public enum Order {
         ASCENDING, DESCENDING

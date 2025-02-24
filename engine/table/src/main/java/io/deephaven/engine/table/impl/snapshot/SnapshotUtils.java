@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.snapshot;
 
 import io.deephaven.chunk.attributes.Values;
@@ -79,6 +82,20 @@ public class SnapshotUtils {
             final SingleValueColumnSource dest = destColumns.get(name);
             // noinspection unchecked
             dest.set(src.get(stampKey));
+        }
+    }
+
+    /**
+     * Like the above, but with a singleton destination that will be set to the appropriate {@code null} value.
+     *
+     * @param stampColumns The stamp columns that serve as the source data
+     * @param destColumns The destination columns we are writing to
+     */
+    public static void setNullStampColumns(
+            @NotNull Map<String, ? extends ColumnSource<?>> stampColumns,
+            @NotNull Map<String, SingleValueColumnSource<?>> destColumns) {
+        for (String name : stampColumns.keySet()) {
+            destColumns.get(name).setNull();
         }
     }
 
@@ -167,16 +184,16 @@ public class SnapshotUtils {
         }
 
         @Override
-        public Vector<?> get(long index) {
-            Vector<?> vector = super.get(index);
+        public Vector<?> get(long rowKey) {
+            Vector<?> vector = super.get(rowKey);
             if (vector == null)
                 return null;
             return vector.getDirect();
         }
 
         @Override
-        public Vector<?> getPrev(long index) {
-            Vector<?> vector = super.getPrev(index);
+        public Vector<?> getPrev(long rowKey) {
+            Vector<?> vector = super.getPrev(rowKey);
             if (vector == null)
                 return null;
             return vector.getDirect();

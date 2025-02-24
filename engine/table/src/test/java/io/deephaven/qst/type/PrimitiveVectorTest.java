@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.qst.type;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -14,7 +17,6 @@ public class PrimitiveVectorTest {
     public void types()
             throws ClassNotFoundException, NoSuchMethodException, InvocationTargetException, IllegalAccessException {
         assertThat(PrimitiveVectorType.types()).containsExactlyInAnyOrder(
-                BooleanVector.type(),
                 ByteVector.type(),
                 CharVector.type(),
                 ShortVector.type(),

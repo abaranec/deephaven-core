@@ -1,25 +1,34 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.csv;
 
 import io.deephaven.csv.util.CsvReaderException;
 import io.deephaven.engine.table.Table;
+import io.deephaven.engine.testutil.junit4.EngineCleanup;
 import io.deephaven.engine.util.TableTools;
-import io.deephaven.time.DateTime;
-import org.assertj.core.api.Assertions;
+import org.apache.commons.io.input.ReaderInputStream;
+import org.junit.Rule;
 import org.junit.Test;
-import org.junit.experimental.categories.Category;
 
-import java.io.*;
+import java.io.StringReader;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 
+import static io.deephaven.engine.testutil.TstUtils.assertTableEquals;
+
 public class DeephavenCsvTest {
+
+    @Rule
+    public final EngineCleanup base = new EngineCleanup();
+
     @Test
-    public void dateTimeCustomTimezone() throws CsvReaderException {
+    public void instantCustomTimezone() throws CsvReaderException {
         final ZoneId nycId = ZoneId.of("America/New_York");
-        final DateTime DATETIME_A =
-                DateTime.of(LocalDateTime.of(2019, 5, 2, 19, 33, 12, 123456789).atZone(nycId).toInstant());
-        final DateTime DATETIME_B =
-                DateTime.of(LocalDateTime.of(2017, 2, 2, 3, 18, 55, 987654321).atZone(nycId).toInstant());
+        Instant INSTANT_A = LocalDateTime.of(2019, 5, 2, 19, 33, 12, 123456789).atZone(nycId).toInstant();
+        Instant INSTANT_B = LocalDateTime.of(2017, 2, 2, 3, 18, 55, 987654321).atZone(nycId).toInstant();
 
         final String input = "" +
                 "Timestamp\n" +
@@ -27,15 +36,15 @@ public class DeephavenCsvTest {
                 "\n" +
                 "2017-02-02T03:18:55.987654321 NY\n";
 
-        final Table expected = TableTools.newTable(
-                TableTools.col("Timestamp", DATETIME_A, null, DATETIME_B));
+        final Table expected = TableTools.newTable(TableTools.col("Timestamp", INSTANT_A, null, INSTANT_B));
 
-        invokeTest(input, CsvSpecs.csv(), expected);
+        invokeTest(input, CsvTools.builder().build(), expected);
     }
 
     private static void invokeTest(String input, CsvSpecs specs, Table expected) throws CsvReaderException {
-        final Table actual = specs.parse(input);
-        final String differences = TableTools.diff(actual, expected, 25);
-        Assertions.assertThat(differences).isEmpty();
+        final StringReader reader = new StringReader(input);
+        final ReaderInputStream inputStream = new ReaderInputStream(reader, StandardCharsets.UTF_8);
+        final Table actual = CsvTools.readCsv(inputStream, specs);
+        assertTableEquals(expected, actual);
     }
 }

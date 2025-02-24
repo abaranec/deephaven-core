@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.vector;
 
 /**
@@ -5,10 +8,6 @@ package io.deephaven.vector;
  */
 @SuppressWarnings("unused")
 public class VectorConversions {
-
-    public static Boolean[] nullSafeVectorToArray(final BooleanVector vector) {
-        return vector == null ? null : vector.toArray();
-    }
 
     public static char[] nullSafeVectorToArray(final CharVector vector) {
         return vector == null ? null : vector.toArray();

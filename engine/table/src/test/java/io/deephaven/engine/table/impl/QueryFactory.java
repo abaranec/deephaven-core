@@ -1,7 +1,9 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl;
 
-import io.deephaven.time.DateTime;
-
+import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -52,7 +54,8 @@ public class QueryFactory {
     private static final String[] DEFAULT_COLUMN_NAMES = {"Timestamp", "MyString", "MyInt", "MyLong", "MyFloat",
             "MyDouble", "MyBoolean", "MyChar", "MyShort", "MyByte", "MyBigDecimal", "MyBigInteger"};
     private static final Class[] DEFAULT_COLUMN_TYPES =
-            {DateTime.class, String.class, Integer.class, Long.class, Float.class, Double.class, Boolean.class,
+            {
+                    Instant.class, String.class, Integer.class, Long.class, Float.class, Double.class, Boolean.class,
                     Character.class, short.class, byte.class, java.math.BigDecimal.class, java.math.BigInteger.class};
     // Copy and modify this block of code if you want to disable an operation.
     private static final String[] IMPLEMENTED_OPS = {"where", "merge", "flatten", "slice", "head", "tail", "headPct",
@@ -66,8 +69,8 @@ public class QueryFactory {
     private static final String[] SAFE_AGG = {"AggMin", "AggMax", "AggFirst", "AggLast"};
     private static final String[] SAFE_BY = {"maxBy", "minBy", "firstBy", "lastBy", "sortedFirstBy", "sortedLastBy"};
     private static final String[] FINAL_OPS =
-            {"selectDistinct", "byOperation", "aggCombo", "treeTable", "rollup", "applyToAllBy"};
-    private static final HashMap<String, String[]> DEFAULT_SWITCH_CONTROL = new HashMap<String, String[]>() {
+            {"selectDistinct", "byOperation", "aggCombo", "tree", "rollup", "applyToAllBy"};
+    private static final HashMap<String, String[]> DEFAULT_SWITCH_CONTROL = new HashMap<>() {
         {
             put("supportedOps", IMPLEMENTED_OPS);
             put("changingAgg", CHANGING_AGG);
@@ -156,7 +159,7 @@ public class QueryFactory {
      * @return Single string with the above format.
      */
     private String stringArrayToSingleArgumentList(Collection<String> values) {
-        return "\"" + values.stream().collect(Collectors.joining(",")) + "\"";
+        return "\"" + String.join(",", values) + "\"";
     }
 
     /**
@@ -214,7 +217,7 @@ public class QueryFactory {
                         addComboOperation(opNum, opChain, queryRandom, switchControlValues.get("changingAgg"),
                                 nameSeed);
                         break;
-                    case "treeTable":
+                    case "tree":
                         addTreeTableOperation(opNum, opChain, queryRandom, nameSeed);
                         break;
                     case "rollup":
@@ -265,13 +268,13 @@ public class QueryFactory {
         final int style = random.nextInt(10);// Make the old style rare
         if (style != 0) {
             // make sure we have at least some values
-            opChain.append("map = merge(table").append(nameSeed).append("_").append(opNum - 1).append(", ");
+            opChain.append("partitioned = merge(table").append(nameSeed).append("_").append(opNum - 1).append(", ");
             opChain.append(tableNameOne).append(".head(1L)").append(", ");
             opChain.append(tableNameTwo).append(".head(1L)").append(")");
 
             opChain.append(".partitionBy(\"").append(columnNames[random.nextInt(columnNames.length)]).append("\");\n");
             opChain.append("table").append(nameSeed).append("_").append(opNum).append(" = ");
-            opChain.append("map.asTable().merge();\n");
+            opChain.append("partitioned.merge();\n");
         } else {
             opChain.append("table").append(nameSeed).append("_").append(opNum).append(" = merge(");
             if (random.nextInt(2) == 0) {
@@ -444,19 +447,21 @@ public class QueryFactory {
 
         opChain.append(" \"Parent = `T`+").append(columnName).append("\");\n");
 
-        opChain.append("tree").append(nameSeed).append(" = merge(part1,part2).treeTable(\"ID\",\"Parent\");\n");
+        opChain.append("tree").append(nameSeed).append(" = merge(part1,part2).tree(\"ID\",\"Parent\");\n");
     }
 
     private void addPartitionByOperation(int opNum, StringBuilder opChain, Random random, String nameSeed) {
-        final StringBuilder mapName = new StringBuilder("map").append(nameSeed).append("_").append(opNum);
+        final StringBuilder partitionedName =
+                new StringBuilder("partitioned").append(nameSeed).append("_").append(opNum);
         final StringBuilder previousTableName =
                 new StringBuilder("table").append(nameSeed).append("_").append(opNum - 1);
-        opChain.append(mapName).append(" = ").append(previousTableName).append(".partitionBy(\"")
+        opChain.append(partitionedName).append(" = ").append(previousTableName).append(".partitionBy(\"")
                 .append(columnNames[random.nextInt(columnNames.length)]).append("\");\n");
         opChain.append("table").append(nameSeed).append("_").append(opNum).append(" = ");
-        opChain.append(mapName).append(".getKeySet().length == 0 ? ").append(previousTableName).append(" : ");
-        opChain.append(mapName).append(".get(").append(mapName).append(".getKeySet()[0]);\n");
-
+        opChain.append(partitionedName).append(".table().size() == 0 ? ").append(previousTableName).append(" : ");
+        opChain.append(partitionedName).append(".table().getColumnSource(")
+                .append(partitionedName).append(".constituentColumnName()").append(").get(")
+                .append(partitionedName).append(".table().getRowSet().firstRowKey());\n");
     }
 
     private void addJoinOperation(int opNum, StringBuilder opChain, Random random, String nameSeed) {
@@ -658,8 +663,8 @@ public class QueryFactory {
         StringBuilder filter = new StringBuilder();
         switch (columnTypes[colNum].getSimpleName()) {
 
-            case "DateTime":
-                filter.append(colName).append(" > ").append(random.nextInt(1000) * 1_000_000_000L);
+            case "Instant":
+                filter.append(colName).append(" > '").append(random.nextInt(1000) * 1_000_000_000L).append("'");
                 break;
 
             case "String":
@@ -808,9 +813,7 @@ public class QueryFactory {
      * @return A string that contains all common things that are needed to use generateQuery()
      */
     public String getTablePreamble(Long tableSeed) {
-        return "\n\nimport io.deephaven.engine.table.impl.by.SortedFirstBy;\n" +
-                "import io.deephaven.engine.table.impl.by.SortedLastBy;\n\n\n" +
-                "import io.deephaven.engine.table.impl.by.PercentileBySpecImpl;\n" +
+        return "\n\nimport static io.deephaven.api.agg.Aggregation.*;\n" +
                 "tableSeed = " + tableSeed + " as long;\n" +
                 "size = 100 as int;\n" +
                 "scale = 1000 as int;\n" +
@@ -822,7 +825,7 @@ public class QueryFactory {
                 "\tSystem.out.println(\"column: \"+colNum+\"[Seed] \" + seed);\n" +
                 "\tcolumnRandoms[colNum] = new Random(seed);\n" +
                 "}\n\n" +
-                "tt = timeTable(\"00:00:00.1\");" +
+                "tt = timeTable(\"PT00:00:00.1\");" +
                 "tickingValues = tt.update(\n" +
                 "\"MyString=new String(`a`+i)\",\n" +
                 "\"MyInt=new Integer(i)\",\n" +
@@ -847,7 +850,8 @@ public class QueryFactory {
                 "}\n" +
                 "\n" +
                 "randomValues = emptyTable(size)\n" +
-                ".update(\"Timestamp= i%nullPoints[0] == 0 ? null : new DateTime(i*1_000_000_000L)\")\n" +
+                ".update(\"Timestamp= i%nullPoints[0] == 0 ? null : DateTimeUtils.epochNanosToInstant(i*1_000_000_000L)\")\n"
+                +
                 ".update(\"MyString=(i%nullPoints[1] == 0 ? null : `a`+ (columnRandoms[0].nextInt(scale*2) - scale) )\",\n"
                 +
                 "\"MyInt=(i%nullPoints[2] == 0 ? null : columnRandoms[1].nextInt(scale*2) - scale )\",\n" +

@@ -1,10 +1,13 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table;
 
-import io.deephaven.base.verify.Assert;
-import io.deephaven.datastructures.util.CollectionUtil;
 import com.google.common.collect.Iterators;
 import gnu.trove.impl.Constants;
 import gnu.trove.map.hash.TObjectIntHashMap;
+import io.deephaven.base.verify.Assert;
+import io.deephaven.util.type.ArrayTypeUtils;
 
 import java.util.BitSet;
 import java.util.Map;
@@ -240,10 +243,6 @@ public class ModifiedColumnSet {
          * @param output result table's columns to propagate dirty columns to
          */
         default void transform(final ModifiedColumnSet input, final ModifiedColumnSet output) {
-            if (input == ALL) {
-                output.setAllDirty();
-                return;
-            }
             if (input == null || input.empty()) {
                 return;
             }
@@ -264,7 +263,7 @@ public class ModifiedColumnSet {
      */
     public ModifiedColumnSet(final Map<String, ColumnSource<?>> columns) {
         this.columns = columns;
-        columnNames = columns.keySet().toArray(CollectionUtil.ZERO_LENGTH_STRING_ARRAY);
+        columnNames = columns.keySet().toArray(String[]::new);
         idMap = new TObjectIntHashMap<>(columnNames.length, Constants.DEFAULT_LOAD_FACTOR, -1);
         for (int i = 0; i < columnNames.length; ++i) {
             idMap.put(columnNames[i], i);
@@ -298,6 +297,11 @@ public class ModifiedColumnSet {
      */
     public Transformer newTransformer(final String[] columnNames, final ModifiedColumnSet[] columnSets) {
         Assert.eq(columnNames.length, "columnNames.length", columnSets.length, "columnSets.length");
+        if (columnNames.length == 0) {
+            return (input, output) -> {
+            };
+        }
+
         final int[] columnBits = new int[columnNames.length];
         for (int i = 0; i < columnNames.length; ++i) {
             final int bitIndex = idMap.get(columnNames[i]);
@@ -309,7 +313,16 @@ public class ModifiedColumnSet {
             Assert.eq(columnSets[0].columns, "columnSets[0].columns", columnSets[i].columns, "columnSets[i].columns");
         }
 
+        final ModifiedColumnSet allColumns = new ModifiedColumnSet(columnSets[0]);
+        for (int i = 0; i < columnNames.length; ++i) {
+            allColumns.setAll(columnSets[i]);
+        }
+
         return (input, output) -> {
+            if (input == ALL) {
+                output.setAll(allColumns);
+                return;
+            }
             verifyCompatibilityWith(input);
             for (int i = 0; i < columnBits.length; ++i) {
                 if (input.dirtyColumns.get(columnBits[i])) {
@@ -335,6 +348,10 @@ public class ModifiedColumnSet {
         }
 
         return (input, output) -> {
+            if (input == ALL) {
+                output.setAllDirty();
+                return;
+            }
             if (input.columns != columns || output.columns != newColumns) {
                 throw new IllegalArgumentException(
                         "Provided ModifiedColumnSets are not compatible with this Transformer!");
@@ -430,6 +447,15 @@ public class ModifiedColumnSet {
      */
     public int numColumns() {
         return columns.size();
+    }
+
+    /**
+     * @return the names of the dirty columns in this set
+     */
+    public String[] dirtyColumnNames() {
+        if (dirtyColumns == null)
+            return ArrayTypeUtils.EMPTY_STRING_ARRAY;
+        return dirtyColumns.stream().mapToObj(ci -> columnNames[ci]).toArray(String[]::new);
     }
 
     /**

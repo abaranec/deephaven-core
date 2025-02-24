@@ -1,7 +1,6 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.plot.datasets.category;
 
 
@@ -47,6 +46,13 @@ public interface CategoryDataSeriesInternal extends CategoryDataSeries, DataSeri
     Paint getColor(final Comparable category);
 
     /**
+     * Gets the default point size for data points.
+     *
+     * @return default point size for the given data point
+     */
+    Double getPointSize();
+
+    /**
      * Gets the point size for the given data point.
      *
      * @param category category
@@ -54,6 +60,12 @@ public interface CategoryDataSeriesInternal extends CategoryDataSeries, DataSeri
      */
     Double getPointSize(final Comparable category);
 
+    /**
+     * Gets the default point label for data points.
+     *
+     * @return default point label for the given data point
+     */
+    String getLabel();
 
     /**
      * Gets the point label for the given data point.
@@ -62,6 +74,13 @@ public interface CategoryDataSeriesInternal extends CategoryDataSeries, DataSeri
      * @return point label for the given data point
      */
     String getLabel(final Comparable category);
+
+    /**
+     * Gets the default point shape for data points.
+     *
+     * @return default point shape for data points
+     */
+    Shape getPointShape();
 
     /**
      * Gets the point shape for the given data point.

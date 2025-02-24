@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.select;
 
 import io.deephaven.engine.rowset.WritableRowSet;
@@ -7,6 +10,7 @@ import io.deephaven.engine.table.impl.SortedColumnsAttribute;
 import io.deephaven.engine.table.Table;
 import io.deephaven.engine.table.ColumnSource;
 import io.deephaven.engine.rowset.RowSet;
+import org.jetbrains.annotations.NotNull;
 
 import java.math.BigDecimal;
 import java.util.Collections;
@@ -19,7 +23,7 @@ import java.util.regex.Pattern;
  * A filter that determines if a column value is between an upper and lower bound (which each may either be inclusive or
  * exclusive).
  */
-public abstract class AbstractRangeFilter extends WhereFilterImpl {
+public abstract class AbstractRangeFilter extends WhereFilterImpl implements ExposesChunkFilter {
     private static final Pattern decimalPattern = Pattern.compile("(-)?\\d+(?:\\.((\\d+)0*)?)?");
 
     protected final String columnName;
@@ -28,13 +32,13 @@ public abstract class AbstractRangeFilter extends WhereFilterImpl {
 
     /**
      * The chunkFilter can be applied to the columns native type.
-     *
+     * <p>
      * In practice, this is for non-reinterpretable DateTimes.
      */
     ChunkFilter chunkFilter;
     /**
-     * If the column can be be reinterpreted to a long, then we should prefer to use the longFilter instead.
-     *
+     * If the column can be reinterpreted to a long, then we should prefer to use the longFilter instead.
+     * <p>
      * In practice, this is used for reinterpretable DateTimes.
      */
     ChunkFilter longFilter;
@@ -43,6 +47,11 @@ public abstract class AbstractRangeFilter extends WhereFilterImpl {
         this.columnName = columnName;
         this.upperInclusive = upperInclusive;
         this.lowerInclusive = lowerInclusive;
+    }
+
+    @Override
+    public Optional<ChunkFilter> chunkFilter() {
+        return Optional.of(chunkFilter);
     }
 
     public static WhereFilter makeBigDecimalRange(String columnName, String val) {
@@ -75,9 +84,14 @@ public abstract class AbstractRangeFilter extends WhereFilterImpl {
         return Collections.emptyList();
     }
 
+    @NotNull
     @Override
-    public WritableRowSet filter(RowSet selection, RowSet fullSet, Table table, boolean usePrev) {
-        final ColumnSource columnSource = table.getColumnSource(columnName);
+    public WritableRowSet filter(
+            @NotNull final RowSet selection,
+            @NotNull final RowSet fullSet,
+            @NotNull final Table table,
+            final boolean usePrev) {
+        final ColumnSource<?> columnSource = table.getColumnSource(columnName);
         final Optional<SortingOrder> orderForColumn = SortedColumnsAttribute.getOrderForColumn(table, columnName);
         if (orderForColumn.isPresent()) {
             // do binary search for value
@@ -89,7 +103,8 @@ public abstract class AbstractRangeFilter extends WhereFilterImpl {
         return ChunkFilter.applyChunkFilter(selection, columnSource, usePrev, chunkFilter);
     }
 
-    abstract WritableRowSet binarySearch(RowSet selection, ColumnSource columnSource, boolean usePrev, boolean reverse);
+    abstract WritableRowSet binarySearch(
+            @NotNull RowSet selection, @NotNull ColumnSource<?> columnSource, boolean usePrev, boolean reverse);
 
     @Override
     public boolean isSimpleFilter() {

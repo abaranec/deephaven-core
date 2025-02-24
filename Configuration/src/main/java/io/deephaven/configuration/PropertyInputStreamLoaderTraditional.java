@@ -1,4 +1,9 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.configuration;
+
+import com.google.auto.service.AutoService;
 
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -8,6 +13,7 @@ import java.io.InputStream;
  * A {@link PropertyInputStreamLoader} implementation that first searches for the property file as a classpath resource,
  * and then via the filesystem. The priority is 100.
  */
+@AutoService(PropertyInputStreamLoader.class)
 public class PropertyInputStreamLoaderTraditional implements PropertyInputStreamLoader {
 
     public PropertyInputStreamLoaderTraditional() {}

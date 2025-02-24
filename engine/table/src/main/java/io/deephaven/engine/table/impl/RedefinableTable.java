@@ -1,24 +1,25 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl;
 
 import io.deephaven.api.Selectable;
+import io.deephaven.api.Pair;
 import io.deephaven.engine.table.ColumnDefinition;
 import io.deephaven.engine.table.Table;
 import io.deephaven.engine.table.TableDefinition;
-import io.deephaven.engine.table.MatchPair;
 import io.deephaven.engine.table.impl.select.*;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * An uncoalesced table that may be redefined without triggering a {@link #coalesce()}.
  */
-public abstract class RedefinableTable extends UncoalescedTable {
+public abstract class RedefinableTable<IMPL_TYPE extends RedefinableTable<IMPL_TYPE>>
+        extends UncoalescedTable<IMPL_TYPE> {
 
     protected RedefinableTable(@NotNull final TableDefinition definition, @NotNull final String description) {
         super(definition, description);
@@ -26,18 +27,34 @@ public abstract class RedefinableTable extends UncoalescedTable {
 
     @Override
     public Table view(Collection<? extends Selectable> selectables) {
+        return viewInternal(selectables, false);
+    }
+
+    @Override
+    public Table updateView(Collection<? extends Selectable> selectables) {
+        return viewInternal(selectables, true);
+    }
+
+    private Table viewInternal(Collection<? extends Selectable> selectables, boolean isUpdate) {
         if (selectables == null || selectables.isEmpty()) {
             return this;
         }
-        final SelectColumn[] columns = SelectColumn.from(selectables);
-        Set<ColumnDefinition<?>> resultColumnsInternal = new HashSet<>();
-        Map<String, ColumnDefinition<?>> resultColumnsExternal = new LinkedHashMap<>();
-        Map<String, ColumnDefinition<?>> allColumns = new HashMap<>(definition.getColumnNameMap());
-        Map<String, Set<String>> columnDependency = new HashMap<>();
+
+        final SelectColumn[] columns = Stream.concat(
+                isUpdate ? definition.getColumnStream().map(cd -> new SourceColumn(cd.getName())) : Stream.empty(),
+                selectables.stream().map(SelectColumn::of))
+                .toArray(SelectColumn[]::new);
+
+        final Set<ColumnDefinition<?>> resultColumnsInternal = new HashSet<>();
+        final Map<String, ColumnDefinition<?>> resultColumnsExternal = new LinkedHashMap<>();
+        final Map<String, ColumnDefinition<?>> allColumns = new HashMap<>(definition.getColumnNameMap());
         boolean simpleRetain = true;
-        for (SelectColumn selectColumn : columns) {
-            List<String> usedColumnNames = selectColumn.initDef(allColumns);
-            columnDependency.put(selectColumn.getName(), new HashSet<>(usedColumnNames));
+
+        final QueryCompilerRequestProcessor.BatchProcessor compilationProcessor = QueryCompilerRequestProcessor.batch();
+        for (final SelectColumn selectColumn : columns) {
+            final List<String> usedColumnNames = new ArrayList<>(
+                    selectColumn.initDef(allColumns, compilationProcessor));
+            usedColumnNames.addAll(selectColumn.getColumnArrays());
             resultColumnsInternal.addAll(usedColumnNames.stream()
                     .filter(usedColumnName -> !resultColumnsExternal.containsKey(usedColumnName))
                     .map(definition::getColumn).collect(Collectors.toList()));
@@ -51,33 +68,19 @@ public abstract class RedefinableTable extends UncoalescedTable {
             resultColumnsExternal.put(selectColumn.getName(), columnDef);
             allColumns.put(selectColumn.getName(), columnDef);
         }
+        compilationProcessor.compile();
 
-        TableDefinition newDefExternal = new TableDefinition(
+        TableDefinition newDefExternal = TableDefinition.of(
                 resultColumnsExternal.values().toArray(ColumnDefinition.ZERO_LENGTH_COLUMN_DEFINITION_ARRAY));
         if (simpleRetain) {
             // NB: We use the *external* TableDefinition because it's ordered appropriately.
             return redefine(newDefExternal);
         }
         TableDefinition newDefInternal =
-                new TableDefinition(
+                TableDefinition.of(
                         resultColumnsInternal.toArray(ColumnDefinition.ZERO_LENGTH_COLUMN_DEFINITION_ARRAY));
-        return redefine(newDefExternal, newDefInternal, columns, columnDependency);
-    }
 
-    @Override
-    public Table updateView(Collection<? extends Selectable> selectables) {
-        if (selectables == null || selectables.isEmpty()) {
-            return this;
-        }
-        final SelectColumn[] columns = SelectColumn.from(selectables);
-        LinkedHashMap<String, SelectColumn> viewColumns = new LinkedHashMap<>();
-        for (ColumnDefinition<?> cDef : definition.getColumns()) {
-            viewColumns.put(cDef.getName(), new SourceColumn(cDef.getName()));
-        }
-        for (SelectColumn updateColumn : columns) {
-            viewColumns.put(updateColumn.getName(), updateColumn);
-        }
-        return view(viewColumns.values().toArray(SelectColumn.ZERO_LENGTH_SELECT_COLUMN_ARRAY));
+        return redefine(newDefExternal, newDefInternal, columns);
     }
 
     @Override
@@ -85,44 +88,33 @@ public abstract class RedefinableTable extends UncoalescedTable {
         if (columnNames == null || columnNames.length == 0) {
             return this;
         }
-
         final Set<String> columnNamesToDrop = new HashSet<>(Arrays.asList(columnNames));
-        final Set<String> existingColumns = new HashSet<>(definition.getColumnNames());
-        if (!existingColumns.containsAll(columnNamesToDrop)) {
-            columnNamesToDrop.removeAll(existingColumns);
-            throw new RuntimeException("Unknown columns: " + columnNamesToDrop.toString() + ", available columns = "
-                    + getColumnSourceMap().keySet());
-        }
-
+        definition.checkHasColumns(columnNamesToDrop);
         List<ColumnDefinition<?>> resultColumns = new ArrayList<>();
         for (ColumnDefinition<?> cDef : definition.getColumns()) {
             if (!columnNamesToDrop.contains(cDef.getName())) {
                 resultColumns.add(cDef);
             }
         }
-        return redefine(new TableDefinition(resultColumns));
+        return redefine(TableDefinition.of(resultColumns));
     }
 
     @Override
-    public Table renameColumns(MatchPair... pairs) {
-        if (pairs == null || pairs.length == 0) {
-            return this;
+    public Table renameColumns(Collection<Pair> pairs) {
+        if (pairs == null || pairs.isEmpty()) {
+            return prepareReturnThis();
         }
         Map<String, Set<String>> columnDependency = new HashMap<>();
         Map<String, String> pairLookup = new HashMap<>();
-        for (MatchPair pair : pairs) {
-            if (pair.leftColumn == null || pair.leftColumn.equals("")) {
-                throw new IllegalArgumentException("Bad left column in rename pair \"" + pair.toString() + "\"");
-            }
-            ColumnDefinition<?> cDef = definition.getColumn(pair.rightColumn);
+        for (Pair pair : pairs) {
+            ColumnDefinition<?> cDef = definition.getColumn(pair.input().name());
             if (cDef == null) {
-                throw new IllegalArgumentException("Column \"" + pair.rightColumn + "\" not found");
+                throw new IllegalArgumentException("Column \"" + pair.input().name() + "\" not found");
             }
-            pairLookup.put(pair.rightColumn, pair.leftColumn);
-            columnDependency.put(pair.leftColumn, new HashSet<>(Collections.singletonList(pair.rightColumn)));
+            pairLookup.put(pair.input().name(), pair.output().name());
         }
 
-        ColumnDefinition<?>[] columnDefinitions = definition.getColumns();
+        ColumnDefinition<?>[] columnDefinitions = definition.getColumnsArray();
         ColumnDefinition<?>[] resultColumnsExternal = new ColumnDefinition[columnDefinitions.length];
         SelectColumn[] viewColumns = new SelectColumn[columnDefinitions.length];
         for (int ci = 0; ci < columnDefinitions.length; ++ci) {
@@ -132,11 +124,11 @@ public abstract class RedefinableTable extends UncoalescedTable {
                 resultColumnsExternal[ci] = cDef;
                 viewColumns[ci] = new SourceColumn(cDef.getName());
             } else {
-                resultColumnsExternal[ci] = cDef.rename(newName);
+                resultColumnsExternal[ci] = cDef.withName(newName);
                 viewColumns[ci] = new SourceColumn(cDef.getName(), newName);
             }
         }
-        return redefine(new TableDefinition(resultColumnsExternal), definition, viewColumns, columnDependency);
+        return redefine(TableDefinition.of(resultColumnsExternal), definition, viewColumns);
     }
 
     /**
@@ -156,9 +148,8 @@ public abstract class RedefinableTable extends UncoalescedTable {
      * @param newDefinitionInternal A TableDefinition with a subset of this RedefinableTable's ColumnDefinitions.
      * @param viewColumns A set of SelectColumns to apply in order to transform a table with newDefinitionInternal to a
      *        table with newDefinitionExternal.
-     * @param columnDependency
      * @return
      */
     protected abstract Table redefine(TableDefinition newDefinitionExternal, TableDefinition newDefinitionInternal,
-            SelectColumn[] viewColumns, Map<String, Set<String>> columnDependency);
+            SelectColumn[] viewColumns);
 }

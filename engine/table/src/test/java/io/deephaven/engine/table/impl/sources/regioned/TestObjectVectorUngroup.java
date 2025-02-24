@@ -1,12 +1,17 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources.regioned;
 
 import io.deephaven.base.FileUtils;
 import io.deephaven.engine.table.Table;
+import io.deephaven.engine.testutil.junit4.EngineCleanup;
 import io.deephaven.vector.ObjectVector;
 import io.deephaven.parquet.table.ParquetTools;
 import io.deephaven.engine.util.TableTools;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 
 import java.io.File;
@@ -17,6 +22,9 @@ import java.nio.file.Paths;
 import static org.junit.Assert.*;
 
 public class TestObjectVectorUngroup {
+
+    @Rule
+    public final EngineCleanup base = new EngineCleanup();
 
     private static File dataDirectory;
 
@@ -43,8 +51,8 @@ public class TestObjectVectorUngroup {
         assertEquals(String.class, ungroupedTable.getDefinition().getColumn("C").getDataType());
 
         File dest = new File(dataDirectory, "testUngroup.parquet");
-        ParquetTools.writeTable(groupedTable, dest);
-        final Table actual = ParquetTools.readTable(dest);
+        ParquetTools.writeTable(groupedTable, dest.getPath());
+        final Table actual = ParquetTools.readTable(dest.getPath());
 
         assertTrue(ObjectVector.class.isAssignableFrom(actual.getDefinition().getColumn("C").getDataType()));
         assertEquals(String.class, actual.getDefinition().getColumn("C").getComponentType());

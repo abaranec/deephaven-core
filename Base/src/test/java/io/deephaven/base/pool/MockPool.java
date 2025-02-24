@@ -1,9 +1,12 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.base.pool;
 
 import java.util.LinkedList;
 import java.util.List;
+import java.util.function.Consumer;
 
-import io.deephaven.base.Procedure;
 import io.deephaven.base.testing.RecordingMockObject;
 import io.deephaven.base.testing.Thumbprinter;
 import io.deephaven.base.verify.Assert;
@@ -15,11 +18,11 @@ import io.deephaven.base.verify.Assert;
 public class MockPool<T> extends RecordingMockObject implements Pool<T> {
 
     private final List<T> m_items = new LinkedList<T>();
-    private Procedure.Unary<T> m_clearingProcedure;
+    private Consumer<T> m_clearingProcedure;
     private Thumbprinter<T> m_thumbprinter = Thumbprinter.DEFAULT;
 
     // ----------------------------------------------------------------
-    public void setClearingProcedure(Procedure.Unary<T> clearingProcedure) {
+    public void setClearingProcedure(Consumer<T> clearingProcedure) {
         m_clearingProcedure = clearingProcedure;
     }
 
@@ -51,7 +54,7 @@ public class MockPool<T> extends RecordingMockObject implements Pool<T> {
     @Override // from Pool
     public void give(T item) {
         if (null != m_clearingProcedure) {
-            m_clearingProcedure.call(item);
+            m_clearingProcedure.accept(item);
         }
         recordActivity("give(" + m_thumbprinter.getThumbprint(item) + ")");
     }

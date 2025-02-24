@@ -1,8 +1,10 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.sources.regioned;
 
 import io.deephaven.base.verify.Require;
 import io.deephaven.chunk.attributes.Any;
-import io.deephaven.engine.table.SharedContext;
 import io.deephaven.chunk.*;
 import io.deephaven.engine.rowset.RowSequence;
 import org.jetbrains.annotations.NotNull;
@@ -27,32 +29,36 @@ public abstract class DeferredColumnRegionBase<ATTR extends Any, REGION_TYPE ext
     }
 
     @Override
+    public void invalidate() {
+        super.invalidate();
+        synchronized (this) {
+            REGION_TYPE localResultRegion;
+            if ((localResultRegion = resultRegion) != null) {
+                localResultRegion.invalidate();
+            }
+        }
+    }
+
+    @Override
     public final REGION_TYPE getResultRegion() {
-        if (resultRegion == null) {
+        REGION_TYPE localResultRegion;
+        if ((localResultRegion = resultRegion) == null) {
             synchronized (this) {
-                if (resultRegion == null) {
-                    resultRegion = Require.neqNull(resultRegionFactory.get(), "resultRegionFactory.get()");
+                if ((localResultRegion = resultRegion) == null) {
+                    resultRegion =
+                            localResultRegion = Require.neqNull(resultRegionFactory.get(), "resultRegionFactory.get()");
                     resultRegionFactory = null;
                 }
             }
         }
-        return resultRegion;
-    }
-
-    /**
-     * Get the result region if it has already been supplied (because of a call to {@link #getResultRegion()}).
-     *
-     * @return The result region
-     */
-    private REGION_TYPE getResultRegionIfSupplied() {
-        return resultRegion;
+        return localResultRegion;
     }
 
     @Override
     @OverridingMethodsMustInvokeSuper
     public void releaseCachedResources() {
         DeferredColumnRegion.super.releaseCachedResources();
-        final REGION_TYPE localResultRegion = getResultRegionIfSupplied();
+        final REGION_TYPE localResultRegion = resultRegion;
         if (localResultRegion != null) {
             localResultRegion.releaseCachedResources();
         }
@@ -70,9 +76,11 @@ public abstract class DeferredColumnRegionBase<ATTR extends Any, REGION_TYPE ext
     }
 
     @Override
-    public void fillChunkAppend(@NotNull FillContext context, @NotNull WritableChunk<? super ATTR> destination,
-            @NotNull RowSequence.Iterator RowSequenceIterator) {
-        getResultRegion().fillChunkAppend(context, destination, RowSequenceIterator);
+    public void fillChunkAppend(
+            @NotNull final FillContext context,
+            @NotNull final WritableChunk<? super ATTR> destination,
+            @NotNull final RowSequence.Iterator rowSequenceIterator) {
+        getResultRegion().fillChunkAppend(context, destination, rowSequenceIterator);
     }
 
     @Override
@@ -83,15 +91,5 @@ public abstract class DeferredColumnRegionBase<ATTR extends Any, REGION_TYPE ext
     @Override
     public Chunk<? extends ATTR> getChunk(@NotNull GetContext context, long firstKey, long lastKey) {
         return getResultRegion().getChunk(context, firstKey, lastKey);
-    }
-
-    @Override
-    public FillContext makeFillContext(int chunkCapacity, SharedContext sharedContext) {
-        return getResultRegion().makeFillContext(chunkCapacity, sharedContext);
-    }
-
-    @Override
-    public GetContext makeGetContext(int chunkCapacity, SharedContext sharedContext) {
-        return getResultRegion().makeGetContext(chunkCapacity, sharedContext);
     }
 }

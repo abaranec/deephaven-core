@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.jpy;
 
 import io.deephaven.jpy.integration.ReferenceCounting;
@@ -51,7 +54,7 @@ public class PyProxyTest extends PythonTest {
     @Before
     public void setUp() throws Exception {
         identityModule = IdentityModule.create(getCreateModule());
-        refCount = ReferenceCounting.create();
+        refCount = ReferenceCounting.create(getCreateModule());
     }
 
     @After
@@ -68,11 +71,14 @@ public class PyProxyTest extends PythonTest {
                 .call("SomeClass")
                 .createProxy(WithJavaCloseable.class)) {
 
+            refCount.check(1, pythonObj);
+
             anotherReference = identityModule
                     .identity(PyObject.unwrapProxy(pythonObj))
                     .createProxy(WithJavaCloseable.class);
 
             Assert.assertFalse(anotherReference.get_closed());
+            Assert.assertNotSame(pythonObj, anotherReference);
             Assert.assertEquals(pythonObj, anotherReference);
 
             refCount.check(2, anotherReference);
@@ -91,11 +97,14 @@ public class PyProxyTest extends PythonTest {
                 .call("SomeClass")
                 .createProxy(WithoutJavaCloseable.class);
 
+        refCount.check(1, pythonObj);
+
         anotherReference = identityModule
                 .identity(PyObject.unwrapProxy(pythonObj))
                 .createProxy(WithoutJavaCloseable.class);
 
         Assert.assertFalse(anotherReference.get_closed());
+        Assert.assertNotSame(pythonObj, anotherReference);
         Assert.assertEquals(pythonObj, anotherReference);
 
         refCount.check(2, anotherReference);
@@ -117,11 +126,14 @@ public class PyProxyTest extends PythonTest {
                 .call("SomeClass")
                 .createProxy(AfterTheFactJavaCloseable.class);
 
+        refCount.check(1, pythonObj);
+
         anotherReference = identityModule
                 .identity(PyObject.unwrapProxy(pythonObj))
                 .createProxy(AfterTheFactJavaCloseable.class);
 
         Assert.assertFalse(anotherReference.get_closed());
+        Assert.assertNotSame(pythonObj, anotherReference);
         Assert.assertEquals(pythonObj, anotherReference);
 
         refCount.check(2, anotherReference);

@@ -53,3 +53,17 @@ html_theme = 'furo'
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
+
+# Make the Index more useful by removing common namespaces.
+# Note that if you use sub-namespaces below, they need to come *before* their
+# parent in the list.
+
+cpp_index_common_prefix = [
+    'deephaven::client::column::',
+    'deephaven::client::utility::',
+    'deephaven::client::',
+    'deephaven::dhcore::chunk::',
+    'deephaven::dhcore::container::',
+    'deephaven::dhcore::table::',
+    'deephaven::dhcore::utility::',
+    'deephaven::dhcore::']

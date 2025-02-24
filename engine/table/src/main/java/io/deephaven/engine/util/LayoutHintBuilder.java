@@ -1,8 +1,11 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.util;
 
-import io.deephaven.base.StringUtils;
 import io.deephaven.engine.table.Table;
 import io.deephaven.api.util.NameValidator;
+import io.deephaven.gui.color.Color;
 import io.deephaven.util.annotations.ScriptApi;
 import org.jetbrains.annotations.NotNull;
 
@@ -27,6 +30,29 @@ public class LayoutHintBuilder {
     private Set<String> alwaysSubscribedCols;
     private Set<String> groupableColumns;
 
+    private Map<String, ColumnGroup> columnGroups;
+
+    /**
+     * The display mode for the search bar.
+     */
+    public enum SearchDisplayModes {
+        /**
+         * Use the system default
+         */
+        Default,
+        /**
+         * Permit the search bar to be displayed, regardless of system settings
+         */
+        Show,
+        /**
+         * Hide the search bar, regardless of system settings.
+         */
+        Hide
+    }
+
+    private SearchDisplayModes searchDisplayMode = SearchDisplayModes.Default;
+
+
     /**
      * Helper class to maintain sub-properties for auto filter columns
      */
@@ -49,7 +75,7 @@ public class LayoutHintBuilder {
          * @return a string of the format column(:param&value)+
          */
         @NotNull
-        String forBuilder() {
+        String serialize() {
             if (fetchSize > 0) {
                 return column + ":" + AFD_FETCH_PARAM + "&" + fetchSize;
             }
@@ -58,7 +84,7 @@ public class LayoutHintBuilder {
         }
 
         /**
-         * Convert a string of the format defined by {@link #forBuilder()} into a proper AutoFilterData object
+         * Convert a string of the format defined by {@link #serialize()} into a proper AutoFilterData object
          *
          * @param string the string to parse
          * @return an AutoFilterData instance
@@ -105,9 +131,69 @@ public class LayoutHintBuilder {
         }
     }
 
+    private static class ColumnGroup {
+
+        private final String name;
+        private final List<String> children;
+        private final Color color;
+
+        public ColumnGroup(String name, List<String> children, Color color) {
+            NameValidator.validateColumnName(name);
+            children.forEach(c -> NameValidator.validateColumnName(c));
+
+            this.name = name;
+            this.children = children;
+            this.color = color;
+        }
+
+        @NotNull
+        public String serialize() {
+            StringBuilder sb = new StringBuilder("name:").append(name);
+
+            sb.append("::children:");
+            boolean first = true;
+            for (String child : children) {
+                if (!first) {
+                    sb.append(",");
+                }
+                first = false;
+                sb.append(child);
+            }
+            if (color != null) {
+                sb.append("::color:#")
+                        .append(Integer.toHexString(color.javaColor().getRGB()).substring(2));
+            }
+            return sb.toString();
+        }
+
+        /**
+         * Convert a string of the format defined by {@link #serialize()} into a proper ColumnGroup object
+         *
+         * @param string the string to parse
+         * @return a ColumnGroup instance
+         */
+        @NotNull
+        public static ColumnGroup fromString(String string) {
+            final Map<String, String> options = Arrays.stream(string.split("::"))
+                    .map(option -> option.split(":"))
+                    .collect(Collectors.toMap(parts -> parts[0], parts -> parts.length == 2 ? parts[1] : null));
+
+            final String name = options.get("name");
+            final List<String> children = Arrays.asList(options.get("children").split(","));
+            final String color = options.get("color");
+
+            if (color == null) {
+                return new ColumnGroup(name, children, null);
+            }
+
+            return new ColumnGroup(name, children, new Color(color));
+        }
+    }
+
     private LayoutHintBuilder() {}
 
     // region Builder Methods
+
     /**
      * Create a LayoutHintBuilder from the specified parameter string.
      *
@@ -133,7 +219,7 @@ public class LayoutHintBuilder {
 
         final String endStr = options.get("back");
         if (endStr != null && !endStr.isEmpty()) {
-            lhb.atEnd(endStr.split(","));
+            lhb.atBack(endStr.split(","));
         }
 
         final String hideStr = options.get("hide");
@@ -164,6 +250,19 @@ public class LayoutHintBuilder {
         if (groupableStr != null && !groupableStr.isEmpty()) {
             final String[] groupableColumns = groupableStr.split(",");
             lhb.groupableColumns(groupableColumns);
+        }
+
+        final String searchableStr = options.get("searchable");
+        if (searchableStr != null && !searchableStr.isEmpty()) {
+            lhb.setSearchBarAccess(SearchDisplayModes.valueOf(searchableStr));
+        }
+
+        final String columnGroupsStr = options.get("columnGroups");
+        if (columnGroupsStr != null && !columnGroupsStr.isEmpty()) {
+            Arrays.stream(columnGroupsStr.split("\\|"))
+                    .filter(s -> s != null && !s.isEmpty())
+                    .map(ColumnGroup::fromString)
+                    .forEach(lhb::addColumnGroupData);
         }
 
         return lhb;
@@ -215,11 +314,11 @@ public class LayoutHintBuilder {
     }
 
     /**
-     * @see LayoutHintBuilder#atEnd(Collection)
+     * @see LayoutHintBuilder#atBack(Collection)
      */
     @ScriptApi
-    public LayoutHintBuilder atEnd(String... cols) {
-        return atEnd(cols == null ? null : Arrays.asList(cols));
+    public LayoutHintBuilder atBack(String... cols) {
+        return atBack(cols == null ? null : Arrays.asList(cols));
     }
 
     /**
@@ -229,7 +328,7 @@ public class LayoutHintBuilder {
      * @return this LayoutHintBuilder
      */
     @ScriptApi
-    public LayoutHintBuilder atEnd(Collection<String> cols) {
+    public LayoutHintBuilder atBack(Collection<String> cols) {
         if (cols == null || cols.isEmpty()) {
             backCols = null;
             return this;
@@ -276,6 +375,56 @@ public class LayoutHintBuilder {
         hiddenCols.addAll(cols);
 
         return this;
+    }
+
+    /**
+     * @see LayoutHintBuilder#columnGroup(String, List, Color)
+     */
+    @ScriptApi
+    public LayoutHintBuilder columnGroup(String name, List<String> children) {
+        return columnGroup(name, children, (Color) null);
+    }
+
+    /**
+     * @see LayoutHintBuilder#columnGroup(String, List, Color)
+     */
+    @ScriptApi
+    public LayoutHintBuilder columnGroup(String name, List<String> children, String color) {
+        if (color == null || color.length() == 0) {
+            return columnGroup(name, children, (Color) null);
+        }
+        return columnGroup(name, children, new Color(color));
+    }
+
+    /**
+     * Create a named group of columns in the UI
+     *
+     * @param name the column group name. Must be a valid Deephaven column name
+     * @param children the columns and other groups belonging to this group
+     * @param color the background color for the group in the UI
+     * @return this LayoutHintBuilder
+     */
+    @ScriptApi
+    public LayoutHintBuilder columnGroup(String name, List<String> children, Color color) {
+        if (columnGroups == null) {
+            columnGroups = new LinkedHashMap<>();
+        }
+
+        if (children.isEmpty()) {
+            columnGroups.remove(name);
+        } else {
+            columnGroups.put(name, new ColumnGroup(name, children, color));
+        }
+
+        return this;
+    }
+
+    private void addColumnGroupData(ColumnGroup group) {
+        if (columnGroups == null) {
+            columnGroups = new LinkedHashMap<>();
+        }
+
+        columnGroups.put(group.name, group);
     }
 
     /**
@@ -432,6 +581,30 @@ public class LayoutHintBuilder {
         return this;
     }
 
+    /**
+     * Set the search bar to explicitly be accessible or inaccessible, or use system default.
+     *
+     * @param searchable The display mode to use
+     * @return This LayoutHintBuilder
+     */
+    @ScriptApi
+    public LayoutHintBuilder setSearchBarAccess(final SearchDisplayModes searchable) {
+        searchDisplayMode = searchable;
+        return this;
+    }
+
+    /**
+     * Set the search bar to explicitly be accessible or inaccessible, or use system default.
+     *
+     * @param searchable The display mode to use
+     * @return This LayoutHintBuilder
+     */
+    @ScriptApi
+    public LayoutHintBuilder setSearchBarAccess(final String searchable) {
+        searchDisplayMode = SearchDisplayModes.valueOf(searchable);
+        return this;
+    }
+
     // endregion
 
     /**
@@ -448,25 +621,26 @@ public class LayoutHintBuilder {
         }
 
         if (frontCols != null && !frontCols.isEmpty()) {
-            sb.append("front=").append(StringUtils.joinStrings(frontCols, ",")).append(';');
+            sb.append("front=").append(String.join(",", frontCols)).append(';');
         }
 
         if (backCols != null && !backCols.isEmpty()) {
-            sb.append("back=").append(StringUtils.joinStrings(backCols, ",")).append(';');
+            sb.append("back=").append(String.join(",", backCols)).append(';');
         }
 
         if (hiddenCols != null && !hiddenCols.isEmpty()) {
-            sb.append("hide=").append(StringUtils.joinStrings(hiddenCols, ",")).append(';');
+            sb.append("hide=").append(String.join(",", hiddenCols)).append(';');
         }
 
         if (autoFilterCols != null && !autoFilterCols.isEmpty()) {
             sb.append("autofilter=").append(
-                    StringUtils.joinStrings(autoFilterCols.values().stream().map(AutoFilterData::forBuilder), ","))
+                    autoFilterCols.values().stream().map(AutoFilterData::serialize)
+                            .collect(Collectors.joining(",")))
                     .append(';');
         }
 
         if (freezeCols != null && !freezeCols.isEmpty()) {
-            sb.append("freeze=").append(StringUtils.joinStrings(freezeCols, ",")).append(';');
+            sb.append("freeze=").append(String.join(",", freezeCols)).append(';');
         }
 
         if (alwaysSubscribedCols != null && !alwaysSubscribedCols.isEmpty()) {
@@ -477,12 +651,23 @@ public class LayoutHintBuilder {
             sb.append("groupable=").append(String.join(",", groupableColumns)).append(';');
         }
 
+        if (searchDisplayMode != SearchDisplayModes.Default) {
+            sb.append("searchable=").append(searchDisplayMode.toString()).append(';');
+        }
+
+        if (columnGroups != null && !columnGroups.isEmpty()) {
+            sb.append("columnGroups=");
+            String groupStrings =
+                    columnGroups.values().stream().map(ColumnGroup::serialize).collect(Collectors.joining("|"));
+            sb.append(groupStrings).append(';');
+        }
+
         return sb.toString();
     }
 
     /**
      * Helper method for building and {@link Table#setLayoutHints(String) applying} layout hints to a {@link Table}.
-     * 
+     *
      * @param table The source {@link Table}
      * @return {@code table.setLayoutHints(build())}
      */
@@ -492,6 +677,7 @@ public class LayoutHintBuilder {
     }
 
     // region Getters
+
     /**
      * Check if saved layouts should be allowed.
      *
@@ -513,7 +699,7 @@ public class LayoutHintBuilder {
     /**
      * Get the ordered set of columns that should be displayed as the last N columns.
      *
-     * @return an ordfered set of columns to display at the end.
+     * @return an ordered set of columns to display at the end.
      */
     public @NotNull Set<String> getBackCols() {
         return backCols == null ? Collections.emptySet() : Collections.unmodifiableSet(backCols);
@@ -578,6 +764,32 @@ public class LayoutHintBuilder {
      */
     public @NotNull Set<String> getGroupableColumns() {
         return groupableColumns == null ? Collections.emptySet() : Collections.unmodifiableSet(groupableColumns);
+    }
+
+    public @NotNull SearchDisplayModes getSearchDisplayMode() {
+        if (searchDisplayMode == null) {
+            searchDisplayMode = SearchDisplayModes.Default;
+        }
+        return searchDisplayMode;
+    }
+
+    /**
+     * Get the map of column groups for the UI.
+     *
+     * @return the map of column groups
+     */
+    public @NotNull Map<String, ColumnGroup> getColumnGroups() {
+        return columnGroups == null ? Collections.emptyMap() : Collections.unmodifiableMap(columnGroups);
+    }
+
+    /**
+     * Get the column group for the specified name.
+     *
+     * @param name the name of the column group
+     * @return the column group if it exists
+     */
+    public @NotNull ColumnGroup getColumnGroup(String name) {
+        return columnGroups == null ? null : columnGroups.get(name);
     }
     // endregion
 }

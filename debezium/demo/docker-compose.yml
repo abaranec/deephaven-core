@@ -1,0 +1,39 @@
+# docker compose file to run the debezium-kafka ecommerce demo
+# with DHC ticking tables and dashboard
+
+services:
+  server:
+    extends:
+      file: ../../docker-compose-common.yml
+      service: server
+    volumes:
+      - ../scripts:/scripts
+      - ./logs:/logs
+
+  redpanda:
+    extends:
+      file: ../docker-compose-debezium-common.yml
+      service: redpanda
+
+  mysql:
+    extends:
+      file: ../docker-compose-debezium-common.yml
+      service: mysql
+
+  debezium:
+    extends:
+      file: ../docker-compose-debezium-common.yml
+      service: debezium
+    depends_on:
+      redpanda:
+        condition: service_started
+
+  loadgen:
+    extends:
+      file: ../docker-compose-debezium-common.yml
+      service: loadgen
+    depends_on:
+      mysql:
+        condition: service_started
+      debezium:
+        condition: service_started

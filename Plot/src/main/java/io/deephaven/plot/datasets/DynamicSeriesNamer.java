@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.plot.datasets;
 
 import io.deephaven.plot.errors.PlotInfo;
@@ -77,7 +80,7 @@ public class DynamicSeriesNamer implements Serializable {
      * Gets all the series names. <br/>
      * The order of series in 3D-plots are determined by returned set.
      *
-     * @return Set<String> of seriesNames
+     * @return Set&lt;String&gt; of seriesNames
      */
     public synchronized List<Comparable> getNames() {
         return Collections.unmodifiableList(namesList);

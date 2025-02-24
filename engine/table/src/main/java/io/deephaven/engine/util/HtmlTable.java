@@ -1,17 +1,16 @@
-/*
- * Copyright (c) 2016-2021 Deephaven Data Labs and Patent Pending
- */
-
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.util;
 
 import io.deephaven.engine.table.Table;
-import io.deephaven.time.DateTime;
-import io.deephaven.time.TimeZone;
 import io.deephaven.engine.table.ColumnSource;
 import io.deephaven.engine.rowset.RowSet;
+import io.deephaven.time.DateTimeUtils;
 import org.apache.commons.text.StringEscapeUtils;
 import org.jetbrains.annotations.NotNull;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 
@@ -38,8 +37,8 @@ public class HtmlTable {
                 final Object value = columnSource.get(key);
                 if (value instanceof String) {
                     out.append(StringEscapeUtils.escapeCsv((String) value));
-                } else if (value instanceof DateTime) {
-                    out.append(((DateTime) value).toString(TimeZone.TZ_NY));
+                } else if (value instanceof Instant) {
+                    out.append(DateTimeUtils.formatDateTime((Instant) value, DateTimeUtils.timeZone()));
                 } else {
                     out.append(TableTools.nullToNullString(value));
                 }

@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.table.impl.util;
 
 import io.deephaven.engine.rowset.*;
@@ -455,7 +458,7 @@ public class RowSetShiftDataTest {
         return values;
     }
 
-    private RowSetShiftData.Callback createMemMovCallback(final long[] arr) {
+    private RowKeyRangeShiftCallback createMemMovCallback(final long[] arr) {
         return (start, end, delta) -> {
             final long dir = (delta > 0) ? -1 : 1;
             if (dir < 0) {

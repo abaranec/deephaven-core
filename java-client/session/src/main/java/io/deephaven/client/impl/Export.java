@@ -1,13 +1,16 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.client.impl;
 
 import io.deephaven.client.impl.ExportRequest.Listener;
+import io.deephaven.client.impl.ExportStates.State;
 import io.deephaven.qst.table.TableSpec;
 
-import java.util.List;
 import java.util.Objects;
 
 /**
- * An export represents a server-side object that is being kept alive.
+ * An export represents a server-side Table that is being kept alive.
  *
  * <p>
  * Callers must maintain ownership of their exports, and close them when no longer needed.
@@ -28,7 +31,12 @@ public final class Export implements AutoCloseable, HasExportId {
 
     @Override
     public ExportId exportId() {
-        return new ExportId(state.exportId());
+        return new ExportId(TableObject.TYPE, state.exportId());
+    }
+
+    @Override
+    public TypedTicket typedTicket() {
+        return exportId().typedTicket();
     }
 
     @Override
@@ -48,6 +56,14 @@ public final class Export implements AutoCloseable, HasExportId {
      */
     public Session session() {
         return state.session();
+    }
+
+    ExportStates exportStates() {
+        return state.exportStates();
+    }
+
+    State state() {
+        return state;
     }
 
     /**

@@ -1,15 +1,30 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.web.client.api.widget.plot;
 
-import elemental2.dom.CustomEvent;
-import elemental2.dom.CustomEventInit;
-import io.deephaven.javascript.proto.dhinternal.io.deephaven.proto.console_pb.figuredescriptor.*;
-import io.deephaven.web.client.api.TableMap;
-import jsinterop.annotations.JsIgnore;
+import com.vertispan.tsdefs.annotations.TsInterface;
+import com.vertispan.tsdefs.annotations.TsName;
+import com.vertispan.tsdefs.annotations.TsTypeRef;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.console_pb.figuredescriptor.BoolMapWithDefault;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.console_pb.figuredescriptor.DoubleMapWithDefault;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.console_pb.figuredescriptor.MultiSeriesDescriptor;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.console_pb.figuredescriptor.MultiSeriesSourceDescriptor;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.console_pb.figuredescriptor.SeriesDescriptor;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.console_pb.figuredescriptor.SourceDescriptor;
+import io.deephaven.javascript.proto.dhinternal.io.deephaven_core.proto.console_pb.figuredescriptor.StringMapWithDefault;
+import io.deephaven.web.client.api.JsPartitionedTable;
+import io.deephaven.web.client.api.widget.plot.enums.JsSeriesPlotStyle;
 import jsinterop.annotations.JsProperty;
 
 import java.util.Collections;
 import java.util.Map;
 
+/**
+ * Describes a template that will be used to make new series instances when a new table added to a plotBy.
+ */
+@TsInterface
+@TsName(name = "MultiSeries", namespace = "dh.plot")
 public class JsMultiSeries {
     private final MultiSeriesDescriptor descriptor;
     private final JsFigure figure;
@@ -24,28 +39,27 @@ public class JsMultiSeries {
         this.parent = parent;
     }
 
-    @JsIgnore
-    public void initSources(Map<Integer, TableMap> plotHandlesToTableMaps) {
-        descriptor.getDataSourcesList().asList().stream().mapToInt(MultiSeriesSourceDescriptor::getTableMapId)
+    public void initSources(Map<Integer, JsPartitionedTable> plotHandlesToPartitionedTables) {
+        descriptor.getDataSourcesList().asList().stream().mapToInt(MultiSeriesSourceDescriptor::getPartitionedTableId)
                 .distinct()
                 // TODO assert only one at this stage
                 .forEach(plotHandle -> {
-                    TableMap tableMap = plotHandlesToTableMaps.get(plotHandle);
-                    tableMap.getKeys().forEach((p0, p1, p2) -> {
-                        requestTable(tableMap, p0);
+                    JsPartitionedTable partitionedTable = plotHandlesToPartitionedTables.get(plotHandle);
+                    partitionedTable.getKeys().forEach((p0, p1, p2) -> {
+                        requestTable(partitionedTable, p0);
                         return null;
                     });
-                    tableMap.addEventListener(TableMap.EVENT_KEYADDED, event -> {
-                        requestTable(tableMap, ((CustomEvent) event).detail);
+                    partitionedTable.addEventListener(JsPartitionedTable.EVENT_KEYADDED, event -> {
+                        requestTable(partitionedTable, event.getDetail());
                     });
 
                 });
     }
 
-    private void requestTable(TableMap tableMap, Object key) {
+    private void requestTable(JsPartitionedTable partitionedTable, Object key) {
         // TODO ask the server in parallel for the series name
         String seriesName = descriptor.getName() + ": " + key;
-        tableMap.getTable(key).then(table -> {
+        partitionedTable.getTable(key).then(table -> {
             SeriesDescriptor seriesInstance = new SeriesDescriptor();
 
             seriesInstance.setName(seriesName);
@@ -73,7 +87,7 @@ public class JsMultiSeries {
 
             seriesInstance.setDataSourcesList(
                     descriptor.getDataSourcesList()
-                            .map((multiSeriesSource, p1, p2) -> {
+                            .map((multiSeriesSource, p1) -> {
                                 SourceDescriptor sourceDescriptor = new SourceDescriptor();
                                 sourceDescriptor.setColumnName(multiSeriesSource.getColumnName());
                                 sourceDescriptor.setAxisId(multiSeriesSource.getAxisId());
@@ -88,13 +102,10 @@ public class JsMultiSeries {
             series.setMultiSeries(this);
             series.initSources(Collections.singletonMap(tableId, table), Collections.emptyMap());
 
-            CustomEventInit init = CustomEventInit.create();
-            init.setDetail(series);
-
             parent.addSeriesFromMultiSeries(series);
 
-            figure.fireEvent(JsFigure.EVENT_SERIES_ADDED, init);
-            parent.fireEvent(JsChart.EVENT_SERIES_ADDED, init);
+            figure.fireEvent(JsFigure.EVENT_SERIES_ADDED, series);
+            parent.fireEvent(JsChart.EVENT_SERIES_ADDED, series);
             return null;
         });
     }
@@ -123,11 +134,23 @@ public class JsMultiSeries {
         return map.getValuesList().getAt(index);
     }
 
+    /**
+     * The plotting style to use for the series that will be created. See <b>SeriesPlotStyle</b> enum for more details.
+     * 
+     * @return int
+     *
+     */
     @JsProperty
+    @TsTypeRef(JsSeriesPlotStyle.class)
     public int getPlotStyle() {
         return descriptor.getPlotStyle();
     }
 
+    /**
+     * The name for this multi-series.
+     * 
+     * @return String
+     */
     @JsProperty
     public String getName() {
         return descriptor.getName();

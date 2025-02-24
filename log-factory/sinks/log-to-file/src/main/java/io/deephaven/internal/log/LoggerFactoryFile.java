@@ -1,5 +1,9 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.internal.log;
 
+import com.google.auto.service.AutoService;
 import io.deephaven.io.log.LogBufferPool;
 import io.deephaven.io.log.LogEntryPool;
 import io.deephaven.io.log.LogLevel;
@@ -14,6 +18,7 @@ import io.deephaven.io.logger.LoggerTimeSource;
 import io.deephaven.io.logger.NullLoggerImpl.NullLoggerTimeSource;
 import java.util.TimeZone;
 
+@AutoService(LoggerFactory.class)
 public final class LoggerFactoryFile extends LoggerFactorySingleCache {
 
     private static String getPath() {

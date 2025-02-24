@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.rowset.impl.rsp;
 
 import io.deephaven.engine.rowset.WritableRowSet;
@@ -11,8 +14,8 @@ import io.deephaven.engine.rowset.RowSet;
 import io.deephaven.engine.rowset.RowSetFactory;
 import io.deephaven.engine.rowset.RowSequenceFactory;
 import io.deephaven.engine.rowset.impl.RowSequenceTestBase;
-import io.deephaven.engine.rowset.impl.RowSetTstUtils;
-import io.deephaven.engine.rowset.impl.TrackingWritableRowSetImpl;
+import io.deephaven.engine.rowset.impl.WritableRowSetImpl;
+import io.deephaven.engine.testutil.rowset.RowSetTstUtils;
 import org.junit.Test;
 
 import java.util.Random;
@@ -30,7 +33,7 @@ public class RspRowSequenceTest extends RowSequenceTestBase {
             rb.addUnsafe(v);
         }
         rb.finishMutationsAndOptimize();
-        return new TrackingWritableRowSetImpl(rb);
+        return new WritableRowSetImpl(rb);
     }
 
     @Test
@@ -275,7 +278,7 @@ public class RspRowSequenceTest extends RowSequenceTestBase {
         ix.validate();
         final RspBitmap rb2 = (RspBitmap) rb.ixSubindexByKeyOnNew(startKey, endKey);
         rb2.andEquals(rb);
-        final RowSet ix2 = new TrackingWritableRowSetImpl(rb2);
+        final RowSet ix2 = new WritableRowSetImpl(rb2);
         assertEquals(ix2.size(), ix.size());
         assertEquals(0, ix2.minus(ix).size());
         rs.close();

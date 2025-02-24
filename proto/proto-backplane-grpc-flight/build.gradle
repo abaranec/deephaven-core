@@ -1,12 +1,11 @@
 plugins {
     id 'java-library'
+    id 'io.deephaven.project.register'
 }
 
 description = 'The Deephaven proto-backplane-grpc-flight'
 
 dependencies {
     api project(':proto:proto-backplane-grpc')
-    Classpaths.inheritArrow(project, 'flight-core', 'api')
+    api libs.arrow.flight.core
 }
-
-apply plugin: 'io.deephaven.java-publishing-conventions'

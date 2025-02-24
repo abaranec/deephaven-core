@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.engine.rowset;
 
 import io.deephaven.chunk.LongChunk;
@@ -6,7 +9,7 @@ import io.deephaven.engine.rowset.impl.RowSequenceKeyRangesChunkImpl;
 import io.deephaven.engine.rowset.impl.RowSequenceRowKeysChunkImpl;
 import io.deephaven.engine.rowset.chunkattributes.OrderedRowKeyRanges;
 import io.deephaven.engine.rowset.chunkattributes.OrderedRowKeys;
-import io.deephaven.engine.rowset.chunkattributes.RowKeys;
+import io.deephaven.engine.rowset.impl.singlerange.SingleRangeRowSequence;
 import io.deephaven.util.datastructures.LongAbortableConsumer;
 import io.deephaven.util.datastructures.LongRangeAbortableConsumer;
 
@@ -51,7 +54,7 @@ public class RowSequenceFactory {
         }
 
         @Override
-        public void fillRowKeyChunk(WritableLongChunk<? extends RowKeys> chunkToFill) {
+        public void fillRowKeyChunk(WritableLongChunk<? super OrderedRowKeys> chunkToFill) {
             chunkToFill.setSize(0);
         }
 
@@ -195,8 +198,6 @@ public class RowSequenceFactory {
      * @return A new {@link RowSequence} object covering the requested range of row keys
      */
     public static RowSequence forRange(final long firstRowKey, final long lastRowKey) {
-        // NB: We could use a pooled chunk, here, but the pool doesn't usually
-        // hold chunks this small. Probably not worth the code complexity for release, either.
-        return wrapKeyRangesChunkAsRowSequence(LongChunk.chunkWrap(new long[] {firstRowKey, lastRowKey}));
+        return new SingleRangeRowSequence(firstRowKey, lastRowKey);
     }
 }

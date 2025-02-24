@@ -1,6 +1,10 @@
+//
+// Copyright (c) 2016-2025 Deephaven Data Labs and Patent Pending
+//
 package io.deephaven.qst.array;
 
 import io.deephaven.qst.type.CharType;
+import io.deephaven.util.QueryConstants;
 
 import java.util.Arrays;
 import java.util.Collection;
@@ -58,19 +62,29 @@ public final class CharArray extends PrimitiveArrayBase<Character> {
     }
 
     @Override
+    public Character value(int index) {
+        char value = values[index];
+        return value == QueryConstants.NULL_CHAR ? null : value;
+    }
+
+    @Override
+    public boolean isNull(int index) {
+        return values[index] == QueryConstants.NULL_CHAR;
+    }
+
+    @Override
     public final int size() {
         return values().length;
     }
 
     @Override
     public final CharType componentType() {
-        return CharType.instance();
+        return CharType.of();
     }
 
     @Override
-    public final <V extends PrimitiveArray.Visitor> V walk(V visitor) {
-        visitor.visit(this);
-        return visitor;
+    public final <R> R walk(PrimitiveArray.Visitor<R> visitor) {
+        return visitor.visit(this);
     }
 
     @Override
